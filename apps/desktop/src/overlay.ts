@@ -8,8 +8,11 @@ import { DEFAULT_OVERLAY_SETTINGS, type OverlaySettings } from "./types";
 const root = document.querySelector<HTMLElement>("#overlay-app");
 if (!root) throw new Error("missing overlay root");
 
-root.innerHTML =
-  '<div id="caption-surface" class="caption-surface" role="status" aria-live="polite" data-tauri-drag-region></div>';
+root.innerHTML = `
+  <div id="caption-surface" class="caption-surface" role="status" aria-live="polite" data-tauri-drag-region hidden>
+    <span id="caption-text" class="caption-text"></span>
+  </div>
+`;
 
 function requireElement<T extends Element>(selector: string): T {
   const element = document.querySelector<T>(selector);
@@ -18,6 +21,13 @@ function requireElement<T extends Element>(selector: string): T {
 }
 
 const surface = requireElement<HTMLElement>("#caption-surface");
+const captionText = requireElement<HTMLElement>("#caption-text");
+
+function renderCaption(caption: string) {
+  const nextCaption = caption.trim();
+  captionText.textContent = nextCaption;
+  surface.hidden = nextCaption.length === 0;
+}
 
 function applySettings(settings: OverlaySettings) {
   surface.style.fontFamily = settings.fontFamily;
@@ -39,11 +49,11 @@ function storedSettings(): OverlaySettings {
 }
 
 applySettings(storedSettings());
-if (!isTauri()) surface.textContent = "We should be there in about ten minutes.";
+if (!isTauri()) renderCaption("We should be there in about ten minutes.");
 
 if (isTauri()) {
   void listen<string>("overlay-caption", ({ payload }) => {
-    surface.textContent = payload;
+    renderCaption(payload);
   });
   void listen<OverlaySettings>("overlay-settings", ({ payload }) => applySettings(payload));
 }

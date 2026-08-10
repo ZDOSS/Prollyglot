@@ -139,6 +139,7 @@ let currentModel: ModelStatus = {
   totalBytes: 0
 };
 let currentTranscript: TranscriptSnapshot = { revision: 0, committed: [] };
+let settingsNotice: { message: string; tone: "neutral" | "success" | "error" } | undefined;
 const FOLLOW_SYSTEM_DEFAULT = "__follow-system-default__";
 
 function requireElement<T extends Element>(selector: string): T {
@@ -265,12 +266,20 @@ function renderTranscript(snapshot: TranscriptSnapshot) {
   if (dialog.open && dialog.dataset.panel === "transcript") renderTranscriptPanel();
 }
 
-async function refreshSources() {
+type SourceRefreshResult =
+  | { ok: true; snapshot: SourceSnapshot }
+  | { ok: false; message: string };
+
+async function refreshSources(): Promise<SourceRefreshResult> {
   captureMessage.textContent = "";
   try {
-    populateSources(await sourceSnapshot());
+    const nextSnapshot = await sourceSnapshot();
+    populateSources(nextSnapshot);
+    return { ok: true, snapshot: nextSnapshot };
   } catch (error) {
-    captureMessage.textContent = error instanceof Error ? error.message : String(error);
+    const message = error instanceof Error ? error.message : String(error);
+    captureMessage.textContent = message;
+    return { ok: false, message };
   }
 }
 
@@ -352,6 +361,7 @@ function renderSettingsPanel() {
         <button class="secondary-button" id="refresh-sources" type="button">${icons.refresh}<span>Refresh audio sources</span></button>
         <button class="text-button danger-text" id="remove-model" type="button">Remove model</button>
       </div>
+      <p id="settings-action-status" class="settings-action-status" role="status" aria-live="polite"></p>
     </section>
   `;
   requireElement<HTMLElement>("#model-settings-title").textContent = currentModel.displayName;
@@ -359,16 +369,55 @@ function renderSettingsPanel() {
   modelState.textContent = currentModel.phase === "ready"
     ? `Installed locally · ${formatBytes(currentModel.totalBytes)}`
     : currentModel.message ?? "Not installed";
-  requireElement<HTMLButtonElement>("#refresh-sources").addEventListener("click", () => void refreshSources());
+  renderSettingsNotice();
+
+  const refresh = requireElement<HTMLButtonElement>("#refresh-sources");
+  refresh.addEventListener("click", async () => {
+    refresh.disabled = true;
+    setSettingsNotice("Refreshing audio sources…", "neutral");
+    const result = await refreshSources();
+    if (result.ok) {
+      const deviceCount = result.snapshot.playbackDevices.length;
+      const applicationCount = result.snapshot.applications.length;
+      setSettingsNotice(
+        `Found ${deviceCount} playback ${deviceCount === 1 ? "device" : "devices"} and ${applicationCount} ${applicationCount === 1 ? "application" : "applications"}.`,
+        "success"
+      );
+    } else {
+      setSettingsNotice(result.message, "error");
+    }
+    refresh.disabled = false;
+  });
+
   const remove = requireElement<HTMLButtonElement>("#remove-model");
   remove.hidden = currentModel.phase !== "ready";
   remove.addEventListener("click", async () => {
+    remove.disabled = true;
+    setSettingsNotice("Removing the local model…", "neutral");
     try {
       await removeEnglishModel();
+      settingsNotice = {
+        message: "Model removed. Download it again whenever you want to caption audio.",
+        tone: "success"
+      };
+      renderModelStatus(await modelStatus());
     } catch (error) {
-      captureMessage.textContent = error instanceof Error ? error.message : String(error);
+      setSettingsNotice(error instanceof Error ? error.message : String(error), "error");
+      remove.disabled = false;
     }
   });
+}
+
+function renderSettingsNotice() {
+  const status = document.querySelector<HTMLElement>("#settings-action-status");
+  if (!status) return;
+  status.textContent = settingsNotice?.message ?? "";
+  status.dataset.tone = settingsNotice?.tone ?? "neutral";
+}
+
+function setSettingsNotice(message: string, tone: "neutral" | "success" | "error") {
+  settingsNotice = { message, tone };
+  renderSettingsNotice();
 }
 
 sourceSelect.addEventListener("change", updateSourceMode);
@@ -415,7 +464,10 @@ for (const button of document.querySelectorAll<HTMLButtonElement>("[data-panel]"
     dialog.dataset.panel = panel;
     requireElement<HTMLElement>("#dialog-title").textContent = title;
     if (panel === "transcript") renderTranscriptPanel();
-    else renderSettingsPanel();
+    else {
+      settingsNotice = undefined;
+      renderSettingsPanel();
+    }
     dialog.showModal();
   });
 }

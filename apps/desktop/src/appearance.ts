@@ -3,7 +3,6 @@ import "./styles.css";
 import {
   closeAppearance,
   hideOverlayPreview,
-  showOverlayPreview,
   updateOverlaySettings,
   windowAction
 } from "./bridge";
@@ -186,7 +185,11 @@ for (const control of document.querySelectorAll<HTMLInputElement | HTMLSelectEle
 for (const button of document.querySelectorAll<HTMLButtonElement>("[data-window-action]")) {
   button.addEventListener("click", () => {
     const action = button.dataset.windowAction;
-    if (action === "minimize" || action === "maximize" || action === "close") void windowAction(action);
+    if (action === "close") {
+      void hideOverlayPreview().then(closeAppearance);
+    } else if (action === "minimize" || action === "maximize") {
+      void windowAction(action);
+    }
   });
 }
 
@@ -198,4 +201,3 @@ requireElement<HTMLButtonElement>("#done-appearance").addEventListener("click", 
 });
 
 writeSettings(readStoredSettings());
-void showOverlayPreview("We should be there in about ten minutes.");

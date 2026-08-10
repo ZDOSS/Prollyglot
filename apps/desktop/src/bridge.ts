@@ -226,6 +226,9 @@ export async function onCaptureStatus(
 export async function showAppearance(): Promise<void> {
   if (isTauri()) {
     await invoke("show_appearance_window");
+    await invoke("show_overlay_preview", {
+      caption: "We should be there in about ten minutes."
+    });
   } else {
     window.location.href = "/appearance.html";
   }
