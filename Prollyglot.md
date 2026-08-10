@@ -1046,7 +1046,13 @@ The extension should remain optional.
 
 # 34. User interface
 
-The default Prollyglot window should be small and approachable.
+The default Prollyglot window should be minimal, small, and approachable.
+
+The UI principle is:
+
+> Minimal by default, customizable by choice.
+
+The primary window should expose only the decisions required to start useful captions. Visual customization and advanced engine controls should remain easy to find without crowding the default path.
 
 Example:
 
@@ -1072,6 +1078,18 @@ Example:
 ```
 
 Advanced configuration should not dominate the main interface.
+
+The interface should favor:
+
+- clear typography,
+- generous spacing,
+- restrained color,
+- one obvious primary action,
+- progressive disclosure,
+- immediate preview for visual changes,
+- readable defaults and an easy reset path.
+
+Customization should improve caption readability and fit rather than turn the application into a theme-building platform.
 
 ---
 
@@ -1557,6 +1575,8 @@ No account should be necessary to synchronize configuration.
 ---
 
 # 55. Initial proof of concept
+
+The executable delivery sequence and milestone acceptance criteria live in `BUILD_PLAN.md`. The POCs below describe product risk, while the build plan groups them into substantial integrated releases.
 
 The first POC should deliberately be ugly.
 

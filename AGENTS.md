@@ -25,11 +25,12 @@ Until the repository owner changes this policy:
 - At the start of work, inspect `git status -sb` and preserve all existing user changes.
 - If the worktree is clean, synchronize with `origin/main` using a fast-forward-only pull before editing.
 - Stage only files that belong to the current task. Never sweep unrelated changes into a commit.
-- Commit early and often after each coherent, reviewable milestone. Do not accumulate several independent milestones in one commit.
-- A milestone should leave the repository in an understandable state: a documented decision, a compiling scaffold, a working subsystem slice, or a verified fix.
+- Work continuously through the large milestones in `BUILD_PLAN.md`; do not stop for micro-approvals or treat every internal check as a handoff point when the direction remains clear.
+- Commit at substantial, coherent integration points. A large build milestone may contain several commits, but avoid placeholder-only, broken, or trivial checkpoint commits.
+- Each published integration point should leave the repository in an understandable state: a documented decision, a compiling vertical slice, a working subsystem, or a verified fix.
 - Run the most relevant available checks before committing. Record any check that cannot be run and why.
 - Use short imperative commit messages with a conventional prefix when useful, such as `docs:`, `feat:`, `fix:`, `test:`, or `build:`.
-- Push every milestone commit to `origin/main` immediately after it is created.
+- Push every substantial milestone commit to `origin/main` immediately after it is created.
 - Never force-push, rewrite published history, or discard local changes to resolve a rejected push. Fetch, inspect the divergence, and reconcile it safely.
 - Report the commit hash, pushed branch, and validation performed at handoff.
 
@@ -37,7 +38,7 @@ Until the repository owner changes this policy:
 
 - Resolve the Windows technical risks first: selected-device WASAPI loopback, per-process capture, stable buffering, streaming transcription, and overlay reliability.
 - Keep platform capture behind narrow interfaces so Linux can reuse the audio, ASR, transcript, and overlay-independent core later.
-- Prefer small, measurable proof-of-concept slices over speculative framework or plugin work.
+- Prefer integrated vertical slices that retire a major product risk. Small experiments may occur inside a milestone but should not become a stream of tiny published deliverables.
 - Treat sustained silence, closed applications, device changes, and unavailable protected audio as normal runtime states that require clear recovery behavior.
 
 ## Change discipline
@@ -46,3 +47,4 @@ Until the repository owner changes this policy:
 - Add dependencies only when their value outweighs footprint, licensing, packaging, and maintenance costs.
 - Preserve local-first privacy defaults and avoid persisting raw audio unless the user explicitly enables a future recording feature.
 - Keep accessibility central: keyboard operation, scalable readable captions, high contrast, and predictable overlay controls are product requirements.
+- Keep the interface minimal by default and customizable by choice. Advanced controls belong outside the primary Start/Stop path.
