@@ -14,6 +14,9 @@ import type {
 declare global {
   interface Window {
     __TAURI_INTERNALS__?: unknown;
+    __PROLLYGLOT_PREVIEW__?: {
+      setTranscript: (snapshot: TranscriptSnapshot) => void;
+    };
   }
 }
 export const isTauri = () => window.__TAURI_INTERNALS__ !== undefined;
@@ -100,6 +103,17 @@ const mockModel = (modelId: string) => {
 const publishMockTranscript = () => {
   for (const listener of mockTranscriptListeners) listener(structuredClone(mockTranscript));
 };
+
+/** Supplies deterministic transcript state to the browser-only development preview. */
+export function setMockTranscriptForPreview(snapshot: TranscriptSnapshot): void {
+  if (isTauri()) return;
+  mockTranscript = structuredClone(snapshot);
+  publishMockTranscript();
+}
+
+if (!isTauri() && import.meta.env.DEV) {
+  window.__PROLLYGLOT_PREVIEW__ = { setTranscript: setMockTranscriptForPreview };
+}
 
 export async function sourceSnapshot(): Promise<SourceSnapshot> {
   if (!isTauri()) return structuredClone(mockSnapshot);

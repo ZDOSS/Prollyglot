@@ -79,14 +79,15 @@ root.innerHTML = `
         <div class="field-group">
           <label class="field-label" for="spoken-language">Spoken language</label>
           <div class="select-wrap">
-            <select id="spoken-language" class="select-control">
+            <select id="spoken-language" class="select-control" aria-describedby="spoken-language-help">
               <option value="en">English</option>
               <option value="es">Spanish</option>
               <option value="ja">Japanese</option>
-              <option value="auto">Automatic detection</option>
+              <option value="auto">Automatic · mixed languages</option>
             </select>
             ${icons.chevronDown}
           </div>
+          <span id="spoken-language-help" class="field-help"></span>
         </div>
 
         <div class="field-group">
@@ -157,7 +158,9 @@ let currentModels: ModelCatalogStatus = {
 let currentTranscript: TranscriptSnapshot = { revision: 0, committed: [] };
 let settingsNotice: { message: string; tone: "neutral" | "success" | "error" } | undefined;
 let acceptedSpokenLanguage = "en";
+let transcriptFollowLatest = true;
 const FOLLOW_SYSTEM_DEFAULT = "__follow-system-default__";
+const TRANSCRIPT_BOTTOM_THRESHOLD = 48;
 const LANGUAGE_LABELS: Record<string, string> = {
   auto: "Automatic detection",
   en: "English",
@@ -227,6 +230,13 @@ function selectedCapture(): CaptureSelection {
 
 function languageLabel(language: string): string {
   return LANGUAGE_LABELS[language] ?? language;
+}
+
+function renderLanguageGuidance() {
+  const help = requireElement<HTMLElement>("#spoken-language-help");
+  help.textContent = spokenLanguage.value === "auto"
+    ? "For mixed-language audio. Detection can add delay or choose the wrong language."
+    : "Choosing the language guides recognition and usually improves accuracy.";
 }
 
 function captionAction(language: string): string {
@@ -375,8 +385,17 @@ function formatTimestamp(micros: number): string {
   return `${String(minutes).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-function renderTranscriptPanel() {
+function renderTranscriptPanel(forceLatest = false) {
   const content = dialogContent();
+  const previousList = content.querySelector<HTMLOListElement>(".transcript-list");
+  const previousScrollTop = previousList?.scrollTop ?? 0;
+  const previousDistanceFromBottom = previousList
+    ? previousList.scrollHeight - previousList.clientHeight - previousList.scrollTop
+    : 0;
+  const shouldFollowLatest = forceLatest
+    || !previousList
+    || transcriptFollowLatest
+    || previousDistanceFromBottom <= TRANSCRIPT_BOTTOM_THRESHOLD;
   content.replaceChildren();
 
   const toolbar = document.createElement("div");
@@ -384,6 +403,13 @@ function renderTranscriptPanel() {
   const summary = document.createElement("span");
   summary.className = "dialog-summary";
   summary.textContent = `${currentTranscript.committed.length} finalized ${currentTranscript.committed.length === 1 ? "caption" : "captions"}`;
+  const actions = document.createElement("div");
+  actions.className = "dialog-toolbar-actions";
+  const latest = document.createElement("button");
+  latest.type = "button";
+  latest.className = "text-button";
+  latest.textContent = "Latest";
+  latest.hidden = shouldFollowLatest;
   const clear = document.createElement("button");
   clear.type = "button";
   clear.className = "text-button";
@@ -396,10 +422,12 @@ function renderTranscriptPanel() {
       captureMessage.textContent = error instanceof Error ? error.message : String(error);
     }
   });
-  toolbar.append(summary, clear);
+  actions.append(latest, clear);
+  toolbar.append(summary, actions);
   content.append(toolbar);
 
   if (currentTranscript.committed.length === 0 && !currentTranscript.provisional) {
+    transcriptFollowLatest = true;
     const empty = document.createElement("p");
     empty.className = "empty-copy";
     empty.textContent = "Finalized captions from this session will appear here.";
@@ -409,6 +437,7 @@ function renderTranscriptPanel() {
 
   const list = document.createElement("ol");
   list.className = "transcript-list";
+  list.setAttribute("aria-label", "Session transcript");
   for (const segment of currentTranscript.committed) {
     const item = document.createElement("li");
     item.className = "transcript-segment";
@@ -430,6 +459,30 @@ function renderTranscriptPanel() {
     list.append(item);
   }
   content.append(list);
+
+  const updateFollowState = () => {
+    const distanceFromBottom = list.scrollHeight - list.clientHeight - list.scrollTop;
+    transcriptFollowLatest = distanceFromBottom <= TRANSCRIPT_BOTTOM_THRESHOLD;
+    latest.hidden = transcriptFollowLatest;
+  };
+  list.addEventListener("scroll", updateFollowState, { passive: true });
+  latest.addEventListener("click", () => {
+    transcriptFollowLatest = true;
+    list.scrollTop = list.scrollHeight;
+    latest.hidden = true;
+  });
+
+  requestAnimationFrame(() => {
+    if (shouldFollowLatest) {
+      transcriptFollowLatest = true;
+      list.scrollTop = list.scrollHeight;
+      latest.hidden = true;
+    } else {
+      transcriptFollowLatest = false;
+      list.scrollTop = Math.min(previousScrollTop, list.scrollHeight - list.clientHeight);
+      latest.hidden = false;
+    }
+  });
 }
 
 function renderSettingsPanel() {
@@ -616,6 +669,7 @@ function setSettingsNotice(message: string, tone: "neutral" | "success" | "error
 
 async function updateSpokenLanguage() {
   const language = spokenLanguage.value;
+  renderLanguageGuidance();
   captureMessage.textContent = "";
   const current = selectedModel();
   if (modelSupportsLanguage(current, language)) {
@@ -692,12 +746,12 @@ for (const button of document.querySelectorAll<HTMLButtonElement>("[data-panel]"
     const title = panel === "transcript" ? "Transcript" : "Settings";
     dialog.dataset.panel = panel;
     requireElement<HTMLElement>("#dialog-title").textContent = title;
-    if (panel === "transcript") renderTranscriptPanel();
-    else {
+    if (panel === "settings") {
       settingsNotice = undefined;
       renderSettingsPanel();
     }
     dialog.showModal();
+    if (panel === "transcript") renderTranscriptPanel(true);
   });
 }
 
@@ -706,6 +760,7 @@ dialog.addEventListener("click", (event) => {
   if (event.target === dialog) dialog.close();
 });
 
+renderLanguageGuidance();
 void Promise.all([
   refreshSources(),
   captureStatus().then(renderStatus),

@@ -639,6 +639,19 @@ Allowed-language detection might contain:
 
 Restricting likely languages may improve UX by preventing nonsensical language switching.
 
+For a prompt-conditioned multilingual recognizer such as the current Nemotron
+trial, the spoken-language control actively guides decoding; it is not merely a
+label applied after recognition. A user who knows the program is speaking
+Japanese should choose Japanese for the best chance of useful Japanese text.
+Selecting Spanish is not expected to recognize Japanese reliably, even though
+strong speech in another language may occasionally pass through the bias.
+
+Automatic detection is the explicit choice for mixed-language media. It may add
+latency or choose the wrong language, so a forced known language remains the
+preferred accuracy path. Automatic detection also needs to expose the detected
+language on each committed segment before automatic source-to-target translation
+can be considered dependable.
+
 ---
 
 # 17. Automatic backend selection
@@ -800,6 +813,11 @@ The transcript panel should support:
 - clear,
 - search,
 - save.
+
+During a live session, the panel should open at and follow the newest caption by
+default and use most of the available window height. If the user scrolls upward,
+incoming captions must not pull the view away from that older context; a visible
+Latest action should return to live-follow mode.
 
 ---
 

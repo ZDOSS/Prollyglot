@@ -231,6 +231,13 @@ input:focus-visible {
   line-height: 1.35;
 }
 
+.field-help {
+  min-height: 32px;
+  color: var(--color-text-faint);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .select-wrap,
 .compact-select-wrap {
   position: relative;
@@ -442,6 +449,24 @@ input:focus-visible {
   box-shadow: 0 22px 64px rgb(0 0 0 / 45%);
 }
 
+.utility-dialog[open][data-panel="transcript"] {
+  display: flex;
+  height: calc(100% - 32px);
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.utility-dialog[open][data-panel="transcript"] .dialog-title-row {
+  flex: 0 0 auto;
+}
+
+.utility-dialog[open][data-panel="transcript"] #dialog-content {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
 .utility-dialog::backdrop {
   background: rgb(4 7 9 / 68%);
 }
@@ -498,7 +523,14 @@ input:focus-visible {
 }
 
 .dialog-toolbar {
+  flex: 0 0 auto;
   margin-top: var(--space-4);
+}
+
+.dialog-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
 }
 
 .dialog-summary {
@@ -532,12 +564,22 @@ input:focus-visible {
 
 .transcript-list {
   display: grid;
+  min-height: 0;
   max-height: 310px;
   gap: var(--space-3);
   margin: var(--space-4) 0 0;
   padding: 0;
   overflow-y: auto;
   list-style: none;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-strong) transparent;
+}
+
+.utility-dialog[data-panel="transcript"] .transcript-list {
+  max-height: none;
+  flex: 1 1 auto;
+  padding-bottom: var(--space-2);
 }
 
 .transcript-segment {

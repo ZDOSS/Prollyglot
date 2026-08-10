@@ -53,6 +53,8 @@ The next owner re-smoke reported better captions and confirmed that Appearance, 
 
 An optional Nemotron 3.5 Streaming 0.6B integration now provides a higher-resource original-language trial for English, Spanish, Japanese, and automatic detection without changing the Fast default. The INT8 560 ms checkpoint downloads 650.6 MiB and uses roughly 950 MiB peak process memory in the current development-host benchmark. One Spanish publisher fixture spot-checked well after band-limited resampling; one English comparison did not beat the English-only choices, and Japanese/automatic detection did not clear an initial spot check. This retires the integration risk but does not complete Milestone 6 or advertise production multilingual quality.
 
+A subsequent owner test confirmed that Nemotron's selected language conditions recognition: Japanese audio was suppressed under the Spanish setting and produced Japanese text under the Japanese setting. The UI therefore keeps forced language as the accuracy-oriented path and describes Automatic as the mixed-language path. The same feedback requires the live transcript to open on and follow the newest entry while preserving deliberate scrollback, and establishes Japanese/Spanish-to-English as the first optional local translation slice.
+
 Routine development now uses [`docs/testing/WINDOWS_SMOKE_TEST.md`](docs/testing/WINDOWS_SMOKE_TEST.md). Interrupted-download recovery, formal latency measurement, screenshots, OBS parity, and sustained-resource evidence are intentionally deferred to milestone hardening or release boundaries rather than imposed on every pre-release build.
 
 ## Milestone 1 — Windows capture foundation
