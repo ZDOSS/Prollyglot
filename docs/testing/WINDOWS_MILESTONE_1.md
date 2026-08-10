@@ -19,12 +19,13 @@ The local check must finish without a Rust, TypeScript, test, or lint failure. I
 
 ## Capture checks
 
-1. Compare the Playback device list with Windows Settings. Confirm the current default device is labeled “Default.”
-2. Play ordinary speech through that device, choose “Everything I hear,” and start captions. The state should become Live and the mint activity treatment should react to the signal.
+1. Compare the Playback device list with Windows Settings. Confirm “Follow system default” names the current default device and that each physical or virtual endpoint can also be pinned explicitly.
+2. Play ordinary speech through the default device, choose “Everything I hear” and “Follow system default,” then start captions. The state should become Live and the mint activity treatment should react to the signal.
 3. Pause playback for at least two seconds. The state should become Waiting; resuming speech should return it to Live.
 4. Stop and start the same source ten times. No attempt should remain stuck in Starting or Stopping.
 5. Pin a second output device. Audio sent only to the first device must not register on the second device's capture.
-6. While capturing a device, disconnect or disable it. Prollyglot should remain responsive and show a technical error rather than crash.
+6. While following the default device, change the Windows default to the second endpoint. Prollyglot should enter a brief recovery state and then receive audio from the new default without requiring a new session.
+7. While capturing a pinned device, disconnect or disable it. Prollyglot should remain responsive and wait/retry; reconnecting the same endpoint should resume capture without requiring a new session.
 
 ## Application-isolation checks
 
@@ -44,11 +45,15 @@ Use two applications that can play speech independently, such as Firefox and VLC
 4. Disable Click-through, drag the caption surface to a second monitor, and change an appearance control. Positioning should use that monitor's work area, including when the second monitor has negative desktop coordinates.
 5. Re-enable Click-through and confirm the underlying application is interactive again.
 
-## Soak and restricted-source checks
+## OBS parity, media compatibility, and soak checks
 
-1. Run ordinary speech capture for 30 minutes. Record Prollyglot's memory near the beginning and end; it should not grow continuously.
-2. If a protected-media source is available, observe and record its behavior. Silence or an unavailable-source error is an acceptable operating-system restriction; Prollyglot must not attempt to strip or bypass protection.
-3. Inspect `%LOCALAPPDATA%\com.prollyglot.desktop\logs`. Logs rotate daily, retain at most seven files, and should contain lifecycle/errors only—never audio samples or caption text.
+1. Install the current OBS Studio release and create an Audio Output Capture for the same endpoint. For application testing, create an Application Audio Capture for the same application. Keep OBS monitoring/output configured so it does not create a feedback path.
+2. Test ordinary browser media, then any available protected-media playback, through both device-output paths. Repeat through both application-capture paths where OBS supports the application.
+3. If the OBS meter receives meaningful audio while Prollyglot remains silent under the same routing, record this as a Prollyglot defect. Include the source type, endpoint, application, Prollyglot log lines, and OBS log. Do not accept the mismatch merely because the media may be protected.
+4. If both applications receive audio, the source passes. If both are silent, record the source/routing compatibility limit; Prollyglot must not attempt to disable or strip protection.
+5. If an application works only after the user deliberately routes it through an already-installed virtual cable, record that as a native process-capture compatibility gap. A virtual cable is an optional diagnostic/fallback, not a Prollyglot prerequisite.
+6. Run ordinary speech capture for 30 minutes. Record Prollyglot's memory near the beginning and end; it should not grow continuously.
+7. Inspect `%LOCALAPPDATA%\com.prollyglot.desktop\logs`. Logs rotate daily, retain at most seven files, and should contain lifecycle/errors only—never audio samples or caption text.
 
 ## Report back
 
@@ -60,6 +65,8 @@ Please return:
 - application pair and isolation result;
 - ten-restart result;
 - process-exit and device-removal behavior;
+- default-device switching and endpoint-reconnection behavior;
+- paired OBS device/application results for each media source tested;
 - overlay/click-through/multi-monitor result;
 - 30-minute starting and ending memory;
 - any error text plus the nearby log lines.

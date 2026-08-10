@@ -55,6 +55,8 @@ Build the application foundation and retire the two largest Windows risks: nativ
 - “Only this application” capture for a selected process tree through Windows process loopback.
 - A bounded capture pipeline that converts native audio formats into normalized frames and exposes levels, timestamps, discontinuities, and lifecycle events.
 - Start, stop, source switching, selected-device disappearance, selected-process exit, and repeated restart behavior.
+- Follow-system-default capture that moves to the new default endpoint, plus safe retry when a selected endpoint is temporarily invalidated.
+- Compatibility behavior aligned with current OBS use of documented endpoint and process-loopback APIs, without source blacklists or protected-media refusal logic.
 - A separate transparent subtitle window that can show test text, remain above ordinary windows, move between monitors, and toggle click-through without stealing focus.
 - Local diagnostic logging that contains technical errors but never captured audio.
 - Local host-independent tests and Windows cross-compilation where practical, with a manually dispatched Windows verification workflow reserved for substantial milestone integration rather than every push.
@@ -68,6 +70,7 @@ Run the manual acceptance procedure in [`docs/testing/WINDOWS_MILESTONE_1.md`](d
 - Capturing a chosen device produces audio frames only while audio is rendered through that device.
 - Capturing a chosen application produces its process-tree audio while unrelated application audio is absent.
 - Capture can start and stop repeatedly, survive ordinary device/application lifecycle changes, and run for 30 minutes without a crash or unbounded memory growth.
+- When equivalent current OBS device or application capture receives the same routed audio, Prollyglot also receives it; an OBS-only success is recorded as a Prollyglot capture defect rather than accepted as a protected-content limitation.
 - The overlay proof works on a normal desktop and across two monitors; any exclusive-fullscreen limitation is recorded rather than hidden.
 - Local checks pass and the manually invoked Windows build succeeds when milestone packaging evidence is needed. Final milestone acceptance still requires a real Windows 11 run because WSL and hosted automation cannot validate physical audio routing or desktop layering.
 
@@ -136,7 +139,7 @@ Harden the complete Windows application into an installable public beta.
 - Soak testing, failure injection, sleep/resume, default-device switching, Bluetooth/headphone changes, application restarts, display changes, and offline startup.
 - Performance profiles for representative low-, middle-, and high-capability Windows hardware.
 - Local diagnostic export suitable for bug reports without audio or transcript content unless the user explicitly includes transcript text.
-- User documentation for installation, source modes, customization, known protected-content limits, troubleshooting, and model storage.
+- User documentation for installation, source modes, customization, known capture-compatibility limits, troubleshooting, and model storage.
 - Reproducible versioned release artifacts with checksums, produced locally on Windows or by one manually dispatched release workflow.
 
 ### Acceptance boundary

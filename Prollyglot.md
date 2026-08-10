@@ -339,17 +339,25 @@ with an advanced stream selector available if needed.
 
 Prollyglot should use documented operating-system capture APIs and should not attempt to disable, strip, or bypass DRM or protected-media controls.
 
-Protected content, exclusive-mode output, or another OS-enforced restriction may produce silence or an unavailable stream even though the user can hear playback.
+Prollyglot should not maintain a protected-source blacklist, inspect a source's DRM status, or refuse capture based on the application or media being played. If Windows exposes decoded PCM through the selected playback-device or process-loopback API, Prollyglot should capture and transcribe it like any other audio. This includes protected-media playback when Windows makes its rendered audio available through those documented paths.
+
+Protected content, exclusive-mode output, unusual application routing, or another OS/driver restriction may still produce silence or an unavailable stream even though the user can hear playback. That is a compatibility condition to observe, not a reason to skip the capture attempt.
+
+OBS is the practical Windows compatibility baseline for the two MVP capture modes. When current OBS device-output or application-audio capture receives meaningful audio from the same source and routing configuration but Prollyglot does not, treat the difference as a Prollyglot defect to investigate rather than assuming DRM made the audio unavailable.
 
 When capture is unavailable, Prollyglot should:
 
 - keep the rest of the application responsive,
-- explain that the operating system did not expose capturable audio,
+- retry ordinary device invalidation and routing changes where safe,
+- explain that the selected capture path is not currently receiving audio,
 - avoid claiming that every protected source is supported,
+- offer comparison diagnostics that make an OBS parity failure actionable,
 - suggest source-provided captions when available,
 - allow deliberate microphone capture as an accessibility fallback without enabling it automatically.
 
-The core product should not depend on protected-content capture working.
+Installed virtual audio endpoints may be selected like any other playback device, but Prollyglot should not require or bundle a virtual driver for its normal path. A third-party virtual cable may later be documented as an advanced compatibility option for applications whose routing is incompatible with process capture; it is not a DRM-removal mechanism or a substitute for making native capture reliable.
+
+The core product should attempt protected and unprotected sources uniformly without promising that Windows will expose every source on every system.
 
 ---
 
@@ -1861,11 +1869,11 @@ Support small CPU-friendly models first and treat large models as optional.
 
 ## Protected or unavailable capture
 
-Some audible Windows content may be unavailable to documented loopback APIs because of protected-media policy, exclusive-mode output, or driver behavior.
+Some audible Windows content may be unavailable to documented loopback APIs because of protected-media policy, exclusive-mode output, application routing, or driver behavior. Other protected-media playback is exposed through the normal decoded device mix and should work without any special-case handling.
 
 Mitigation:
 
-Treat this as an explicit compatibility boundary, report sustained silent or unavailable capture clearly, and do not build or recommend a DRM-bypass path.
+Attempt every selected source through the documented capture path without DRM detection or source blacklists. Compare failures against equivalent current OBS device and application capture, treat OBS-only success as a Prollyglot compatibility defect, report sustained unavailable audio clearly, and do not build a DRM-bypass path.
 
 ---
 

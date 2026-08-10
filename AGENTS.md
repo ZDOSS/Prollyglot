@@ -15,6 +15,7 @@
 - Linux work follows a reliable Windows MVP. Initially support one Ubuntu LTS release with PipeWire and a native `.deb`; treat other distributions as community-supported.
 - Keep audio and transcription local by default. Do not require accounts, cloud processing, virtual audio devices, or application plugins.
 - Use documented operating-system capture paths. Do not weaken or bypass DRM or protected-media controls.
+- Do not blacklist, pre-classify, or refuse a source because it may use protected media. Capture any PCM the documented OS path exposes; if equivalent current OBS capture succeeds and Prollyglot does not, treat that as a Prollyglot compatibility defect.
 - Protect the focused subtitle utility described by the spec; avoid unrelated meeting-assistant, productivity-suite, or general AI features.
 
 ## Repository workflow — temporary direct-to-main policy
