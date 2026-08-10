@@ -36,7 +36,7 @@ Why this direction:
 
 | Milestone | Integrated outcome | Status |
 | --- | --- | --- |
-| 1. Windows capture foundation | A real Windows desktop shell can enumerate and capture either a selected output device or selected application | In progress |
+| 1. Windows capture foundation | A real Windows desktop shell can enumerate and capture either a selected output device or selected application | Implementation ready; Windows validation required |
 | 2. Live English captions | Captured audio becomes stable partial and final English captions locally | Pending |
 | 3. Minimal customizable Windows app | The complete daily-use interface, overlay customization, transcript view, and controls work together | Pending |
 | 4. Windows MVP release | A reliable installable Windows build is ready for outside testing | Pending |
@@ -60,6 +60,8 @@ Build the application foundation and retire the two largest Windows risks: nativ
 - Local host-independent tests and Windows cross-compilation where practical, with a manually dispatched Windows verification workflow reserved for substantial milestone integration rather than every push.
 
 ### Acceptance boundary
+
+Run the manual acceptance procedure in [`docs/testing/WINDOWS_MILESTONE_1.md`](docs/testing/WINDOWS_MILESTONE_1.md) on Windows 11. This is one substantial milestone gate, not a per-commit hosted workflow.
 
 - On Windows 11, the application launches without administrator access or a virtual audio device.
 - The displayed device list agrees with Windows playback devices and identifies the default device.

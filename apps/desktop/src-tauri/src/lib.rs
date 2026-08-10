@@ -1,4 +1,5 @@
 use std::{
+    fs,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -80,6 +81,34 @@ struct RuntimeState {
     overlay_settings: Mutex<OverlaySettings>,
 }
 
+struct LoggingGuard {
+    _worker: tracing_appender::non_blocking::WorkerGuard,
+}
+
+fn initialize_logging(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    let log_directory = app.path().app_log_dir()?;
+    fs::create_dir_all(&log_directory)?;
+    let file_appender = tracing_appender::rolling::RollingFileAppender::builder()
+        .rotation(tracing_appender::rolling::Rotation::DAILY)
+        .filename_prefix("prollyglot")
+        .filename_suffix("log")
+        .max_log_files(7)
+        .build(&log_directory)?;
+    let (writer, worker) = tracing_appender::non_blocking(file_appender);
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer(writer)
+        .with_ansi(false)
+        .with_target(true)
+        .with_thread_names(true)
+        .with_max_level(tracing::Level::INFO)
+        .compact()
+        .finish();
+    tracing::subscriber::set_global_default(subscriber)?;
+    app.manage(LoggingGuard { _worker: worker });
+    tracing::info!(version = env!("CARGO_PKG_VERSION"), "Prollyglot started");
+    Ok(())
+}
+
 fn publish_status(app: &tauri::AppHandle, status: &Arc<Mutex<CaptureStatus>>, next: CaptureStatus) {
     *status.lock() = next.clone();
     if let Err(error) = app.emit("capture-status", next) {
@@ -89,7 +118,10 @@ fn publish_status(app: &tauri::AppHandle, status: &Arc<Mutex<CaptureStatus>>, ne
 
 #[tauri::command]
 fn source_snapshot() -> Result<SourceSnapshot, String> {
-    prollyglot_audio_windows::source_snapshot().map_err(|error| error.to_string())
+    prollyglot_audio_windows::source_snapshot().map_err(|error| {
+        tracing::error!(%error, "could not enumerate Windows audio sources");
+        error.to_string()
+    })
 }
 
 #[tauri::command]
@@ -114,6 +146,8 @@ fn start_capture(
         return Err("A capture session is already running.".into());
     }
 
+    tracing::info!(?selection, "starting capture session");
+
     let source_label = Some(selection.source_id().to_string());
     publish_status(
         &app,
@@ -131,6 +165,7 @@ fn start_capture(
     let session = match prollyglot_audio_windows::start_capture(selection, event_sender) {
         Ok(session) => session,
         Err(error) => {
+            tracing::error!(%error, "could not start capture session");
             publish_status(
                 &app,
                 &state.status,
@@ -205,12 +240,15 @@ fn start_capture(
                             ..previous
                         }
                     }
-                    CaptureEvent::Error(message) => CaptureStatus {
-                        state: CaptureState::Failed,
-                        peak: 0.0,
-                        message: Some(message),
-                        ..previous
-                    },
+                    CaptureEvent::Error(message) => {
+                        tracing::error!(%message, "capture worker failed");
+                        CaptureStatus {
+                            state: CaptureState::Failed,
+                            peak: 0.0,
+                            message: Some(message),
+                            ..previous
+                        }
+                    }
                 };
                 publish_status(&app_for_events, &status_for_events, next);
             }
@@ -226,6 +264,7 @@ fn start_capture(
         })
         .map_err(|error| format!("Could not start the capture event forwarder: {error}"));
     if let Err(error) = forwarder {
+        tracing::error!(%error, "could not start capture event forwarder");
         if let Some(mut session) = state.session.lock().take() {
             let _ = session.stop();
         }
@@ -263,7 +302,11 @@ fn stop_capture(app: tauri::AppHandle, state: State<'_, RuntimeState>) -> Result
         },
     );
 
-    session.stop().map_err(|error| error.to_string())?;
+    session.stop().map_err(|error| {
+        tracing::error!(%error, "could not stop capture session cleanly");
+        error.to_string()
+    })?;
+    tracing::info!("capture session stopped");
     publish_status(&app, &state.status, CaptureStatus::default());
     Ok(())
 }
@@ -428,6 +471,7 @@ fn hide_overlay_preview(app: tauri::AppHandle) -> Result<(), String> {
 pub fn run() {
     tauri::Builder::default()
         .manage(RuntimeState::default())
+        .setup(|app| initialize_logging(app))
         .invoke_handler(tauri::generate_handler![
             source_snapshot,
             start_capture,

@@ -21,3 +21,5 @@ prollyglot-core = { path = "../../../crates/prollyglot-core" }
 serde.workspace = true
 tauri.workspace = true
 tracing.workspace = true
+tracing-appender.workspace = true
+tracing-subscriber.workspace = true
