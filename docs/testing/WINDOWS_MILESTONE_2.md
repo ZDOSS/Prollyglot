@@ -2,6 +2,9 @@
 
 This is the manual acceptance run for Prollyglot's first complete English-caption vertical slice. It must run on a real Windows 11 machine: cross-compilation proves the code shape, but cannot prove physical audio routing, caption latency, overlay behavior, or sustained CPU and memory use.
 
+> [!NOTE]
+> Use the [complete Windows 11 test plan](WINDOWS_TEST_PLAN.md) for literal setup commands, generated routing fixtures, expected results, evidence tables, OBS parity steps, and the final report template. This file remains the shorter Milestone 2 acceptance summary.
+
 This is a substantial milestone gate, not a per-commit CI workflow.
 
 ## Prepare the machine
@@ -11,7 +14,7 @@ Record the Windows version, CPU, installed RAM, GPU if any, playback device, dis
 From PowerShell at the repository root:
 
 ```powershell
-git pull origin main
+git pull --ff-only origin main
 pnpm --dir apps/desktop install --frozen-lockfile
 ./scripts/check-windows.ps1
 pnpm --dir apps/desktop tauri dev

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/branding/prollyglot-mark.png" width="112" alt="Prollyglot logo" />
+  <img src="assets/branding/prollyglot-logo.png" width="420" alt="Prollyglot logo" />
 </p>
 
 # Prollyglot
@@ -36,7 +36,7 @@ The repository currently contains:
 - a bounded capture-to-inference bridge with visible backpressure and recovery behavior; and
 - live provisional/final transcript updates wired to the transcript view and customizable always-on-top overlay.
 
-The remaining Milestone 2 gates are real Windows audio/overlay validation, partial-caption latency measurement, and the small-versus-standard model benchmark. See [BUILD_PLAN.md](BUILD_PLAN.md) for milestone status and [the Windows Milestone 2 procedure](docs/testing/WINDOWS_MILESTONE_2.md) for the validation run.
+The remaining Milestone 2 gates are real Windows audio/overlay validation, partial-caption latency measurement, and the small-versus-standard model benchmark. See [BUILD_PLAN.md](BUILD_PLAN.md) for milestone status and follow the [complete step-by-step Windows 11 test plan](docs/testing/WINDOWS_TEST_PLAN.md) for the validation run.
 
 The benchmark tooling and initial clean-reference result are documented in [docs/benchmarks/ENGLISH_MODELS.md](docs/benchmarks/ENGLISH_MODELS.md). That smoke result validates both runtimes but intentionally does not choose a default without conversational and noisy Windows evidence.
 
@@ -71,13 +71,15 @@ Run the Windows validation loop from PowerShell:
 ./scripts/check-windows.ps1
 ```
 
+For the literal native-Windows setup, test fixtures, expected results, OBS parity matrix, latency measurements, soak test, privacy checks, and report template, follow the [Windows 11 test plan](docs/testing/WINDOWS_TEST_PLAN.md) from top to bottom.
+
 On a non-Windows development host, the shared core, frontend, and Windows cross-checks used by the project can be run with:
 
 ```bash
 ./scripts/check-local.sh
 ```
 
-Physical WASAPI routing, process isolation, device switching, overlay layering, and end-to-end caption latency still require the manual Windows procedures for [Milestone 1](docs/testing/WINDOWS_MILESTONE_1.md) and [Milestone 2](docs/testing/WINDOWS_MILESTONE_2.md).
+Physical WASAPI routing, process isolation, device switching, overlay layering, and end-to-end caption latency still require a real Windows machine. The shorter [Milestone 1](docs/testing/WINDOWS_MILESTONE_1.md) and [Milestone 2](docs/testing/WINDOWS_MILESTONE_2.md) checklists remain useful as acceptance summaries; the unified test plan is the tester-facing runbook.
 
 ## Repository map
 

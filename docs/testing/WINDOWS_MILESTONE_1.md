@@ -2,6 +2,9 @@
 
 This is the manual acceptance run for Prollyglot's Windows capture foundation. It is intentionally run on a real Windows 11 desktop because WSL and hosted CI cannot prove physical audio routing, process isolation, focus behavior, or multi-monitor overlay placement.
 
+> [!NOTE]
+> Use the [complete Windows 11 test plan](WINDOWS_TEST_PLAN.md) for literal setup commands, generated routing fixtures, expected results, evidence tables, OBS parity steps, and the final report template. This file remains the shorter Milestone 1 acceptance summary.
+
 ## Prepare and launch
 
 Prerequisites: current stable Rust with Clippy, Node.js, pnpm, and the Windows WebView2 runtime.
@@ -9,7 +12,7 @@ Prerequisites: current stable Rust with Clippy, Node.js, pnpm, and the Windows W
 From a PowerShell prompt at the repository root:
 
 ```powershell
-git pull origin main
+git pull --ff-only origin main
 pnpm --dir apps/desktop install --frozen-lockfile
 ./scripts/check-windows.ps1
 pnpm --dir apps/desktop tauri dev

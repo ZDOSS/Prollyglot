@@ -7,6 +7,7 @@ This file translates the accepted Milestone 1 visual concepts into implementatio
 - `docs/design/concepts/main-window.png` — primary control window and default state.
 - `docs/design/concepts/appearance-and-overlay.png` — appearance controls and live overlay preview.
 - `assets/branding/prollyglot-mark.png` — transparent application mark generated to match the primary concept.
+- `assets/branding/prollyglot-logo.png` — wide transparent logo supplied for the README header; keep the compact mark in constrained application surfaces.
 
 ## Visual direction
 
