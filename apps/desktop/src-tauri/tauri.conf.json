@@ -1,0 +1,62 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Prollyglot",
+  "version": "0.1.0",
+  "identifier": "com.prollyglot.desktop",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost"
+    },
+    "windows": [
+      {
+        "label": "main",
+        "title": "Prollyglot",
+        "url": "index.html",
+        "width": 440,
+        "height": 620,
+        "minWidth": 400,
+        "minHeight": 560,
+        "center": true,
+        "decorations": false,
+        "resizable": true
+      },
+      {
+        "label": "appearance",
+        "title": "Appearance — Prollyglot",
+        "url": "appearance.html",
+        "width": 900,
+        "height": 620,
+        "minWidth": 720,
+        "minHeight": 560,
+        "center": true,
+        "decorations": false,
+        "resizable": true,
+        "visible": false
+      },
+      {
+        "label": "overlay",
+        "title": "Prollyglot captions",
+        "url": "overlay.html",
+        "width": 780,
+        "height": 180,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": false,
+        "focus": false,
+        "visible": false
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all"
+  }
+}

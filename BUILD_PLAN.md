@@ -8,6 +8,7 @@ This is the executable delivery plan for Prollyglot. `Prollyglot.md` remains the
 - Continue autonomously while the spec, this plan, and existing architecture provide a safe direction.
 - Make reversible implementation choices without asking first, document them, and change them when evidence demands it.
 - Commit at meaningful integration points inside a large milestone and push each such commit to `origin/main`. Do not publish placeholder-only or broken checkpoints.
+- Keep routine validation local. GitHub Actions minutes are limited, so do not use per-push builds or broad hosted matrices as the development loop; reserve a consolidated, manually dispatched Windows workflow for milestone packaging or evidence that cannot be produced locally.
 - Stop and request direction only when progress requires an irreversible product decision, unavailable credentials or hardware, an unclear dependency or model license, contradictory requirements, or external runtime evidence that cannot be obtained locally.
 - A milestone is complete only when its end-to-end acceptance criteria pass. Compiling one module or drawing one screen is not a completed milestone.
 
@@ -35,7 +36,7 @@ Why this direction:
 
 | Milestone | Integrated outcome | Status |
 | --- | --- | --- |
-| 1. Windows capture foundation | A real Windows desktop shell can enumerate and capture either a selected output device or selected application | Next |
+| 1. Windows capture foundation | A real Windows desktop shell can enumerate and capture either a selected output device or selected application | In progress |
 | 2. Live English captions | Captured audio becomes stable partial and final English captions locally | Pending |
 | 3. Minimal customizable Windows app | The complete daily-use interface, overlay customization, transcript view, and controls work together | Pending |
 | 4. Windows MVP release | A reliable installable Windows build is ready for outside testing | Pending |
@@ -56,7 +57,7 @@ Build the application foundation and retire the two largest Windows risks: nativ
 - Start, stop, source switching, selected-device disappearance, selected-process exit, and repeated restart behavior.
 - A separate transparent subtitle window that can show test text, remain above ordinary windows, move between monitors, and toggle click-through without stealing focus.
 - Local diagnostic logging that contains technical errors but never captured audio.
-- Windows CI that builds and tests the Windows-specific crates, plus host-independent tests for shared code.
+- Local host-independent tests and Windows cross-compilation where practical, with a manually dispatched Windows verification workflow reserved for substantial milestone integration rather than every push.
 
 ### Acceptance boundary
 
@@ -66,7 +67,7 @@ Build the application foundation and retire the two largest Windows risks: nativ
 - Capturing a chosen application produces its process-tree audio while unrelated application audio is absent.
 - Capture can start and stop repeatedly, survive ordinary device/application lifecycle changes, and run for 30 minutes without a crash or unbounded memory growth.
 - The overlay proof works on a normal desktop and across two monitors; any exclusive-fullscreen limitation is recorded rather than hidden.
-- CI is green. Final milestone acceptance requires a real Windows 11 run because WSL and hosted CI cannot validate physical audio routing or desktop layering.
+- Local checks pass and the manually invoked Windows build succeeds when milestone packaging evidence is needed. Final milestone acceptance still requires a real Windows 11 run because WSL and hosted automation cannot validate physical audio routing or desktop layering.
 
 ## Milestone 2 — Live English captions
 
@@ -134,7 +135,7 @@ Harden the complete Windows application into an installable public beta.
 - Performance profiles for representative low-, middle-, and high-capability Windows hardware.
 - Local diagnostic export suitable for bug reports without audio or transcript content unless the user explicitly includes transcript text.
 - User documentation for installation, source modes, customization, known protected-content limits, troubleshooting, and model storage.
-- CI-produced versioned release artifacts with checksums.
+- Reproducible versioned release artifacts with checksums, produced locally on Windows or by one manually dispatched release workflow.
 
 ### Acceptance boundary
 
@@ -155,7 +156,7 @@ Port the proven product rather than designing Windows and Linux simultaneously.
 - Reuse of the same normalized audio, ASR, transcript, configuration, and model-management core.
 - Ubuntu-specific application grouping and stream-recreation recovery.
 - Overlay behavior validated separately on the supported Ubuntu Wayland session and X11 where practical.
-- A native `.deb`, dependency documentation, and Linux CI.
+- A native `.deb`, dependency documentation, and local validation on the supported Ubuntu release; hosted release verification remains optional and manual.
 
 ### Acceptance boundary
 
@@ -193,12 +194,14 @@ Expand language capability only after the base application is dependable on its 
 - Record dependency and model licenses when they enter the repository, not at release time.
 - Keep fixtures redistributable and free of private conversation audio.
 - Treat Windows runtime validation as required evidence; a cross-compile or hosted CI build alone cannot prove audio routing or overlay behavior.
+- Prefer one local command that reproduces milestone checks over duplicating that work across GitHub-hosted jobs.
 
 ## Known external gates
 
 Work should continue until one of these gates is actually reached:
 
 - A real Windows 11 machine is required to accept Milestone 1 and later Windows milestones. The current development environment is WSL2, so it can build and test shared code but cannot validate WASAPI loopback or native overlay stacking.
+- GitHub-hosted runner minutes are intentionally conserved. A lack of continuous hosted validation is not a blocker when equivalent local checks pass; manually dispatched jobs are used only where their environment or artifact is materially useful.
 - Windows signing and store publication require owner-controlled identity and credentials.
 - Model distribution stops if commercial use, redistribution, or derivative rights are unclear.
 - Exact Ubuntu LTS selection is deferred until Milestone 5 so the support window is current when porting begins.

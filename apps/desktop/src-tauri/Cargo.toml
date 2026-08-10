@@ -1,0 +1,23 @@
+[package]
+name = "prollyglot-desktop"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "prollyglot_desktop"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+
+[dependencies]
+crossbeam-channel.workspace = true
+parking_lot.workspace = true
+prollyglot-audio-windows = { path = "../../../crates/audio-windows" }
+prollyglot-core = { path = "../../../crates/prollyglot-core" }
+serde.workspace = true
+tauri.workspace = true
+tracing.workspace = true

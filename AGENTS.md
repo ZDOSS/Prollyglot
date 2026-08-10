@@ -29,6 +29,8 @@ Until the repository owner changes this policy:
 - Commit at substantial, coherent integration points. A large build milestone may contain several commits, but avoid placeholder-only, broken, or trivial checkpoint commits.
 - Each published integration point should leave the repository in an understandable state: a documented decision, a compiling vertical slice, a working subsystem, or a verified fix.
 - Run the most relevant available checks before committing. Record any check that cannot be run and why.
+- Treat GitHub Actions minutes as a scarce release resource, not the development inner loop. Run formatting, linting, unit tests, frontend builds, and cross-compilation locally whenever the host supports them.
+- Do not add build-on-push matrices or per-commit hosted validation. If Windows-only hosted evidence or packaging is useful, consolidate it into a manually dispatched workflow used at substantial milestone or release boundaries.
 - Use short imperative commit messages with a conventional prefix when useful, such as `docs:`, `feat:`, `fix:`, `test:`, or `build:`.
 - Push every substantial milestone commit to `origin/main` immediately after it is created.
 - Never force-push, rewrite published history, or discard local changes to resolve a rejected push. Fetch, inspect the divergence, and reconcile it safely.
