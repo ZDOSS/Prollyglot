@@ -1,13 +1,19 @@
+mod models;
+mod transcription;
+
 use std::{
     fs,
     sync::Arc,
+    thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
 
+use crossbeam_channel::{RecvTimeoutError, TrySendError};
 use parking_lot::Mutex;
 use prollyglot_core::{
-    CaptureEvent, CaptureSelection, CaptureSession, CaptureState, SourceSnapshot,
+    AudioFrame, CaptureEvent, CaptureSelection, CaptureSession, CaptureState, SourceSnapshot,
 };
+use prollyglot_transcript::{TranscriptSnapshot, TranscriptStore};
 use serde::{Deserialize, Serialize};
 use tauri::{
     Emitter, LogicalSize, Manager, PhysicalPosition, PhysicalRect, PhysicalSize, State,
@@ -33,6 +39,59 @@ impl Default for CaptureStatus {
             source_label: None,
             message: None,
         }
+    }
+}
+
+struct ActiveSession {
+    capture: Box<dyn CaptureSession>,
+    event_forwarder: Option<JoinHandle<()>>,
+    transcription_worker: Option<JoinHandle<()>>,
+}
+
+enum AudioQueueResult {
+    Queued { dropped: u64 },
+    Disconnected,
+}
+
+fn queue_latest_audio(
+    sender: &crossbeam_channel::Sender<AudioFrame>,
+    overflow_receiver: &crossbeam_channel::Receiver<AudioFrame>,
+    frame: AudioFrame,
+) -> AudioQueueResult {
+    match sender.try_send(frame) {
+        Ok(()) => AudioQueueResult::Queued { dropped: 0 },
+        Err(TrySendError::Full(frame)) => {
+            let dropped = u64::from(overflow_receiver.try_recv().is_ok());
+            match sender.try_send(frame) {
+                Ok(()) => AudioQueueResult::Queued { dropped },
+                Err(TrySendError::Full(_)) => AudioQueueResult::Queued {
+                    dropped: dropped.saturating_add(1),
+                },
+                Err(TrySendError::Disconnected(_)) => AudioQueueResult::Disconnected,
+            }
+        }
+        Err(TrySendError::Disconnected(_)) => AudioQueueResult::Disconnected,
+    }
+}
+
+impl ActiveSession {
+    fn stop(&mut self) -> Result<(), String> {
+        let capture_error = self.capture.stop().err().map(|error| error.to_string());
+        let event_error = self
+            .event_forwarder
+            .take()
+            .and_then(|worker| worker.join().err())
+            .map(|panic| format!("capture event worker panicked: {}", panic_message(panic)));
+        let transcription_error = self
+            .transcription_worker
+            .take()
+            .and_then(|worker| worker.join().err())
+            .map(|panic| format!("transcription worker panicked: {}", panic_message(panic)));
+
+        capture_error
+            .or(event_error)
+            .or(transcription_error)
+            .map_or(Ok(()), Err)
     }
 }
 
@@ -76,8 +135,10 @@ impl Default for OverlaySettings {
 #[derive(Default)]
 struct RuntimeState {
     control: Mutex<()>,
-    session: Mutex<Option<Box<dyn CaptureSession>>>,
+    session: Mutex<Option<ActiveSession>>,
     status: Arc<Mutex<CaptureStatus>>,
+    transcript: Arc<Mutex<TranscriptStore>>,
+    model: models::ModelRuntime,
     overlay_settings: Mutex<OverlaySettings>,
 }
 
@@ -116,6 +177,27 @@ fn publish_status(app: &tauri::AppHandle, status: &Arc<Mutex<CaptureStatus>>, ne
     }
 }
 
+fn publish_capture_failure(
+    app: &tauri::AppHandle,
+    status: &Arc<Mutex<CaptureStatus>>,
+    source_label: Option<String>,
+    message: String,
+) -> String {
+    tracing::error!(%message, "could not start captions");
+    publish_status(
+        app,
+        status,
+        CaptureStatus {
+            state: CaptureState::Failed,
+            peak: 0.0,
+            dropped_frames: 0,
+            source_label,
+            message: Some(message.clone()),
+        },
+    );
+    message
+}
+
 #[tauri::command]
 fn source_snapshot() -> Result<SourceSnapshot, String> {
     prollyglot_audio_windows::source_snapshot().map_err(|error| {
@@ -130,69 +212,124 @@ fn capture_status(state: State<'_, RuntimeState>) -> CaptureStatus {
 }
 
 #[tauri::command]
-fn start_capture(
+async fn start_capture(
     app: tauri::AppHandle,
     state: State<'_, RuntimeState>,
     selection: CaptureSelection,
 ) -> Result<(), String> {
-    let _control = state.control.lock();
-    if matches!(
-        state.status.lock().state,
-        CaptureState::Failed | CaptureState::Stopped
-    ) {
-        drop(state.session.lock().take());
-    }
-    if state.session.lock().is_some() {
-        return Err("A capture session is already running.".into());
-    }
-
-    tracing::info!(?selection, "starting capture session");
-
     let source_label = Some(selection.source_id().to_string());
-    publish_status(
-        &app,
-        &state.status,
-        CaptureStatus {
-            state: CaptureState::Starting,
-            peak: 0.0,
-            dropped_frames: 0,
-            source_label: source_label.clone(),
-            message: None,
-        },
-    );
+    let mut stale_session = {
+        let _control = state.control.lock();
+        if matches!(
+            state.status.lock().state,
+            CaptureState::Starting
+                | CaptureState::Capturing
+                | CaptureState::Waiting
+                | CaptureState::Stopping
+        ) {
+            return Err("A caption session is already starting or running.".into());
+        }
+        let stale_session = state.session.lock().take();
+        publish_status(
+            &app,
+            &state.status,
+            CaptureStatus {
+                state: CaptureState::Starting,
+                peak: 0.0,
+                dropped_frames: 0,
+                source_label: source_label.clone(),
+                message: None,
+            },
+        );
+        stale_session
+    };
+    if let Some(session) = stale_session.as_mut()
+        && let Err(error) = session.stop()
+    {
+        tracing::warn!(%error, "previous caption session did not clean up normally");
+    }
+    drop(stale_session);
 
-    let (event_sender, event_receiver) = crossbeam_channel::bounded(12);
-    let session = match prollyglot_audio_windows::start_capture(selection, event_sender) {
-        Ok(session) => session,
-        Err(error) => {
-            tracing::error!(%error, "could not start capture session");
-            publish_status(
+    tracing::info!(?selection, "starting caption session");
+    let model_root = models::models_root(&app).map_err(|message| {
+        publish_capture_failure(&app, &state.status, source_label.clone(), message)
+    })?;
+    let prepared =
+        tauri::async_runtime::spawn_blocking(move || transcription::prepare_stream(model_root))
+            .await
+            .map_err(|error| {
+                publish_capture_failure(
+                    &app,
+                    &state.status,
+                    source_label.clone(),
+                    format!("Could not join the model-loading worker: {error}"),
+                )
+            })?
+            .map_err(|message| {
+                publish_capture_failure(&app, &state.status, source_label.clone(), message)
+            })?;
+
+    let transcript_snapshot = {
+        let mut transcript = state.transcript.lock();
+        transcript.clear();
+        transcript.snapshot().clone()
+    };
+    if let Err(error) = app.emit("transcript-update", transcript_snapshot) {
+        tracing::warn!(%error, "could not emit cleared transcript");
+    }
+
+    let (audio_sender, audio_receiver) = crossbeam_channel::bounded(32);
+    let overflow_audio_receiver = audio_receiver.clone();
+    let (transcription_error_sender, transcription_error_receiver) = crossbeam_channel::bounded(1);
+    let transcription_panic_sender = transcription_error_sender.clone();
+    let app_for_transcription = app.clone();
+    let transcript = Arc::clone(&state.transcript);
+    let transcription_worker = thread::Builder::new()
+        .name("streaming-transcription".into())
+        .spawn(move || {
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                transcription::run(
+                    app_for_transcription,
+                    audio_receiver,
+                    prepared,
+                    transcript,
+                    transcription_error_sender,
+                );
+            }));
+            if let Err(panic) = result {
+                let message = panic
+                    .downcast_ref::<&str>()
+                    .map(|message| (*message).to_owned())
+                    .or_else(|| panic.downcast_ref::<String>().cloned())
+                    .unwrap_or_else(|| "unknown panic payload".into());
+                let _ = transcription_panic_sender
+                    .try_send(format!("The transcription worker panicked: {message}"));
+                std::panic::resume_unwind(panic);
+            }
+        })
+        .map_err(|error| {
+            publish_capture_failure(
                 &app,
                 &state.status,
-                CaptureStatus {
-                    state: CaptureState::Failed,
-                    peak: 0.0,
-                    dropped_frames: 0,
-                    source_label,
-                    message: Some(error.to_string()),
-                },
-            );
-            return Err(error.to_string());
+                source_label.clone(),
+                format!("Could not start the transcription worker: {error}"),
+            )
+        })?;
+
+    let (event_sender, event_receiver) = crossbeam_channel::bounded(12);
+    let mut capture = match prollyglot_audio_windows::start_capture(selection, event_sender) {
+        Ok(session) => session,
+        Err(error) => {
+            drop(audio_sender);
+            let _ = transcription_worker.join();
+            return Err(publish_capture_failure(
+                &app,
+                &state.status,
+                source_label,
+                error.to_string(),
+            ));
         }
     };
-    *state.session.lock() = Some(session);
-
-    publish_status(
-        &app,
-        &state.status,
-        CaptureStatus {
-            state: CaptureState::Capturing,
-            peak: 0.0,
-            dropped_frames: 0,
-            source_label: source_label.clone(),
-            message: None,
-        },
-    );
 
     let app_for_events = app.clone();
     let status_for_events = Arc::clone(&state.status);
@@ -200,16 +337,30 @@ fn start_capture(
         .name("capture-event-forwarder".into())
         .spawn(move || {
             let mut last_peak_publish = None::<Instant>;
-            while let Ok(event) = event_receiver.recv() {
-                if matches!(&event, CaptureEvent::Frame(_))
-                    && last_peak_publish
-                        .is_some_and(|last| last.elapsed() < Duration::from_millis(50))
-                {
-                    continue;
+            let mut last_drop_publish = None::<Instant>;
+            let mut capture_dropped = 0_u64;
+            let mut inference_dropped = 0_u64;
+            loop {
+                if let Ok(message) = transcription_error_receiver.try_recv() {
+                    let previous = status_for_events.lock().clone();
+                    publish_status(
+                        &app_for_events,
+                        &status_for_events,
+                        CaptureStatus {
+                            state: CaptureState::Failed,
+                            peak: 0.0,
+                            message: Some(message),
+                            ..previous
+                        },
+                    );
+                    break;
                 }
-                if matches!(&event, CaptureEvent::Frame(_)) {
-                    last_peak_publish = Some(Instant::now());
-                }
+                let event = match event_receiver.recv_timeout(Duration::from_millis(50)) {
+                    Ok(event) => event,
+                    Err(RecvTimeoutError::Timeout) => continue,
+                    Err(RecvTimeoutError::Disconnected) => break,
+                };
+
                 let previous = status_for_events.lock().clone();
                 let next = match event {
                     CaptureEvent::State(capture_state) => CaptureStatus {
@@ -221,15 +372,66 @@ fn start_capture(
                         },
                         ..previous
                     },
-                    CaptureEvent::Frame(frame) => CaptureStatus {
-                        state: if previous.state == CaptureState::Waiting {
-                            CaptureState::Waiting
-                        } else {
-                            CaptureState::Capturing
-                        },
-                        peak: frame.peak,
-                        ..previous
-                    },
+                    CaptureEvent::Frame(frame) => {
+                        let peak = frame.peak;
+                        match queue_latest_audio(&audio_sender, &overflow_audio_receiver, frame) {
+                            AudioQueueResult::Queued { dropped } => {
+                                if dropped > 0 {
+                                    inference_dropped = inference_dropped.saturating_add(dropped);
+                                    let should_publish = last_drop_publish
+                                        .is_none_or(|last| last.elapsed() >= Duration::from_secs(1));
+                                    let mut current = status_for_events.lock();
+                                    current.dropped_frames =
+                                        capture_dropped.saturating_add(inference_dropped);
+                                    if should_publish {
+                                        current.message = Some(format!(
+                                            "Transcription fell behind; {inference_dropped} old audio packets were skipped to stay live."
+                                        ));
+                                        let next = current.clone();
+                                        drop(current);
+                                        publish_status(&app_for_events, &status_for_events, next);
+                                        last_drop_publish = Some(Instant::now());
+                                    }
+                                }
+                            }
+                            AudioQueueResult::Disconnected => {
+                                let message = transcription_error_receiver
+                                    .try_recv()
+                                    .unwrap_or_else(|_| {
+                                        "The transcription worker stopped unexpectedly.".into()
+                                    });
+                                publish_status(
+                                    &app_for_events,
+                                    &status_for_events,
+                                    CaptureStatus {
+                                        state: CaptureState::Failed,
+                                        peak: 0.0,
+                                        message: Some(message),
+                                        ..previous
+                                    },
+                                );
+                                break;
+                            }
+                        }
+
+                        if last_peak_publish
+                            .is_some_and(|last| last.elapsed() < Duration::from_millis(50))
+                        {
+                            continue;
+                        }
+                        last_peak_publish = Some(Instant::now());
+                        let current = status_for_events.lock().clone();
+                        CaptureStatus {
+                            state: if current.state == CaptureState::Waiting {
+                                CaptureState::Waiting
+                            } else {
+                                CaptureState::Capturing
+                            },
+                            peak,
+                            dropped_frames: capture_dropped.saturating_add(inference_dropped),
+                            ..current
+                        }
+                    }
                     CaptureEvent::Warning(message) => {
                         tracing::warn!(%message, "capture is waiting to recover");
                         CaptureStatus {
@@ -239,9 +441,10 @@ fn start_capture(
                         }
                     }
                     CaptureEvent::FramesDropped { total } => {
+                        capture_dropped = total;
                         tracing::warn!(total, "audio frames dropped because the pipeline was full");
                         CaptureStatus {
-                            dropped_frames: total,
+                            dropped_frames: capture_dropped.saturating_add(inference_dropped),
                             message: Some(format!(
                                 "Audio processing fell behind; {total} packets were dropped."
                             )),
@@ -260,34 +463,50 @@ fn start_capture(
                 };
                 publish_status(&app_for_events, &status_for_events, next);
             }
-
-            let runtime = app_for_events.state::<RuntimeState>();
-            let _control = runtime.control.lock();
-            if matches!(
-                runtime.status.lock().state,
-                CaptureState::Failed | CaptureState::Stopped
-            ) {
-                drop(runtime.session.lock().take());
-            }
         })
         .map_err(|error| format!("Could not start the capture event forwarder: {error}"));
-    if let Err(error) = forwarder {
-        tracing::error!(%error, "could not start capture event forwarder");
-        if let Some(mut session) = state.session.lock().take() {
-            let _ = session.stop();
+    let forwarder = match forwarder {
+        Ok(forwarder) => forwarder,
+        Err(error) => {
+            let _ = capture.stop();
+            let _ = transcription_worker.join();
+            return Err(publish_capture_failure(
+                &app,
+                &state.status,
+                source_label,
+                error,
+            ));
         }
+    };
+
+    *state.session.lock() = Some(ActiveSession {
+        capture,
+        event_forwarder: Some(forwarder),
+        transcription_worker: Some(transcription_worker),
+    });
+    publish_status(
+        &app,
+        &state.status,
+        CaptureStatus {
+            state: CaptureState::Capturing,
+            peak: 0.0,
+            dropped_frames: 0,
+            source_label,
+            message: None,
+        },
+    );
+    if let Err(error) = show_live_overlay(&app, &state) {
+        tracing::warn!(%error, "could not show live caption overlay");
+        let previous = state.status.lock().clone();
         publish_status(
             &app,
             &state.status,
             CaptureStatus {
-                state: CaptureState::Failed,
-                message: Some(error.clone()),
-                ..CaptureStatus::default()
+                message: Some(error),
+                ..previous
             },
         );
-        return Err(error);
     }
-
     Ok(())
 }
 
@@ -306,17 +525,51 @@ fn stop_capture(app: tauri::AppHandle, state: State<'_, RuntimeState>) -> Result
             state: CaptureState::Stopping,
             peak: 0.0,
             message: None,
-            ..previous
+            ..previous.clone()
         },
     );
 
-    session.stop().map_err(|error| {
-        tracing::error!(%error, "could not stop capture session cleanly");
-        error.to_string()
-    })?;
-    tracing::info!("capture session stopped");
+    if let Err(error) = session.stop() {
+        tracing::error!(%error, "could not stop caption session cleanly");
+        publish_status(
+            &app,
+            &state.status,
+            CaptureStatus {
+                state: CaptureState::Failed,
+                peak: 0.0,
+                message: Some(error.clone()),
+                ..previous
+            },
+        );
+        return Err(error);
+    }
+    if let Some(overlay) = app.get_webview_window("overlay") {
+        let _ = overlay.emit("overlay-caption", "");
+        if let Err(error) = overlay.hide() {
+            tracing::warn!(%error, "could not hide caption overlay");
+        }
+    }
+    tracing::info!("caption session stopped");
     publish_status(&app, &state.status, CaptureStatus::default());
     Ok(())
+}
+
+#[tauri::command]
+fn transcript_snapshot(state: State<'_, RuntimeState>) -> TranscriptSnapshot {
+    state.transcript.lock().snapshot().clone()
+}
+
+#[tauri::command]
+fn clear_transcript(app: tauri::AppHandle, state: State<'_, RuntimeState>) -> Result<(), String> {
+    let snapshot = {
+        let mut transcript = state.transcript.lock();
+        transcript.clear();
+        transcript.snapshot().clone()
+    };
+    app.emit("transcript-update", snapshot)
+        .map_err(|error| error.to_string())?;
+    app.emit("overlay-caption", "")
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -393,6 +646,21 @@ fn configure_overlay_window(
             margin,
         ))
         .map_err(|error| error.to_string())
+}
+
+fn show_live_overlay(app: &tauri::AppHandle, state: &RuntimeState) -> Result<(), String> {
+    let overlay = app
+        .get_webview_window("overlay")
+        .ok_or("Caption overlay is unavailable.")?;
+    let settings = state.overlay_settings.lock().clone();
+    configure_overlay_window(&overlay, &settings)?;
+    overlay
+        .emit("overlay-settings", settings)
+        .map_err(|error| error.to_string())?;
+    overlay
+        .emit("overlay-caption", "")
+        .map_err(|error| error.to_string())?;
+    overlay.show().map_err(|error| error.to_string())
 }
 
 fn anchored_overlay_position(
@@ -479,12 +747,22 @@ fn hide_overlay_preview(app: tauri::AppHandle) -> Result<(), String> {
 pub fn run() {
     tauri::Builder::default()
         .manage(RuntimeState::default())
-        .setup(|app| initialize_logging(app))
+        .setup(|app| {
+            initialize_logging(app)?;
+            let runtime = app.state::<RuntimeState>();
+            models::initialize(app.handle(), &runtime.model);
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             source_snapshot,
             start_capture,
             stop_capture,
             capture_status,
+            transcript_snapshot,
+            clear_transcript,
+            models::model_status,
+            models::install_english_model,
+            models::remove_english_model,
             show_appearance_window,
             update_overlay_settings,
             show_overlay_preview,
@@ -492,6 +770,14 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running Prollyglot");
+}
+
+fn panic_message(panic: Box<dyn std::any::Any + Send>) -> String {
+    panic
+        .downcast_ref::<&str>()
+        .map(|message| (*message).to_owned())
+        .or_else(|| panic.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "unknown panic payload".into())
 }
 
 #[cfg(test)]
@@ -537,5 +823,29 @@ mod tests {
             anchored_overlay_position(OverlayPosition::BottomRight, work_area, overlay, 32),
             PhysicalPosition::new(-792, 728)
         );
+    }
+
+    #[test]
+    fn full_inference_queue_discards_the_oldest_packet() {
+        let (sender, receiver) = crossbeam_channel::bounded(2);
+        let overflow_receiver = receiver.clone();
+        let frame = |sequence| AudioFrame {
+            sequence,
+            source_id: prollyglot_core::SourceId::new("test"),
+            captured_at_micros: sequence,
+            sample_rate: 16_000,
+            samples: vec![0.0],
+            peak: 0.0,
+            discontinuity: false,
+        };
+        sender.try_send(frame(0)).expect("first packet");
+        sender.try_send(frame(1)).expect("second packet");
+
+        assert!(matches!(
+            queue_latest_audio(&sender, &overflow_receiver, frame(2)),
+            AudioQueueResult::Queued { dropped: 1 }
+        ));
+        assert_eq!(receiver.recv().expect("new oldest").sequence, 1);
+        assert_eq!(receiver.recv().expect("newest").sequence, 2);
     }
 }

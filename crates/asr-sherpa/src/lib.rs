@@ -9,6 +9,10 @@ use prollyglot_asr::{
 use sherpa_onnx::{OnlineRecognizer, OnlineRecognizerConfig, OnlineStream};
 
 const ENGINE_ID: &str = "sherpa-onnx-online-transducer";
+const ENDPOINT_RULE_1_TRAILING_SILENCE_SECONDS: f32 = 2.4;
+const ENDPOINT_RULE_2_TRAILING_SILENCE_SECONDS: f32 = 1.2;
+const ENDPOINT_RULE_3_UTTERANCE_SECONDS: f32 = 20.0;
+const STREAM_PREROLL_MILLIS: u32 = 800;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SherpaOnlineConfig {
@@ -79,6 +83,12 @@ impl SpeechEngine for SherpaOnlineEngine {
         config.model_config.provider = Some("cpu".into());
         config.decoding_method = Some("greedy_search".into());
         config.enable_endpoint = true;
+        // The Rust wrapper's numeric defaults are zero, which makes endpoint
+        // detection reset a live stream before it has a useful hypothesis.
+        // Preserve sherpa-onnx's documented endpoint profile explicitly.
+        config.rule1_min_trailing_silence = ENDPOINT_RULE_1_TRAILING_SILENCE_SECONDS;
+        config.rule2_min_trailing_silence = ENDPOINT_RULE_2_TRAILING_SILENCE_SECONDS;
+        config.rule3_min_utterance_length = ENDPOINT_RULE_3_UTTERANCE_SECONDS;
 
         let recognizer = OnlineRecognizer::create(&config).ok_or_else(|| {
             SpeechError::new(
@@ -125,7 +135,7 @@ impl SpeechEngine for SherpaOnlineEngine {
             )
         })?);
         let stream = recognizer.create_stream();
-        Ok(Box::new(SherpaOnlineStream {
+        let speech_stream = SherpaOnlineStream {
             recognizer,
             stream,
             sample_rate: config.sample_rate,
@@ -135,7 +145,9 @@ impl SpeechEngine for SherpaOnlineEngine {
             latest_audio_micros: 0,
             last_partial: String::new(),
             finished: false,
-        }))
+        };
+        speech_stream.prime_stream();
+        Ok(Box::new(speech_stream))
     }
 }
 
@@ -195,6 +207,7 @@ impl SpeechStream for SherpaOnlineStream {
             }
             self.recognizer.reset(&self.stream);
             self.advance_utterance();
+            self.prime_stream();
         }
         Ok(events)
     }
@@ -207,6 +220,7 @@ impl SpeechStream for SherpaOnlineStream {
         let event = self.final_event().into_iter().collect();
         self.stream = self.recognizer.create_stream();
         self.advance_utterance();
+        self.prime_stream();
         Ok(event)
     }
 
@@ -235,6 +249,13 @@ impl SherpaOnlineStream {
         while self.recognizer.is_ready(&self.stream) {
             self.recognizer.decode(&self.stream);
         }
+    }
+
+    fn prime_stream(&self) {
+        let sample_count = self.sample_rate as usize * STREAM_PREROLL_MILLIS as usize / 1_000;
+        self.stream
+            .accept_waveform(self.sample_rate as i32, &vec![0.0; sample_count]);
+        self.decode_ready();
     }
 
     fn current_text(&self) -> String {
@@ -305,6 +326,7 @@ fn path_string(path: &Path) -> Result<String, SpeechError> {
 mod tests {
     use prollyglot_asr::{EngineState, ModelLocation, SpeechEngine, SpeechErrorKind};
     use prollyglot_model_manager::{ModelManager, initial_english_manifest};
+    use sherpa_onnx::Wave;
 
     use super::*;
 
@@ -363,5 +385,76 @@ mod tests {
         assert_eq!(engine.state(), EngineState::Loaded);
         assert!(events.is_empty());
         assert!(final_events.is_empty());
+    }
+
+    #[test]
+    #[ignore = "downloads 45 MB and transcribes the official model reference WAV"]
+    fn transcribes_the_pinned_models_reference_speech() {
+        let wave_path = std::env::var("PROLLYGLOT_TEST_WAV")
+            .expect("set PROLLYGLOT_TEST_WAV to the pinned model repository's test_wavs/0.wav");
+        let wave = Wave::read(&wave_path).expect("read mono reference WAV");
+        assert_eq!(wave.sample_rate(), 16_000, "reference WAV sample rate");
+
+        let directory = tempfile::tempdir().expect("temporary model root");
+        let manager = ModelManager::new(directory.path());
+        let manifest = initial_english_manifest().expect("built-in manifest");
+        let location = manager
+            .install(&manifest, |_| {})
+            .expect("download pinned model");
+        let mut engine = SherpaOnlineEngine::default();
+        engine.load_model(&location).expect("load model");
+        let mut stream = engine
+            .start_stream(SpeechStreamConfig::default())
+            .expect("start stream");
+
+        let mut partial_count = 0_usize;
+        let mut finals = Vec::new();
+        let wave_duration = wave.num_samples() as u64 * 1_000_000 / wave.sample_rate() as u64;
+        for pass in 0..2_u64 {
+            let pass_start = pass * (wave_duration + 500_000);
+            for (chunk_index, samples) in wave.samples().chunks(1_600).enumerate() {
+                let start_micros = pass_start + chunk_index as u64 * 100_000;
+                let end_micros =
+                    start_micros + samples.len() as u64 * 1_000_000 / wave.sample_rate() as u64;
+                for event in stream
+                    .push_audio(SpeechAudio {
+                        start_micros,
+                        end_micros,
+                        sample_rate: wave.sample_rate() as u32,
+                        samples: samples.to_vec(),
+                    })
+                    .expect("stream reference audio")
+                {
+                    match event {
+                        SpeechEvent::Partial(_) => partial_count += 1,
+                        SpeechEvent::Final(result) => finals.push(result.text),
+                    }
+                }
+            }
+            let pass_end = pass_start + wave_duration;
+            let ending_events = if pass == 0 {
+                stream
+                    .end_utterance(pass_end)
+                    .expect("finalize first reference utterance")
+            } else {
+                stream
+                    .finish(pass_end)
+                    .expect("finish second reference utterance")
+            };
+            for event in ending_events {
+                if let SpeechEvent::Final(result) = event {
+                    finals.push(result.text);
+                }
+            }
+        }
+
+        let recognized = finals.join(" ").to_lowercase();
+        assert!(partial_count > 0, "stream should produce incremental text");
+        assert!(
+            recognized.matches("after early nightfall").count() == 2
+                && recognized.contains("yellow lamps")
+                && recognized.contains("squalid quarter"),
+            "unexpected reference transcription: {recognized}"
+        );
     }
 }

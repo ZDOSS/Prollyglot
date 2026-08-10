@@ -37,7 +37,7 @@ Why this direction:
 | Milestone | Integrated outcome | Status |
 | --- | --- | --- |
 | 1. Windows capture foundation | A real Windows desktop shell can enumerate and capture either a selected output device or selected application | Implementation ready; Windows validation required |
-| 2. Live English captions | Captured audio becomes stable partial and final English captions locally | In progress — shared core, verified model management, and sherpa-onnx streaming adapter implemented |
+| 2. Live English captions | Captured audio becomes stable partial and final English captions locally | End-to-end implementation ready; Windows validation and comparative model benchmark required |
 | 3. Minimal customizable Windows app | The complete daily-use interface, overlay customization, transcript view, and controls work together | Pending |
 | 4. Windows MVP release | A reliable installable Windows build is ready for outside testing | Pending |
 | 5. Ubuntu port | The Windows-proven core runs on one supported Ubuntu LTS release through PipeWire | Pending |
@@ -90,6 +90,8 @@ Turn the capture foundation into the first complete product vertical slice: sele
 - Useful errors for silence, unsupported capture, missing models, corrupt downloads, and insufficient memory.
 
 ### Acceptance boundary
+
+Run the end-to-end procedure in [`docs/testing/WINDOWS_MILESTONE_2.md`](docs/testing/WINDOWS_MILESTONE_2.md) on the reference Windows 11 machine and retain the benchmark results.
 
 - A new user can install or download the English model from inside the app and caption real Windows system or application audio without a cloud service.
 - Captions update incrementally, finalized text does not churn, and silence does not trigger continuous inference.

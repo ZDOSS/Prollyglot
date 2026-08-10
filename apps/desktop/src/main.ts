@@ -2,15 +2,28 @@ import "./styles.css";
 
 import {
   captureStatus,
+  clearTranscript,
+  installEnglishModel,
+  modelStatus,
   onCaptureStatus,
+  onModelStatus,
+  onTranscriptUpdate,
+  removeEnglishModel,
   showAppearance,
   sourceSnapshot,
   startCapture,
   stopCapture,
+  transcriptSnapshot,
   windowAction
 } from "./bridge";
 import { icons } from "./icons";
-import type { CaptureSelection, CaptureStatus, SourceSnapshot } from "./types";
+import type {
+  CaptureSelection,
+  CaptureStatus,
+  ModelStatus,
+  SourceSnapshot,
+  TranscriptSnapshot
+} from "./types";
 
 const root = document.querySelector<HTMLElement>("#app");
 if (!root) throw new Error("missing app root");
@@ -31,6 +44,16 @@ root.innerHTML = `
     </header>
 
     <div class="main-content">
+      <section id="model-setup" class="model-setup" aria-labelledby="model-setup-title" hidden>
+        <div class="model-copy">
+          <span class="model-kicker">Local model required</span>
+          <h2 id="model-setup-title">English captions</h2>
+          <p id="model-message">Download the lightweight English model once, then caption offline.</p>
+        </div>
+        <progress id="model-progress" class="model-progress" max="1" value="0" hidden></progress>
+        <button id="model-action" class="secondary-button model-action" type="button">Download model</button>
+      </section>
+
       <div class="field-group">
         <label class="field-label" for="audio-source">Audio source</label>
         <div class="select-wrap">
@@ -100,10 +123,22 @@ const captureToggle = requireElement<HTMLButtonElement>("#capture-toggle");
 const captureMessage = requireElement<HTMLElement>("#capture-message");
 const statusLabel = requireElement<HTMLElement>(".status-label");
 const statusText = requireElement<HTMLElement>("#status-text");
+const modelSetup = requireElement<HTMLElement>("#model-setup");
+const modelMessage = requireElement<HTMLElement>("#model-message");
+const modelProgress = requireElement<HTMLProgressElement>("#model-progress");
+const modelAction = requireElement<HTMLButtonElement>("#model-action");
 const dialog = requireElement<HTMLDialogElement>("#utility-dialog");
 
 let snapshot: SourceSnapshot = { playbackDevices: [], applications: [] };
 let currentStatus: CaptureStatus = { state: "stopped", peak: 0, droppedFrames: 0 };
+let currentModel: ModelStatus = {
+  phase: "notInstalled",
+  modelId: "initial-english",
+  displayName: "English Streaming Small",
+  downloadedBytes: 0,
+  totalBytes: 0
+};
+let currentTranscript: TranscriptSnapshot = { revision: 0, committed: [] };
 const FOLLOW_SYSTEM_DEFAULT = "__follow-system-default__";
 
 function requireElement<T extends Element>(selector: string): T {
@@ -181,8 +216,53 @@ function renderStatus(status: CaptureStatus) {
   captureMessage.textContent = status.message ?? "";
   captureToggle.textContent = status.state === "capturing" || status.state === "waiting" ? "Stop Captions" : "Start Captions";
   captureToggle.classList.toggle("stop", status.state === "capturing" || status.state === "waiting");
-  captureToggle.disabled = status.state === "starting" || status.state === "stopping";
+  updatePrimaryAvailability();
   document.documentElement.style.setProperty("--audio-peak", String(status.peak));
+}
+
+function updatePrimaryAvailability() {
+  const transitioning = currentStatus.state === "starting" || currentStatus.state === "stopping";
+  const running = currentStatus.state === "capturing" || currentStatus.state === "waiting";
+  captureToggle.disabled = transitioning || (!running && currentModel.phase !== "ready");
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes <= 0) return "Unknown size";
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function renderModelStatus(status: ModelStatus) {
+  currentModel = status;
+  const ready = status.phase === "ready";
+  modelSetup.hidden = ready;
+  modelProgress.hidden = status.phase !== "downloading";
+  modelProgress.max = Math.max(status.totalBytes, 1);
+  modelProgress.value = Math.min(status.downloadedBytes, modelProgress.max);
+  modelAction.disabled = status.phase === "downloading";
+
+  if (status.phase === "downloading") {
+    const percent = status.totalBytes > 0
+      ? Math.round((status.downloadedBytes / status.totalBytes) * 100)
+      : 0;
+    modelAction.textContent = `Downloading ${percent}%`;
+    modelMessage.textContent = status.message ?? "Downloading and verifying the model…";
+  } else if (status.phase === "corrupt") {
+    modelAction.textContent = "Repair model";
+    modelMessage.textContent = status.message ?? "The local model needs to be downloaded again.";
+  } else if (status.phase === "failed") {
+    modelAction.textContent = "Retry download";
+    modelMessage.textContent = status.message ?? "The model could not be installed.";
+  } else {
+    modelAction.textContent = `Download · ${formatBytes(status.totalBytes)}`;
+    modelMessage.textContent = "Download the lightweight English model once, then caption offline.";
+  }
+  updatePrimaryAvailability();
+  if (dialog.open && dialog.dataset.panel === "settings") renderSettingsPanel();
+}
+
+function renderTranscript(snapshot: TranscriptSnapshot) {
+  currentTranscript = snapshot;
+  if (dialog.open && dialog.dataset.panel === "transcript") renderTranscriptPanel();
 }
 
 async function refreshSources() {
@@ -194,13 +274,119 @@ async function refreshSources() {
   }
 }
 
+function dialogContent(): HTMLElement {
+  return requireElement<HTMLElement>("#dialog-content");
+}
+
+function formatTimestamp(micros: number): string {
+  const seconds = Math.max(0, Math.floor(micros / 1_000_000));
+  const minutes = Math.floor(seconds / 60);
+  return `${String(minutes).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+function renderTranscriptPanel() {
+  const content = dialogContent();
+  content.replaceChildren();
+
+  const toolbar = document.createElement("div");
+  toolbar.className = "dialog-toolbar";
+  const summary = document.createElement("span");
+  summary.className = "dialog-summary";
+  summary.textContent = `${currentTranscript.committed.length} finalized ${currentTranscript.committed.length === 1 ? "caption" : "captions"}`;
+  const clear = document.createElement("button");
+  clear.type = "button";
+  clear.className = "text-button";
+  clear.textContent = "Clear";
+  clear.disabled = currentTranscript.committed.length === 0 && !currentTranscript.provisional;
+  clear.addEventListener("click", async () => {
+    try {
+      await clearTranscript();
+    } catch (error) {
+      captureMessage.textContent = error instanceof Error ? error.message : String(error);
+    }
+  });
+  toolbar.append(summary, clear);
+  content.append(toolbar);
+
+  if (currentTranscript.committed.length === 0 && !currentTranscript.provisional) {
+    const empty = document.createElement("p");
+    empty.className = "empty-copy";
+    empty.textContent = "Finalized captions from this session will appear here.";
+    content.append(empty);
+    return;
+  }
+
+  const list = document.createElement("ol");
+  list.className = "transcript-list";
+  for (const segment of currentTranscript.committed) {
+    const item = document.createElement("li");
+    item.className = "transcript-segment";
+    const timestamp = document.createElement("time");
+    timestamp.textContent = formatTimestamp(segment.startMicros);
+    const text = document.createElement("span");
+    text.textContent = segment.text;
+    item.append(timestamp, text);
+    list.append(item);
+  }
+  if (currentTranscript.provisional) {
+    const item = document.createElement("li");
+    item.className = "transcript-segment provisional";
+    const timestamp = document.createElement("time");
+    timestamp.textContent = "Live";
+    const text = document.createElement("span");
+    text.textContent = currentTranscript.provisional.text;
+    item.append(timestamp, text);
+    list.append(item);
+  }
+  content.append(list);
+}
+
+function renderSettingsPanel() {
+  const content = dialogContent();
+  content.innerHTML = `
+    <section class="settings-section" aria-labelledby="model-settings-title">
+      <span class="model-kicker">Local speech model</span>
+      <h3 id="model-settings-title"></h3>
+      <p id="model-settings-state" class="settings-copy"></p>
+      <div class="dialog-actions">
+        <button class="secondary-button" id="refresh-sources" type="button">${icons.refresh}<span>Refresh audio sources</span></button>
+        <button class="text-button danger-text" id="remove-model" type="button">Remove model</button>
+      </div>
+    </section>
+  `;
+  requireElement<HTMLElement>("#model-settings-title").textContent = currentModel.displayName;
+  const modelState = requireElement<HTMLElement>("#model-settings-state");
+  modelState.textContent = currentModel.phase === "ready"
+    ? `Installed locally · ${formatBytes(currentModel.totalBytes)}`
+    : currentModel.message ?? "Not installed";
+  requireElement<HTMLButtonElement>("#refresh-sources").addEventListener("click", () => void refreshSources());
+  const remove = requireElement<HTMLButtonElement>("#remove-model");
+  remove.hidden = currentModel.phase !== "ready";
+  remove.addEventListener("click", async () => {
+    try {
+      await removeEnglishModel();
+    } catch (error) {
+      captureMessage.textContent = error instanceof Error ? error.message : String(error);
+    }
+  });
+}
+
 sourceSelect.addEventListener("change", updateSourceMode);
+modelAction.addEventListener("click", async () => {
+  captureMessage.textContent = "";
+  try {
+    await installEnglishModel();
+  } catch (error) {
+    captureMessage.textContent = error instanceof Error ? error.message : String(error);
+  }
+});
 captureToggle.addEventListener("click", async () => {
   captureMessage.textContent = "";
   try {
     if (currentStatus.state === "capturing" || currentStatus.state === "waiting") {
       await stopCapture();
     } else {
+      if (currentModel.phase !== "ready") throw new Error("Install the local English model first.");
       await startCapture(selectedCapture());
     }
   } catch (error) {
@@ -224,14 +410,13 @@ for (const button of document.querySelectorAll<HTMLButtonElement>("[data-window-
 
 for (const button of document.querySelectorAll<HTMLButtonElement>("[data-panel]")) {
   button.addEventListener("click", () => {
-    const title = button.dataset.panel === "transcript" ? "Transcript" : "Settings";
+    const panel = button.dataset.panel === "transcript" ? "transcript" : "settings";
+    const title = panel === "transcript" ? "Transcript" : "Settings";
+    dialog.dataset.panel = panel;
     requireElement<HTMLElement>("#dialog-title").textContent = title;
-    requireElement<HTMLElement>("#dialog-content").innerHTML =
-      title === "Transcript"
-        ? '<p class="empty-copy">Committed captions will appear here when transcription is connected.</p>'
-        : `<button class="secondary-button" id="refresh-sources" type="button">${icons.refresh}<span>Refresh audio sources</span></button>`;
+    if (panel === "transcript") renderTranscriptPanel();
+    else renderSettingsPanel();
     dialog.showModal();
-    document.querySelector<HTMLButtonElement>("#refresh-sources")?.addEventListener("click", () => void refreshSources());
   });
 }
 
@@ -240,4 +425,12 @@ dialog.addEventListener("click", (event) => {
   if (event.target === dialog) dialog.close();
 });
 
-void Promise.all([refreshSources(), captureStatus().then(renderStatus), onCaptureStatus(renderStatus)]);
+void Promise.all([
+  refreshSources(),
+  captureStatus().then(renderStatus),
+  modelStatus().then(renderModelStatus),
+  transcriptSnapshot().then(renderTranscript),
+  onCaptureStatus(renderStatus),
+  onModelStatus(renderModelStatus),
+  onTranscriptUpdate(renderTranscript)
+]);

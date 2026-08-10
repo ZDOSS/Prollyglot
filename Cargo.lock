@@ -2629,8 +2629,13 @@ version = "0.1.0"
 dependencies = [
  "crossbeam-channel",
  "parking_lot",
+ "prollyglot-asr",
+ "prollyglot-asr-sherpa",
+ "prollyglot-audio-pipeline",
  "prollyglot-audio-windows",
  "prollyglot-core",
+ "prollyglot-model-manager",
+ "prollyglot-transcript",
  "serde",
  "tauri",
  "tauri-build",

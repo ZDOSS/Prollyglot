@@ -96,7 +96,12 @@ pub fn normalize_interleaved(
                 let sample_start = frame_start + channel * format.sample_format.bytes_per_sample();
                 sum += decode_sample(format.sample_format, &bytes[sample_start..]);
             }
-            *output = (sum / f32::from(format.channels)).clamp(-1.0, 1.0);
+            let mixed = sum / f32::from(format.channels);
+            *output = if mixed.is_finite() {
+                mixed.clamp(-1.0, 1.0)
+            } else {
+                0.0
+            };
         }
     }
 
@@ -209,6 +214,26 @@ mod tests {
         .expect("valid frame");
 
         assert_eq!(frame.samples, vec![0.0]);
+        assert_eq!(frame.peak, 0.0);
+    }
+
+    #[test]
+    fn replaces_non_finite_float_samples_with_silence() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&f32::NAN.to_le_bytes());
+        bytes.extend_from_slice(&f32::INFINITY.to_le_bytes());
+        let frame = normalize_interleaved(
+            0,
+            SourceId::new("device"),
+            0,
+            format(SampleFormat::F32, 1),
+            &bytes,
+            false,
+            false,
+        )
+        .expect("native float buffers remain usable");
+
+        assert_eq!(frame.samples, vec![0.0, 0.0]);
         assert_eq!(frame.peak, 0.0);
     }
 

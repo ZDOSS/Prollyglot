@@ -39,6 +39,32 @@ export interface CaptureStatus {
   message?: string;
 }
 
+export type ModelPhase = "notInstalled" | "downloading" | "ready" | "corrupt" | "failed";
+
+export interface ModelStatus {
+  phase: ModelPhase;
+  modelId: string;
+  displayName: string;
+  downloadedBytes: number;
+  totalBytes: number;
+  message?: string;
+}
+
+export interface TranscriptSegment {
+  utteranceId: number;
+  startMicros: number;
+  endMicros: number;
+  sourceLanguage: string;
+  text: string;
+  isFinal: boolean;
+}
+
+export interface TranscriptSnapshot {
+  revision: number;
+  provisional?: TranscriptSegment;
+  committed: TranscriptSegment[];
+}
+
 export interface OverlaySettings {
   fontFamily: string;
   fontSize: number;

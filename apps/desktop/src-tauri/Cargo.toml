@@ -16,8 +16,13 @@ tauri-build = { version = "2.6.3", features = [] }
 [dependencies]
 crossbeam-channel.workspace = true
 parking_lot.workspace = true
+prollyglot-asr = { path = "../../../crates/asr" }
+prollyglot-asr-sherpa = { path = "../../../crates/asr-sherpa" }
+prollyglot-audio-pipeline = { path = "../../../crates/audio-pipeline" }
 prollyglot-audio-windows = { path = "../../../crates/audio-windows" }
 prollyglot-core = { path = "../../../crates/prollyglot-core" }
+prollyglot-model-manager = { path = "../../../crates/model-manager" }
+prollyglot-transcript = { path = "../../../crates/transcript" }
 serde.workspace = true
 tauri.workspace = true
 tracing.workspace = true

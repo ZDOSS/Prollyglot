@@ -9,7 +9,7 @@
 Prollyglot is a free and open-source desktop utility that captures audio from a selected playback device or application and turns it into live subtitles locally. It is designed for games, calls, browsers, media players, and other software that has missing, limited, or inaccessible captions.
 
 > [!IMPORTANT]
-> Prollyglot is in active pre-release development. There is not yet a supported binary release. Windows 11 is the primary target; the first end-to-end English caption build is currently being assembled and still needs validation on real Windows hardware.
+> Prollyglot is in active pre-release development. There is not yet a supported binary release. Windows 11 is the primary target; the first end-to-end English caption implementation is in the repository but still needs validation on real Windows hardware.
 
 ## What it is building toward
 
@@ -30,10 +30,12 @@ The repository currently contains:
 - follow-default-device behavior, endpoint reconnection, bounded capture queues, and local diagnostic logging;
 - mono PCM normalization, streaming resampling to model rate, bounded low-latency buffering, energy VAD, and phrase boundaries;
 - backend-neutral streaming ASR and stable provisional/final transcript contracts;
-- an explicit model manager with atomic downloads, safe path validation, size/SHA-256 verification, and a pinned Apache-2.0 English streaming-model candidate; and
-- a sherpa-onnx adapter that loads the pinned model and exposes incremental and finalized English hypotheses through the shared speech contract.
+- an explicit first-run model flow with atomic downloads, safe path validation, size/SHA-256 verification, removal, and a pinned Apache-2.0 English streaming-model candidate;
+- a sherpa-onnx adapter that loads the pinned model, preserves phrase openings with internal stream pre-roll, and exposes incremental and finalized English hypotheses;
+- a bounded capture-to-inference bridge with visible backpressure and recovery behavior; and
+- live provisional/final transcript updates wired to the transcript view and customizable always-on-top overlay.
 
-The next integration point connects captured Windows audio to that runtime, the transcript store, and the live overlay. See [BUILD_PLAN.md](BUILD_PLAN.md) for the milestone status and acceptance gates.
+The remaining Milestone 2 gates are real Windows audio/overlay validation, partial-caption latency measurement, and the small-versus-standard model benchmark. See [BUILD_PLAN.md](BUILD_PLAN.md) for milestone status and [the Windows Milestone 2 procedure](docs/testing/WINDOWS_MILESTONE_2.md) for the validation run.
 
 ## Capture compatibility and protected media
 
@@ -72,7 +74,7 @@ On a non-Windows development host, the shared core, frontend, and Windows cross-
 ./scripts/check-local.sh
 ```
 
-Physical WASAPI routing, process isolation, device switching, and overlay layering still require the manual Windows procedure in [docs/testing/WINDOWS_MILESTONE_1.md](docs/testing/WINDOWS_MILESTONE_1.md).
+Physical WASAPI routing, process isolation, device switching, overlay layering, and end-to-end caption latency still require the manual Windows procedures for [Milestone 1](docs/testing/WINDOWS_MILESTONE_1.md) and [Milestone 2](docs/testing/WINDOWS_MILESTONE_2.md).
 
 ## Repository map
 

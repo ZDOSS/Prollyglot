@@ -51,7 +51,10 @@ impl TranscriptStore {
     }
 
     pub fn clear(&mut self) -> TranscriptMutation {
-        if self.snapshot.provisional.is_none() && self.snapshot.committed.is_empty() {
+        if self.snapshot.provisional.is_none()
+            && self.snapshot.committed.is_empty()
+            && self.finalized_utterances.is_empty()
+        {
             return TranscriptMutation::Unchanged;
         }
         self.snapshot.provisional = None;
@@ -187,5 +190,18 @@ mod tests {
 
         assert!(store.snapshot().provisional.is_none());
         assert!(store.snapshot().committed.is_empty());
+    }
+
+    #[test]
+    fn clearing_an_empty_final_resets_utterance_identity_for_the_next_session() {
+        let mut store = TranscriptStore::default();
+        store.apply(SpeechEvent::Final(hypothesis(0, "", 200)));
+
+        assert_eq!(store.clear(), TranscriptMutation::Cleared);
+        assert_eq!(
+            store.apply(SpeechEvent::Final(hypothesis(0, "new session", 300))),
+            TranscriptMutation::SegmentCommitted
+        );
+        assert_eq!(store.snapshot().committed[0].text, "new session");
     }
 }
