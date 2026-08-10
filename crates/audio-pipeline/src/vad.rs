@@ -8,9 +8,14 @@ pub struct VoiceActivityConfig {
 impl Default for VoiceActivityConfig {
     fn default() -> Self {
         Self {
-            rms_threshold: 0.01,
+            // Desktop PCM is already clean and can contain quiet dialogue.
+            // Err toward recall here; the recognizer still decides whether
+            // the admitted signal contains speech.
+            rms_threshold: 0.003,
             attack_chunks: 1,
-            release_chunks: 4,
+            // With the default 100 ms pipeline chunk this keeps 600 ms of
+            // trailing context instead of cutting at the first short pause.
+            release_chunks: 6,
         }
     }
 }
@@ -113,5 +118,16 @@ mod tests {
         assert_eq!(detector.observe(&[0.0; 8]).0, VoiceActivity::Speech);
         assert_eq!(detector.observe(&[0.0; 8]).0, VoiceActivity::Ended);
         assert_eq!(detector.observe(&[0.0; 8]).0, VoiceActivity::Silence);
+    }
+
+    #[test]
+    fn defaults_admit_quiet_digital_speech_and_keep_trailing_context() {
+        let mut detector = EnergyVoiceDetector::new(VoiceActivityConfig::default());
+
+        assert_eq!(detector.observe(&[0.004; 8]).0, VoiceActivity::Started);
+        for _ in 0..5 {
+            assert_eq!(detector.observe(&[0.0; 8]).0, VoiceActivity::Speech);
+        }
+        assert_eq!(detector.observe(&[0.0; 8]).0, VoiceActivity::Ended);
     }
 }

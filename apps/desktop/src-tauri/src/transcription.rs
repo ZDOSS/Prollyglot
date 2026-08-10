@@ -7,14 +7,19 @@ use crossbeam_channel::{Receiver, RecvTimeoutError, Sender};
 use parking_lot::Mutex;
 use prollyglot_asr::{SpeechAudio, SpeechEngine, SpeechEvent, SpeechStream, SpeechStreamConfig};
 use prollyglot_asr_sherpa::SherpaOnlineEngine;
-use prollyglot_audio_pipeline::{AudioPipeline, AudioPipelineConfig, VoiceActivity};
+use prollyglot_audio_pipeline::{AudioPipeline, AudioPipelineConfig, SpeechChunkRouter};
 use prollyglot_core::AudioFrame;
 use prollyglot_model_manager::{ModelManager, initial_english_manifest};
-use prollyglot_transcript::{TranscriptMutation, TranscriptStore};
+use prollyglot_transcript::{
+    TranscriptMutation, TranscriptSnapshot, TranscriptStore, recent_caption_lines,
+};
 use tauri::{AppHandle, Emitter};
 
-const CAPTION_HOLD_DURATION: Duration = Duration::from_secs(3);
+const CAPTION_HOLD_DURATION: Duration = Duration::from_secs(6);
 const WORKER_POLL_INTERVAL: Duration = Duration::from_millis(100);
+const SPEECH_PREROLL_CHUNKS: usize = 3;
+const MAX_OVERLAY_SEGMENTS: usize = 4;
+const OVERLAY_CONTEXT_GAP_MICROS: u64 = 2_000_000;
 
 pub fn prepare_stream(models_root: std::path::PathBuf) -> Result<Box<dyn SpeechStream>, String> {
     let manifest = initial_english_manifest().map_err(|error| error.to_string())?;
@@ -54,6 +59,7 @@ fn run_inner(
         AudioPipeline::new(AudioPipelineConfig::default()).map_err(|error| error.to_string())?;
     let mut latest_audio_micros = 0_u64;
     let mut clear_caption_at = None::<Instant>;
+    let mut speech_router = SpeechChunkRouter::new(SPEECH_PREROLL_CHUNKS);
 
     loop {
         match audio.recv_timeout(WORKER_POLL_INTERVAL) {
@@ -65,6 +71,7 @@ fn run_inner(
                     .push_frame(frame)
                     .map_err(|error| error.to_string())?;
                 if report.stream_reset {
+                    speech_router.reset();
                     let events = stream
                         .end_utterance(frame_start)
                         .map_err(|error| error.to_string())?;
@@ -80,35 +87,30 @@ fn run_inner(
 
                 while let Some(chunk) = pipeline.next_chunk() {
                     latest_audio_micros = latest_audio_micros.max(chunk.end_micros);
-                    let events = match chunk.voice_activity {
-                        VoiceActivity::Silence => continue,
-                        VoiceActivity::Started => {
-                            clear_overlay_caption(app);
-                            clear_caption_at = None;
-                            stream.push_audio(SpeechAudio {
+                    let end_micros = chunk.end_micros;
+                    let routed = speech_router.route(chunk);
+                    for chunk in routed.chunks {
+                        let events = stream
+                            .push_audio(SpeechAudio {
                                 start_micros: chunk.start_micros,
                                 end_micros: chunk.end_micros,
                                 sample_rate: chunk.sample_rate,
                                 samples: chunk.samples,
                             })
-                        }
-                        VoiceActivity::Speech => stream.push_audio(SpeechAudio {
-                            start_micros: chunk.start_micros,
-                            end_micros: chunk.end_micros,
-                            sample_rate: chunk.sample_rate,
-                            samples: chunk.samples,
-                        }),
-                        VoiceActivity::Ended => stream.end_utterance(chunk.end_micros),
+                            .map_err(|error| error.to_string())?;
+                        update_transcript(app, transcript, events, &mut clear_caption_at);
                     }
-                    .map_err(|error| error.to_string())?;
-                    update_transcript(app, transcript, events, &mut clear_caption_at);
+                    if routed.end_utterance {
+                        let events = stream
+                            .end_utterance(end_micros)
+                            .map_err(|error| error.to_string())?;
+                        update_transcript(app, transcript, events, &mut clear_caption_at);
+                    }
                 }
+                clear_expired_caption(app, &mut clear_caption_at);
             }
             Err(RecvTimeoutError::Timeout) => {
-                if clear_caption_at.is_some_and(|deadline| Instant::now() >= deadline) {
-                    clear_overlay_caption(app);
-                    clear_caption_at = None;
-                }
+                clear_expired_caption(app, &mut clear_caption_at);
             }
             Err(RecvTimeoutError::Disconnected) => break,
         }
@@ -134,12 +136,7 @@ fn update_transcript(
             continue;
         }
         let snapshot = store.snapshot().clone();
-        let caption = snapshot
-            .provisional
-            .as_ref()
-            .or_else(|| snapshot.committed.last())
-            .map(|segment| segment.text.clone())
-            .unwrap_or_default();
+        let caption = overlay_caption(&snapshot);
         drop(store);
 
         if let Err(error) = app.emit("transcript-update", snapshot) {
@@ -149,6 +146,17 @@ fn update_transcript(
             tracing::warn!(%error, "could not emit live overlay caption");
         }
         *clear_caption_at = is_final.then(|| Instant::now() + CAPTION_HOLD_DURATION);
+    }
+}
+
+pub(crate) fn overlay_caption(snapshot: &TranscriptSnapshot) -> String {
+    recent_caption_lines(snapshot, MAX_OVERLAY_SEGMENTS, OVERLAY_CONTEXT_GAP_MICROS).join("\n")
+}
+
+fn clear_expired_caption(app: &AppHandle, clear_caption_at: &mut Option<Instant>) {
+    if clear_caption_at.is_some_and(|deadline| Instant::now() >= deadline) {
+        clear_overlay_caption(app);
+        *clear_caption_at = None;
     }
 }
 

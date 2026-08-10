@@ -823,7 +823,7 @@ input[type="range"]::-moz-range-thumb {
   max-width: 78%;
   overflow: hidden;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: var(--maximum-lines, 2);
+  -webkit-line-clamp: var(--maximum-lines, 3);
   border-radius: var(--radius-md);
   padding: 12px 18px;
   background: rgb(11 15 18 / 75%);
@@ -916,12 +916,22 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .caption-text {
-  display: -webkit-box;
+  display: flex;
+  max-height: calc(var(--maximum-lines, 3) * 1.25em);
   width: 100%;
+  flex-direction: column;
+  justify-content: flex-end;
   overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: var(--maximum-lines, 2);
+}
+
+.caption-line {
+  display: block;
+  flex: 0 0 auto;
   overflow-wrap: anywhere;
+}
+
+.caption-line:not(:last-child) {
+  opacity: 0.72;
 }
 
 .caption-surface[data-click-through="false"] {

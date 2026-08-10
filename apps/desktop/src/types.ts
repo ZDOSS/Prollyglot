@@ -82,7 +82,7 @@ export const DEFAULT_OVERLAY_SETTINGS: OverlaySettings = {
   textColor: "#f4f6f5",
   backgroundOpacity: 0.75,
   width: 720,
-  maximumLines: 2,
+  maximumLines: 3,
   position: "bottomCenter",
   clickThrough: true
 };

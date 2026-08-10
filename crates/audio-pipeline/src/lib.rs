@@ -3,6 +3,7 @@
 mod buffer;
 mod pipeline;
 mod resampler;
+mod speech_window;
 mod vad;
 
 pub use buffer::{BoundedSampleBuffer, BufferPushReport, BufferedAudioChunk};
@@ -10,6 +11,7 @@ pub use pipeline::{
     AudioPipeline, AudioPipelineConfig, AudioPipelineError, PipelinePushReport, ProcessedAudioChunk,
 };
 pub use resampler::{ResamplerError, StreamingResampler};
+pub use speech_window::{RoutedSpeechChunks, SpeechChunkRouter};
 pub use vad::{EnergyVoiceDetector, VoiceActivity, VoiceActivityConfig};
 
 use std::time::Duration;

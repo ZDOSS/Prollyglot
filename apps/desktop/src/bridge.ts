@@ -226,9 +226,6 @@ export async function onCaptureStatus(
 export async function showAppearance(): Promise<void> {
   if (isTauri()) {
     await invoke("show_appearance_window");
-    await invoke("show_overlay_preview", {
-      caption: "We should be there in about ten minutes."
-    });
   } else {
     window.location.href = "/appearance.html";
   }
@@ -236,7 +233,7 @@ export async function showAppearance(): Promise<void> {
 
 export async function closeAppearance(): Promise<void> {
   if (isTauri()) {
-    await getCurrentWindow().hide();
+    await invoke("close_appearance_window");
   } else {
     window.location.href = "/";
   }
@@ -245,14 +242,6 @@ export async function closeAppearance(): Promise<void> {
 export async function updateOverlaySettings(settings: OverlaySettings): Promise<void> {
   localStorage.setItem("prollyglot.overlay", JSON.stringify(settings));
   if (isTauri()) await invoke("update_overlay_settings", { settings });
-}
-
-export async function showOverlayPreview(caption: string): Promise<void> {
-  if (isTauri()) await invoke("show_overlay_preview", { caption });
-}
-
-export async function hideOverlayPreview(): Promise<void> {
-  if (isTauri()) await invoke("hide_overlay_preview");
 }
 
 export async function windowAction(action: "minimize" | "maximize" | "close"): Promise<void> {

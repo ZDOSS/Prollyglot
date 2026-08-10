@@ -125,7 +125,7 @@ impl Default for OverlaySettings {
             text_color: "#f4f6f5".into(),
             background_opacity: 0.75,
             width: 720,
-            maximum_lines: 2,
+            maximum_lines: 3,
             position: OverlayPosition::BottomCenter,
             click_through: true,
         }
@@ -574,11 +574,53 @@ fn clear_transcript(app: tauri::AppHandle, state: State<'_, RuntimeState>) -> Re
 
 #[tauri::command]
 fn show_appearance_window(app: tauri::AppHandle) -> Result<(), String> {
+    // The caption overlay is an always-on-top window. Hide it while the
+    // Appearance surface is open so a large non-click-through overlay cannot
+    // cover the controls and trap the user in this window.
+    if let Some(overlay) = app.get_webview_window("overlay") {
+        if let Err(error) = overlay.set_ignore_cursor_events(true) {
+            tracing::warn!(%error, "could not make the overlay ignore input before Appearance");
+        }
+        if let Err(error) = overlay.hide() {
+            tracing::warn!(%error, "could not hide the overlay before Appearance");
+        }
+    }
     let window = app
         .get_webview_window("appearance")
         .ok_or("Appearance window is unavailable.")?;
     window.show().map_err(|error| error.to_string())?;
     window.set_focus().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn close_appearance_window(
+    app: tauri::AppHandle,
+    state: State<'_, RuntimeState>,
+) -> Result<(), String> {
+    // Dismiss Appearance first. Any overlay restoration failure should be
+    // reported, but it must never leave the settings window trapping input.
+    let appearance = app
+        .get_webview_window("appearance")
+        .ok_or("Appearance window is unavailable.")?;
+    appearance.hide().map_err(|error| error.to_string())?;
+
+    let captions_are_running = matches!(
+        state.status.lock().state,
+        CaptureState::Starting | CaptureState::Capturing | CaptureState::Waiting
+    );
+    if captions_are_running {
+        if let Err(error) = restore_live_overlay(&app, &state) {
+            tracing::warn!(%error, "Appearance closed but the live overlay could not be restored");
+        }
+    } else if let Some(overlay) = app.get_webview_window("overlay") {
+        if let Err(error) = overlay.emit("overlay-caption", "") {
+            tracing::warn!(%error, "could not clear overlay after closing Appearance");
+        }
+        if let Err(error) = overlay.hide() {
+            tracing::warn!(%error, "could not hide overlay after closing Appearance");
+        }
+    }
+    Ok(())
 }
 
 fn validated_settings(settings: OverlaySettings) -> Result<OverlaySettings, String> {
@@ -649,6 +691,19 @@ fn configure_overlay_window(
 }
 
 fn show_live_overlay(app: &tauri::AppHandle, state: &RuntimeState) -> Result<(), String> {
+    show_overlay_with_caption(app, state, String::new())
+}
+
+fn restore_live_overlay(app: &tauri::AppHandle, state: &RuntimeState) -> Result<(), String> {
+    let caption = transcription::overlay_caption(state.transcript.lock().snapshot());
+    show_overlay_with_caption(app, state, caption)
+}
+
+fn show_overlay_with_caption(
+    app: &tauri::AppHandle,
+    state: &RuntimeState,
+    caption: String,
+) -> Result<(), String> {
     let overlay = app
         .get_webview_window("overlay")
         .ok_or("Caption overlay is unavailable.")?;
@@ -658,7 +713,7 @@ fn show_live_overlay(app: &tauri::AppHandle, state: &RuntimeState) -> Result<(),
         .emit("overlay-settings", settings)
         .map_err(|error| error.to_string())?;
     overlay
-        .emit("overlay-caption", "")
+        .emit("overlay-caption", caption)
         .map_err(|error| error.to_string())?;
     overlay.show().map_err(|error| error.to_string())
 }
@@ -715,34 +770,6 @@ fn update_overlay_settings(
     Ok(())
 }
 
-#[tauri::command]
-fn show_overlay_preview(
-    app: tauri::AppHandle,
-    state: State<'_, RuntimeState>,
-    caption: String,
-) -> Result<(), String> {
-    let overlay = app
-        .get_webview_window("overlay")
-        .ok_or("Caption overlay is unavailable.")?;
-    let settings = state.overlay_settings.lock().clone();
-    configure_overlay_window(&overlay, &settings)?;
-    overlay
-        .emit("overlay-settings", settings)
-        .map_err(|error| error.to_string())?;
-    overlay
-        .emit("overlay-caption", caption)
-        .map_err(|error| error.to_string())?;
-    overlay.show().map_err(|error| error.to_string())
-}
-
-#[tauri::command]
-fn hide_overlay_preview(app: tauri::AppHandle) -> Result<(), String> {
-    let overlay = app
-        .get_webview_window("overlay")
-        .ok_or("Caption overlay is unavailable.")?;
-    overlay.hide().map_err(|error| error.to_string())
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -764,9 +791,8 @@ pub fn run() {
             models::install_english_model,
             models::remove_english_model,
             show_appearance_window,
+            close_appearance_window,
             update_overlay_settings,
-            show_overlay_preview,
-            hide_overlay_preview,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Prollyglot");

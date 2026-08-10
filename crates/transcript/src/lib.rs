@@ -38,6 +38,52 @@ pub struct TranscriptStore {
     finalized_utterances: HashSet<u64>,
 }
 
+/// Returns a bounded run of recent utterances for the live caption overlay.
+///
+/// Finalized utterances remain separate so the UI can give pause-based turns
+/// their own visual lines. A long gap starts a new run rather than resurrecting
+/// stale captions when speech resumes.
+pub fn recent_caption_lines(
+    snapshot: &TranscriptSnapshot,
+    max_segments: usize,
+    max_gap_micros: u64,
+) -> Vec<String> {
+    if max_segments == 0 {
+        return Vec::new();
+    }
+
+    let mut recent = Vec::<&TranscriptSegment>::with_capacity(max_segments);
+    let mut next_start = None;
+
+    if let Some(provisional) = snapshot
+        .provisional
+        .as_ref()
+        .filter(|segment| !segment.text.is_empty())
+    {
+        recent.push(provisional);
+        next_start = Some(provisional.start_micros);
+    }
+
+    for committed in snapshot.committed.iter().rev() {
+        if recent.len() >= max_segments {
+            break;
+        }
+        if let Some(start) = next_start
+            && start.saturating_sub(committed.end_micros) > max_gap_micros
+        {
+            break;
+        }
+        recent.push(committed);
+        next_start = Some(committed.start_micros);
+    }
+
+    recent.reverse();
+    recent
+        .into_iter()
+        .map(|segment| segment.text.clone())
+        .collect()
+}
+
 impl TranscriptStore {
     pub fn snapshot(&self) -> &TranscriptSnapshot {
         &self.snapshot
@@ -203,5 +249,76 @@ mod tests {
             TranscriptMutation::SegmentCommitted
         );
         assert_eq!(store.snapshot().committed[0].text, "new session");
+    }
+
+    #[test]
+    fn recent_caption_lines_keep_pause_bounded_turns_separate() {
+        let snapshot = TranscriptSnapshot {
+            revision: 4,
+            committed: vec![
+                TranscriptSegment {
+                    utterance_id: 1,
+                    start_micros: 0,
+                    end_micros: 1_000_000,
+                    source_language: "en".into(),
+                    text: "Are you going?".into(),
+                    is_final: true,
+                },
+                TranscriptSegment {
+                    utterance_id: 2,
+                    start_micros: 1_300_000,
+                    end_micros: 2_000_000,
+                    source_language: "en".into(),
+                    text: "Yeah, probably.".into(),
+                    is_final: true,
+                },
+            ],
+            provisional: Some(TranscriptSegment {
+                utterance_id: 3,
+                start_micros: 2_200_000,
+                end_micros: 2_600_000,
+                source_language: "en".into(),
+                text: "Okay".into(),
+                is_final: false,
+            }),
+        };
+
+        assert_eq!(
+            recent_caption_lines(&snapshot, 3, 2_000_000),
+            vec!["Are you going?", "Yeah, probably.", "Okay"]
+        );
+        assert_eq!(
+            recent_caption_lines(&snapshot, 2, 2_000_000),
+            vec!["Yeah, probably.", "Okay"]
+        );
+    }
+
+    #[test]
+    fn recent_caption_lines_do_not_restore_stale_context() {
+        let snapshot = TranscriptSnapshot {
+            revision: 2,
+            committed: vec![TranscriptSegment {
+                utterance_id: 1,
+                start_micros: 0,
+                end_micros: 1_000_000,
+                source_language: "en".into(),
+                text: "Old caption".into(),
+                is_final: true,
+            }],
+            provisional: Some(TranscriptSegment {
+                utterance_id: 2,
+                start_micros: 5_000_000,
+                end_micros: 5_300_000,
+                source_language: "en".into(),
+                text: "New caption".into(),
+                is_final: false,
+            }),
+        };
+
+        assert_eq!(
+            recent_caption_lines(&snapshot, 4, 2_000_000),
+            vec!["New caption"]
+        );
+        assert!(recent_caption_lines(&snapshot, 0, 2_000_000).is_empty());
     }
 }

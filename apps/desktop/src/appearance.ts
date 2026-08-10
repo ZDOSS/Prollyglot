@@ -2,7 +2,6 @@ import "./styles.css";
 
 import {
   closeAppearance,
-  hideOverlayPreview,
   updateOverlaySettings,
   windowAction
 } from "./bridge";
@@ -82,6 +81,7 @@ root.innerHTML = `
               <option value="1">1</option>
               <option value="2">2</option>
               <option value="3">3</option>
+              <option value="4">4</option>
             </select>${icons.chevronDown}
           </span>
         </label>
@@ -182,11 +182,40 @@ for (const control of document.querySelectorAll<HTMLInputElement | HTMLSelectEle
   control.addEventListener("input", () => renderPreview(readSettings()));
 }
 
+let dismissing = false;
+
+async function dismissAppearance() {
+  if (dismissing) return;
+  dismissing = true;
+  const dismissButtons = document.querySelectorAll<HTMLButtonElement>("#done-appearance, [data-window-action='close']");
+  for (const button of dismissButtons) {
+    button.disabled = true;
+  }
+
+  try {
+    await updateOverlaySettings(readSettings());
+  } catch (error) {
+    console.error("Could not save caption appearance before closing.", error);
+  }
+
+  try {
+    await closeAppearance();
+  } catch (error) {
+    console.error("Could not hide Appearance; closing the window instead.", error);
+    await windowAction("close");
+  } finally {
+    dismissing = false;
+    for (const button of dismissButtons) {
+      button.disabled = false;
+    }
+  }
+}
+
 for (const button of document.querySelectorAll<HTMLButtonElement>("[data-window-action]")) {
   button.addEventListener("click", () => {
     const action = button.dataset.windowAction;
     if (action === "close") {
-      void hideOverlayPreview().then(closeAppearance);
+      void dismissAppearance();
     } else if (action === "minimize" || action === "maximize") {
       void windowAction(action);
     }
@@ -194,10 +223,9 @@ for (const button of document.querySelectorAll<HTMLButtonElement>("[data-window-
 }
 
 requireElement<HTMLButtonElement>("#reset-appearance").addEventListener("click", () => writeSettings({ ...DEFAULT_OVERLAY_SETTINGS }));
-requireElement<HTMLButtonElement>("#done-appearance").addEventListener("click", async () => {
-  await updateOverlaySettings(readSettings());
-  await hideOverlayPreview();
-  await closeAppearance();
+requireElement<HTMLButtonElement>("#done-appearance").addEventListener("click", () => void dismissAppearance());
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") void dismissAppearance();
 });
 
 writeSettings(readStoredSettings());

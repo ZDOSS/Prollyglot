@@ -24,9 +24,19 @@ const surface = requireElement<HTMLElement>("#caption-surface");
 const captionText = requireElement<HTMLElement>("#caption-text");
 
 function renderCaption(caption: string) {
-  const nextCaption = caption.trim();
-  captionText.textContent = nextCaption;
-  surface.hidden = nextCaption.length === 0;
+  const lines = caption
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  captionText.replaceChildren(
+    ...lines.map((line) => {
+      const element = document.createElement("span");
+      element.className = "caption-line";
+      element.textContent = line;
+      return element;
+    })
+  );
+  surface.hidden = lines.length === 0;
 }
 
 function applySettings(settings: OverlaySettings) {
