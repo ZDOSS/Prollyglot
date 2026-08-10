@@ -3,11 +3,13 @@ import "./styles.css";
 import {
   captureStatus,
   clearTranscript,
+  isTauri,
   installSpeechModel,
   modelStatus,
   onCaptureStatus,
   onModelStatus,
   onTranscriptUpdate,
+  reportFrontendDiagnostic,
   removeSpeechModel,
   selectSpeechModel,
   showAppearance,
@@ -15,16 +17,23 @@ import {
   startCapture,
   stopCapture,
   transcriptSnapshot,
+  updateCaptionOutput,
   windowAction
 } from "./bridge";
+import { CaptionOutputController, supportedSourceLanguage } from "./caption-output";
 import { icons } from "./icons";
+import { TranslationService } from "./translation";
 import type {
+  CaptionOutputMode,
   CaptureSelection,
   CaptureStatus,
   ModelCatalogStatus,
   ModelStatus,
   SourceSnapshot,
-  TranscriptSnapshot
+  TranscriptSegment,
+  TranscriptSnapshot,
+  TranslationCatalogStatus,
+  TranslationModelStatus
 } from "./types";
 
 const root = document.querySelector<HTMLElement>("#app");
@@ -54,6 +63,16 @@ root.innerHTML = `
         </div>
         <progress id="model-progress" class="model-progress" max="1" value="0" hidden></progress>
         <button id="model-action" class="secondary-button model-action" type="button">Download model</button>
+      </section>
+
+      <section id="translation-setup" class="model-setup translation-setup" aria-labelledby="translation-setup-title" hidden>
+        <div class="model-copy">
+          <span class="model-kicker">Optional local translation</span>
+          <h2 id="translation-setup-title">English captions</h2>
+          <p id="translation-message">Download the English translator once, then translate offline.</p>
+        </div>
+        <progress id="translation-progress" class="model-progress" max="1" value="0" hidden></progress>
+        <button id="translation-action" class="secondary-button model-action" type="button">Download translator</button>
       </section>
 
       <div class="field-group">
@@ -93,12 +112,12 @@ root.innerHTML = `
         <div class="field-group">
           <label class="field-label" for="caption-language">Captions</label>
           <div class="select-wrap">
-            <select id="caption-language" class="select-control" disabled aria-describedby="caption-language-help">
+            <select id="caption-language" class="select-control" aria-describedby="caption-language-help">
               <option value="original">Original language</option>
             </select>
             ${icons.chevronDown}
           </div>
-          <span id="caption-language-help" class="sr-only">Translation is not available in this build.</span>
+          <span id="caption-language-help" class="field-help"></span>
         </div>
       </div>
 
@@ -127,6 +146,7 @@ const sourceSelect = requireElement<HTMLSelectElement>("#audio-source");
 const deviceSelect = requireElement<HTMLSelectElement>("#playback-device");
 const deviceField = requireElement<HTMLElement>("#device-field");
 const spokenLanguage = requireElement<HTMLSelectElement>("#spoken-language");
+const captionLanguage = requireElement<HTMLSelectElement>("#caption-language");
 const captureToggle = requireElement<HTMLButtonElement>("#capture-toggle");
 const captureMessage = requireElement<HTMLElement>("#capture-message");
 const statusLabel = requireElement<HTMLElement>(".status-label");
@@ -136,7 +156,13 @@ const modelSetupTitle = requireElement<HTMLElement>("#model-setup-title");
 const modelMessage = requireElement<HTMLElement>("#model-message");
 const modelProgress = requireElement<HTMLProgressElement>("#model-progress");
 const modelAction = requireElement<HTMLButtonElement>("#model-action");
+const translationSetup = requireElement<HTMLElement>("#translation-setup");
+const translationSetupTitle = requireElement<HTMLElement>("#translation-setup-title");
+const translationMessage = requireElement<HTMLElement>("#translation-message");
+const translationProgress = requireElement<HTMLProgressElement>("#translation-progress");
+const translationAction = requireElement<HTMLButtonElement>("#translation-action");
 const dialog = requireElement<HTMLDialogElement>("#utility-dialog");
+const CAPTION_MODE_STORAGE_KEY = "prollyglot.caption-output";
 
 let snapshot: SourceSnapshot = { playbackDevices: [], applications: [] };
 let currentStatus: CaptureStatus = { state: "stopped", peak: 0, droppedFrames: 0 };
@@ -155,9 +181,14 @@ let currentModels: ModelCatalogStatus = {
   selectedModelId: FALLBACK_MODEL.modelId,
   models: [FALLBACK_MODEL]
 };
+const useMockTranslation = !isTauri()
+  && !new URLSearchParams(window.location.search).has("realTranslation");
+const translationService = new TranslationService(useMockTranslation);
+let currentTranslations = translationService.snapshot();
 let currentTranscript: TranscriptSnapshot = { revision: 0, committed: [] };
 let settingsNotice: { message: string; tone: "neutral" | "success" | "error" } | undefined;
 let acceptedSpokenLanguage = "en";
+let preferredCaptionMode = storedCaptionMode();
 let transcriptFollowLatest = true;
 const FOLLOW_SYSTEM_DEFAULT = "__follow-system-default__";
 const TRANSCRIPT_BOTTOM_THRESHOLD = 48;
@@ -167,6 +198,17 @@ const LANGUAGE_LABELS: Record<string, string> = {
   es: "Spanish",
   ja: "Japanese"
 };
+const captionOutput = new CaptionOutputController(
+  translationService,
+  (payload) => {
+    if (dialog.open && dialog.dataset.panel === "transcript") renderTranscriptPanel();
+    return updateCaptionOutput(payload);
+  },
+  (message) => {
+    captureMessage.textContent = message;
+    void reportFrontendDiagnostic("translation", message);
+  }
+);
 
 function requireElement<T extends Element>(selector: string): T {
   const element = document.querySelector<T>(selector);
@@ -180,6 +222,11 @@ function option(value: string, label: string, selected = false): HTMLOptionEleme
   element.textContent = label;
   element.selected = selected;
   return element;
+}
+
+function storedCaptionMode(): CaptionOutputMode {
+  const stored = localStorage.getItem(CAPTION_MODE_STORAGE_KEY);
+  return stored === "english" || stored === "both" ? stored : "original";
 }
 
 function populateSources(nextSnapshot: SourceSnapshot) {
@@ -232,6 +279,135 @@ function languageLabel(language: string): string {
   return LANGUAGE_LABELS[language] ?? language;
 }
 
+function selectedTranslationModel(
+  catalog = currentTranslations,
+  language = spokenLanguage.value
+): TranslationModelStatus | undefined {
+  const sourceLanguage = supportedSourceLanguage(language);
+  return sourceLanguage
+    ? catalog.models.find((model) => model.sourceLanguage === sourceLanguage)
+    : undefined;
+}
+
+function translationRequested(): boolean {
+  return captionOutput.outputMode() !== "original";
+}
+
+function renderCaptionOutputControl(): void {
+  const sourceLanguage = supportedSourceLanguage(spokenLanguage.value);
+  const allowedModes: Array<[CaptionOutputMode, string]> = sourceLanguage
+    ? [
+        ["original", "Original language"],
+        ["english", "English translation"],
+        ["both", "Original + English"]
+      ]
+    : [["original", spokenLanguage.value === "en" ? "English (original)" : "Original language"]];
+  const selectedMode = sourceLanguage ? preferredCaptionMode : "original";
+  captionLanguage.replaceChildren(
+    ...allowedModes.map(([value, label]) => option(value, label, value === selectedMode))
+  );
+  captionLanguage.value = selectedMode;
+  captionLanguage.disabled = !sourceLanguage;
+  if (captionOutput.outputMode() !== selectedMode) captionOutput.setOutputMode(selectedMode);
+
+  const help = requireElement<HTMLElement>("#caption-language-help");
+  if (spokenLanguage.value === "en") {
+    help.textContent = "The recognized speech is already English.";
+  } else if (spokenLanguage.value === "auto") {
+    help.textContent = "Choose Japanese or Spanish to translate reliably; Automatic does not yet report each detected language.";
+  } else {
+    const model = selectedTranslationModel();
+    if (!translationRequested()) {
+      help.textContent = `Show ${languageLabel(spokenLanguage.value)} exactly as recognized.`;
+    } else if (model?.phase === "ready") {
+      help.textContent = "English is generated locally after each original caption is finalized.";
+    } else if (model?.phase === "loading") {
+      help.textContent = "Original captions stay live while the local English translator loads.";
+    } else {
+      help.textContent = "Original captions stay live until the optional English translator is installed.";
+    }
+  }
+  renderTranslationSetup();
+}
+
+function renderTranslationSetup(): void {
+  const model = selectedTranslationModel();
+  if (!model || !translationRequested() || model.phase === "ready") {
+    translationSetup.hidden = true;
+    return;
+  }
+
+  translationSetup.hidden = false;
+  translationSetupTitle.textContent = `${languageLabel(model.sourceLanguage)} to English`;
+  translationProgress.hidden = model.phase !== "downloading";
+  translationProgress.max = Math.max(model.totalBytes, 1);
+  translationProgress.value = Math.min(model.downloadedBytes, translationProgress.max);
+  const modelChangesBlocked = currentStatus.state !== "stopped" && currentStatus.state !== "failed";
+  translationAction.disabled = model.phase === "checking"
+    || model.phase === "downloading"
+    || model.phase === "loading"
+    || modelChangesBlocked;
+
+  if (model.phase === "checking") {
+    translationAction.textContent = "Checking local files…";
+    translationMessage.textContent = model.message ?? "Checking the local translation model…";
+  } else if (model.phase === "downloading") {
+    const percent = model.totalBytes > 0
+      ? Math.round((model.downloadedBytes / model.totalBytes) * 100)
+      : 0;
+    translationAction.textContent = `Downloading ${percent}%`;
+    translationMessage.textContent = model.message ?? "Downloading and verifying the translator…";
+  } else if (model.phase === "loading") {
+    translationAction.textContent = "Loading translator…";
+    translationMessage.textContent = "Original captions remain immediate while English translation starts.";
+  } else {
+    translationAction.textContent = model.phase === "corrupt"
+      ? "Repair translator"
+      : model.phase === "failed" ? "Retry translator" : `Download · ${formatBytes(model.totalBytes)}`;
+    const baseMessage = model.message
+      ?? `Download ${model.displayName} once. Captions and translation then stay on this PC.`;
+    translationMessage.textContent = modelChangesBlocked
+      ? `${baseMessage} Stop captions before changing translation models.`
+      : baseMessage;
+  }
+}
+
+function renderTranslationStatus(catalog: TranslationCatalogStatus): void {
+  const newlyFailed = catalog.models.find((model) => {
+    if (model.phase !== "failed" && model.phase !== "corrupt") return false;
+    const previous = currentTranslations.models.find(({ modelId }) => modelId === model.modelId);
+    return previous?.phase !== "failed" && previous?.phase !== "corrupt";
+  });
+  const completed = catalog.models.find((model) =>
+    model.phase === "ready"
+    && currentTranslations.models.find(({ modelId }) => modelId === model.modelId)?.phase === "downloading"
+  );
+  const failed = catalog.models.find((model) =>
+    (model.phase === "failed" || model.phase === "corrupt")
+    && currentTranslations.models.find(({ modelId }) => modelId === model.modelId)?.phase === "downloading"
+  );
+  if (completed) {
+    settingsNotice = {
+      message: `${completed.displayName} is installed and ready.`,
+      tone: "success"
+    };
+  } else if (failed) {
+    settingsNotice = {
+      message: failed.message ?? `${failed.displayName} could not be installed.`,
+      tone: "error"
+    };
+  }
+  if (newlyFailed) {
+    void reportFrontendDiagnostic(
+      "translation-model",
+      `${newlyFailed.displayName}: ${newlyFailed.message ?? newlyFailed.phase}`
+    );
+  }
+  currentTranslations = catalog;
+  renderCaptionOutputControl();
+  if (dialog.open && dialog.dataset.panel === "settings") renderSettingsPanel();
+}
+
 function renderLanguageGuidance() {
   const help = requireElement<HTMLElement>("#spoken-language-help");
   help.textContent = spokenLanguage.value === "auto"
@@ -273,6 +449,7 @@ function renderStatus(status: CaptureStatus) {
   captureToggle.textContent = status.state === "capturing" || status.state === "waiting" ? "Stop Captions" : "Start Captions";
   captureToggle.classList.toggle("stop", status.state === "capturing" || status.state === "waiting");
   updatePrimaryAvailability();
+  renderTranslationSetup();
   document.documentElement.style.setProperty("--audio-peak", String(status.peak));
   if (stateChanged && dialog.open && dialog.dataset.panel === "settings") renderSettingsPanel();
 }
@@ -355,6 +532,7 @@ function renderModelStatus(catalog: ModelCatalogStatus) {
 
 function renderTranscript(snapshot: TranscriptSnapshot) {
   currentTranscript = snapshot;
+  captionOutput.updateTranscript(snapshot);
   if (dialog.open && dialog.dataset.panel === "transcript") renderTranscriptPanel();
 }
 
@@ -383,6 +561,57 @@ function formatTimestamp(micros: number): string {
   const seconds = Math.max(0, Math.floor(micros / 1_000_000));
   const minutes = Math.floor(seconds / 60);
   return `${String(minutes).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+function appendTranscriptCaption(
+  item: HTMLElement,
+  segment: TranscriptSegment,
+  provisional = false
+): void {
+  const copy = document.createElement("span");
+  copy.className = "transcript-copy";
+  const original = document.createElement("span");
+  original.className = "transcript-text transcript-original";
+  original.lang = segment.sourceLanguage === "auto" ? "" : segment.sourceLanguage;
+  original.textContent = segment.text;
+  const mode = captionOutput.outputMode();
+  const translated = captionOutput.translationFor(segment);
+
+  if (mode === "original" || provisional) {
+    copy.append(original);
+    if (provisional && mode !== "original") {
+      const note = document.createElement("span");
+      note.className = "transcript-translation-state";
+      note.textContent = "English follows when this caption is finalized.";
+      copy.append(note);
+    }
+    item.append(copy);
+    return;
+  }
+
+  const english = document.createElement("span");
+  english.className = "transcript-text transcript-translation";
+  english.lang = "en";
+  if (translated?.phase === "ready") english.textContent = translated.text;
+
+  if (mode === "both") copy.append(original);
+  if (translated?.phase === "ready") {
+    copy.append(english);
+  } else {
+    if (mode === "english") {
+      original.classList.add("translation-fallback");
+      copy.append(original);
+    }
+    const note = document.createElement("span");
+    note.className = "transcript-translation-state";
+    note.textContent = translated?.phase === "failed"
+      ? "English unavailable · showing original"
+      : captionOutput.isTranslationPending(segment)
+        ? "Translating to English…"
+        : "English translator is not ready";
+    copy.append(note);
+  }
+  item.append(copy);
 }
 
 function renderTranscriptPanel(forceLatest = false) {
@@ -443,9 +672,8 @@ function renderTranscriptPanel(forceLatest = false) {
     item.className = "transcript-segment";
     const timestamp = document.createElement("time");
     timestamp.textContent = formatTimestamp(segment.startMicros);
-    const text = document.createElement("span");
-    text.textContent = segment.text;
-    item.append(timestamp, text);
+    item.append(timestamp);
+    appendTranscriptCaption(item, segment);
     list.append(item);
   }
   if (currentTranscript.provisional) {
@@ -453,9 +681,8 @@ function renderTranscriptPanel(forceLatest = false) {
     item.className = "transcript-segment provisional";
     const timestamp = document.createElement("time");
     timestamp.textContent = "Live";
-    const text = document.createElement("span");
-    text.textContent = currentTranscript.provisional.text;
-    item.append(timestamp, text);
+    item.append(timestamp);
+    appendTranscriptCaption(item, currentTranscript.provisional, true);
     list.append(item);
   }
   content.append(list);
@@ -494,6 +721,12 @@ function renderSettingsPanel() {
       <p class="settings-copy">Choose a speed, language, and quality tradeoff. Every option streams locally; selections apply to the next caption session.</p>
       <div id="model-options" class="model-options"></div>
       <p id="settings-action-status" class="settings-action-status" role="status" aria-live="polite"></p>
+    </section>
+    <section class="settings-section settings-section-divided" aria-labelledby="translation-settings-title">
+      <span class="model-kicker">Optional local translation</span>
+      <h3 id="translation-settings-title">English translation models</h3>
+      <p class="settings-copy">Install only the languages you need. Original captions appear immediately; English is added after each finalized caption.</p>
+      <div id="translation-model-options" class="model-options"></div>
     </section>
     <section class="settings-section settings-section-divided" aria-labelledby="audio-settings-title">
       <span class="model-kicker">Audio</span>
@@ -633,6 +866,117 @@ function renderSettingsPanel() {
     card.append(actions);
     options.append(card);
   }
+
+  const translationOptions = requireElement<HTMLElement>("#translation-model-options");
+  const translationChangesBlocked = currentStatus.state !== "stopped" && currentStatus.state !== "failed";
+  const anotherTranslationDownload = currentTranslations.models.some(({ phase }) => phase === "downloading");
+  for (const model of currentTranslations.models) {
+    const card = document.createElement("article");
+    card.className = "model-option";
+    card.dataset.selected = String(
+      spokenLanguage.value === model.sourceLanguage && captionOutput.outputMode() !== "original"
+    );
+
+    const heading = document.createElement("div");
+    heading.className = "model-option-heading";
+    const names = document.createElement("div");
+    const profile = document.createElement("span");
+    profile.className = "model-profile";
+    profile.textContent = `${languageLabel(model.sourceLanguage)} → English`;
+    const name = document.createElement("h4");
+    name.textContent = model.displayName;
+    names.append(profile, name);
+    const badge = document.createElement("span");
+    badge.className = "model-state-badge";
+    badge.dataset.phase = model.phase;
+    badge.textContent = model.phase === "ready"
+      ? "Installed"
+      : model.phase === "loading" ? "Loading" : model.phase === "downloading" ? "Downloading" : "Optional";
+    heading.append(names, badge);
+
+    const description = document.createElement("p");
+    description.className = "model-option-description";
+    description.textContent = `Translates finalized ${languageLabel(model.sourceLanguage)} captions to English locally.`;
+    const metadata = document.createElement("p");
+    metadata.className = "model-option-metadata";
+    metadata.textContent = `${formatBytes(model.totalBytes)} · CPU · Apache-2.0`;
+    card.append(heading, description, metadata);
+
+    if (model.phase === "downloading") {
+      const progress = document.createElement("progress");
+      progress.className = "model-progress model-option-progress";
+      progress.max = Math.max(model.totalBytes, 1);
+      progress.value = Math.min(model.downloadedBytes, progress.max);
+      card.append(progress);
+    }
+    if (model.message && model.phase !== "ready") {
+      const message = document.createElement("p");
+      message.className = "model-option-message";
+      message.dataset.tone = model.phase === "failed" || model.phase === "corrupt" ? "error" : "neutral";
+      message.textContent = model.message;
+      card.append(message);
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "model-option-actions";
+    const primary = document.createElement("button");
+    primary.type = "button";
+    primary.className = "secondary-button model-option-action";
+    if (model.phase === "ready") {
+      primary.textContent = "Installed";
+      primary.disabled = true;
+    } else if (model.phase === "checking") {
+      primary.textContent = "Checking…";
+      primary.disabled = true;
+    } else if (model.phase === "loading") {
+      primary.textContent = "Loading…";
+      primary.disabled = true;
+    } else if (model.phase === "downloading") {
+      const percent = model.totalBytes > 0
+        ? Math.round((model.downloadedBytes / model.totalBytes) * 100)
+        : 0;
+      primary.textContent = `Downloading ${percent}%`;
+      primary.disabled = true;
+    } else {
+      primary.textContent = model.phase === "corrupt"
+        ? "Repair"
+        : model.phase === "failed" ? "Retry" : "Download";
+      primary.disabled = translationChangesBlocked || anotherTranslationDownload;
+      primary.addEventListener("click", async () => {
+        primary.disabled = true;
+        setSettingsNotice(`Starting ${model.displayName} download…`, "neutral");
+        try {
+          await translationService.install(model.sourceLanguage);
+        } catch (error) {
+          setSettingsNotice(error instanceof Error ? error.message : String(error), "error");
+          primary.disabled = false;
+        }
+      });
+    }
+    actions.append(primary);
+
+    if (model.phase === "ready") {
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "text-button danger-text";
+      remove.textContent = "Remove";
+      remove.disabled = translationChangesBlocked || anotherTranslationDownload;
+      remove.addEventListener("click", async () => {
+        remove.disabled = true;
+        setSettingsNotice(`Removing ${model.displayName}…`, "neutral");
+        try {
+          await translationService.remove(model.sourceLanguage);
+          setSettingsNotice(`${model.displayName} was removed from this PC.`, "success");
+        } catch (error) {
+          setSettingsNotice(error instanceof Error ? error.message : String(error), "error");
+          remove.disabled = false;
+        }
+      });
+      actions.append(remove);
+    }
+    card.append(actions);
+    translationOptions.append(card);
+  }
   renderSettingsNotice();
 
   const refresh = requireElement<HTMLButtonElement>("#refresh-sources");
@@ -670,6 +1014,7 @@ function setSettingsNotice(message: string, tone: "neutral" | "success" | "error
 async function updateSpokenLanguage() {
   const language = spokenLanguage.value;
   renderLanguageGuidance();
+  renderCaptionOutputControl();
   captureMessage.textContent = "";
   const current = selectedModel();
   if (modelSupportsLanguage(current, language)) {
@@ -683,6 +1028,7 @@ async function updateSpokenLanguage() {
   if (!candidate) {
     spokenLanguage.value = acceptedSpokenLanguage;
     captureMessage.textContent = `No installed model catalog supports ${languageLabel(language)}.`;
+    renderCaptionOutputControl();
     renderModelStatus(currentModels);
     return;
   }
@@ -694,16 +1040,36 @@ async function updateSpokenLanguage() {
   } catch (error) {
     spokenLanguage.value = acceptedSpokenLanguage;
     captureMessage.textContent = error instanceof Error ? error.message : String(error);
+    renderCaptionOutputControl();
     renderModelStatus(currentModels);
   }
 }
 
 sourceSelect.addEventListener("change", updateSourceMode);
 spokenLanguage.addEventListener("change", () => void updateSpokenLanguage());
+captionLanguage.addEventListener("change", () => {
+  const mode = captionLanguage.value as CaptionOutputMode;
+  if (mode !== "original" && mode !== "english" && mode !== "both") return;
+  preferredCaptionMode = mode;
+  localStorage.setItem(CAPTION_MODE_STORAGE_KEY, mode);
+  captionOutput.setOutputMode(mode);
+  renderCaptionOutputControl();
+  if (dialog.open && dialog.dataset.panel === "transcript") renderTranscriptPanel();
+});
 modelAction.addEventListener("click", async () => {
   captureMessage.textContent = "";
   try {
     await installSpeechModel(selectedModel().modelId);
+  } catch (error) {
+    captureMessage.textContent = error instanceof Error ? error.message : String(error);
+  }
+});
+translationAction.addEventListener("click", async () => {
+  captureMessage.textContent = "";
+  const model = selectedTranslationModel();
+  if (!model) return;
+  try {
+    await translationService.install(model.sourceLanguage);
   } catch (error) {
     captureMessage.textContent = error instanceof Error ? error.message : String(error);
   }
@@ -760,11 +1126,18 @@ dialog.addEventListener("click", (event) => {
   if (event.target === dialog) dialog.close();
 });
 
+translationService.subscribe(renderTranslationStatus);
 renderLanguageGuidance();
+renderCaptionOutputControl();
 void Promise.all([
   refreshSources(),
   captureStatus().then(renderStatus),
   modelStatus().then(renderModelStatus),
+  translationService.initialize().then(renderTranslationStatus).catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    captureMessage.textContent = message;
+    void reportFrontendDiagnostic("translation-model", message);
+  }),
   transcriptSnapshot().then(renderTranscript),
   onCaptureStatus(renderStatus),
   onModelStatus(renderModelStatus),

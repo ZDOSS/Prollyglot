@@ -566,6 +566,7 @@ input:focus-visible {
   display: grid;
   min-height: 0;
   max-height: 310px;
+  align-content: start;
   gap: var(--space-3);
   margin: var(--space-4) 0 0;
   padding: 0;
@@ -584,6 +585,7 @@ input:focus-visible {
 
 .transcript-segment {
   display: grid;
+  align-items: start;
   grid-template-columns: 46px minmax(0, 1fr);
   gap: var(--space-3);
   color: var(--color-text);
@@ -597,7 +599,37 @@ input:focus-visible {
   font-variant-numeric: tabular-nums;
 }
 
-.transcript-segment.provisional span {
+.transcript-copy {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 4px;
+}
+
+.transcript-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.transcript-original {
+  color: var(--color-text);
+}
+
+.transcript-translation {
+  color: var(--color-accent);
+}
+
+.transcript-original.translation-fallback {
+  color: var(--color-text-muted);
+}
+
+.transcript-translation-state {
+  color: var(--color-text-faint);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.transcript-segment.provisional .transcript-text {
   color: var(--color-text-muted);
   font-style: italic;
 }
@@ -983,20 +1015,32 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .preview-caption {
-  display: -webkit-box;
+  display: grid;
   max-width: 78%;
   overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: var(--maximum-lines, 3);
+  gap: 5px;
   border-radius: var(--radius-md);
   padding: 12px 18px;
   background: rgb(11 15 18 / 75%);
-  color: var(--color-text);
   font-size: 26px;
   font-weight: 600;
   line-height: 1.25;
   text-align: center;
   text-wrap: balance;
+}
+
+.preview-caption[data-bilingual-layout="sideBySide"] {
+  max-width: 94%;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 18px;
+}
+
+.preview-caption-original {
+  color: var(--source-caption-color, var(--color-text));
+}
+
+.preview-caption-translation {
+  color: var(--translated-caption-color, var(--color-accent));
 }
 
 .preview-taskbar {
@@ -1056,6 +1100,16 @@ input[type="range"]::-moz-range-thumb {
   padding: 10px;
 }
 
+#overlay-app[data-position="topCenter"] {
+  align-items: flex-start;
+}
+
+#overlay-app[data-position="bottomCenter"],
+#overlay-app[data-position="bottomLeft"],
+#overlay-app[data-position="bottomRight"] {
+  align-items: flex-end;
+}
+
 .caption-surface {
   display: block;
   width: 100%;
@@ -1064,7 +1118,7 @@ input[type="range"]::-moz-range-thumb {
   border-radius: var(--radius-md);
   padding: 14px 20px;
   background: rgb(11 15 18 / 75%);
-  color: var(--color-text);
+  color: var(--source-caption-color, var(--color-text));
   font-size: 36px;
   font-weight: 600;
   line-height: 1.25;
@@ -1080,12 +1134,36 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .caption-text {
-  display: flex;
-  max-height: calc(var(--maximum-lines, 3) * 1.25em);
+  display: grid;
+  max-height: calc(var(--maximum-lines, 3) * 1.4em);
   width: 100%;
-  flex-direction: column;
-  justify-content: flex-end;
+  align-content: end;
+  gap: 0.18em;
   overflow: hidden;
+}
+
+.caption-surface[data-bilingual-layout="stacked"] .caption-text[data-mode="both"] {
+  max-height: calc(var(--maximum-lines, 3) * 2.7em);
+}
+
+.caption-entry {
+  display: grid;
+  min-width: 0;
+  flex: 0 0 auto;
+  gap: 0.04em;
+}
+
+.caption-entry:not(:last-child) {
+  opacity: 0.72;
+}
+
+.caption-surface[data-bilingual-layout="sideBySide"] .caption-text[data-mode="both"] .caption-entry {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.8em;
+}
+
+.caption-surface[data-bilingual-layout="sideBySide"] .translation-pending .caption-line {
+  grid-column: 1 / -1;
 }
 
 .caption-line {
@@ -1094,8 +1172,17 @@ input[type="range"]::-moz-range-thumb {
   overflow-wrap: anywhere;
 }
 
-.caption-line:not(:last-child) {
-  opacity: 0.72;
+.caption-original {
+  color: var(--source-caption-color, var(--color-text));
+}
+
+.caption-translation {
+  color: var(--translated-caption-color, var(--color-accent));
+}
+
+.caption-fallback {
+  opacity: 0.82;
+  font-style: italic;
 }
 
 .caption-surface[data-click-through="false"] {

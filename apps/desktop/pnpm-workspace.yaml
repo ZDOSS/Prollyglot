@@ -1,0 +1,6 @@
+allowBuilds:
+  # Translation runs in the WebView through ONNX Runtime Web. These optional
+  # Node/image package install scripts are not part of the desktop runtime.
+  onnxruntime-node: false
+  protobufjs: false
+  sharp: false

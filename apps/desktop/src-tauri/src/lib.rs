@@ -113,6 +113,8 @@ struct OverlaySettings {
     font_family: String,
     font_size: u16,
     text_color: String,
+    translated_text_color: String,
+    bilingual_layout: BilingualLayout,
     background_opacity: f32,
     width: u32,
     maximum_lines: u8,
@@ -129,12 +131,21 @@ enum OverlayPosition {
     BottomRight,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+enum BilingualLayout {
+    Stacked,
+    SideBySide,
+}
+
 impl Default for OverlaySettings {
     fn default() -> Self {
         Self {
             font_family: r#""Segoe UI Variable", "Segoe UI", sans-serif"#.into(),
             font_size: 36,
             text_color: "#f4f6f5".into(),
+            translated_text_color: "#86e3b0".into(),
+            bilingual_layout: BilingualLayout::Stacked,
             background_opacity: 0.75,
             width: 720,
             maximum_lines: 3,
@@ -695,10 +706,16 @@ fn validated_settings(settings: OverlaySettings) -> Result<OverlaySettings, Stri
     if !(0.0..=1.0).contains(&settings.background_opacity) {
         return Err("Background opacity must be between 0 and 1.".into());
     }
-    if !settings.text_color.starts_with('#') || settings.text_color.len() != 7 {
-        return Err("Text color must be a six-digit hex color.".into());
+    if !is_hex_color(&settings.text_color) || !is_hex_color(&settings.translated_text_color) {
+        return Err("Caption colors must be six-digit hex colors.".into());
     }
     Ok(settings)
+}
+
+fn is_hex_color(value: &str) -> bool {
+    value.len() == 7
+        && value.starts_with('#')
+        && value[1..].bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 fn configure_overlay_window(
@@ -727,7 +744,14 @@ fn configure_overlay_window(
     let maximum_logical_width = (f64::from(work_area.size.width) / scale_factor - 32.0).max(320.0);
     let maximum_logical_height = (f64::from(work_area.size.height) / scale_factor - 32.0).max(80.0);
     let logical_width = (f64::from(settings.width) + 40.0).clamp(320.0, maximum_logical_width);
-    let logical_height = (f64::from(settings.font_size) * 1.25 * f64::from(settings.maximum_lines)
+    let bilingual_height = match settings.bilingual_layout {
+        BilingualLayout::Stacked => 2.0,
+        BilingualLayout::SideBySide => 1.0,
+    };
+    let logical_height = (f64::from(settings.font_size)
+        * 1.25
+        * f64::from(settings.maximum_lines)
+        * bilingual_height
         + 48.0)
         .clamp(80.0, maximum_logical_height);
     overlay
@@ -829,6 +853,13 @@ fn update_overlay_settings(
     Ok(())
 }
 
+#[tauri::command]
+fn report_frontend_diagnostic(scope: String, message: String) {
+    let scope: String = scope.trim().chars().take(80).collect();
+    let message: String = message.trim().chars().take(2_000).collect();
+    tracing::warn!(frontend_scope = %scope, %message, "frontend diagnostic");
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -853,6 +884,7 @@ pub fn run() {
             show_appearance_window,
             close_appearance_window,
             update_overlay_settings,
+            report_frontend_diagnostic,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Prollyglot");

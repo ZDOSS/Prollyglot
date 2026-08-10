@@ -54,8 +54,23 @@ root.innerHTML = `
         </label>
 
         <label class="setting-row">
-          <span>Text color</span>
-          <input id="text-color" class="color-control" type="color" value="#f4f6f5" aria-label="Text color" />
+          <span>Original color</span>
+          <input id="text-color" class="color-control" type="color" value="#f4f6f5" aria-label="Original caption color" />
+        </label>
+
+        <label class="setting-row">
+          <span>English color</span>
+          <input id="translated-text-color" class="color-control" type="color" value="#86e3b0" aria-label="English translation color" />
+        </label>
+
+        <label class="setting-row">
+          <span>Bilingual layout</span>
+          <span class="compact-select-wrap">
+            <select id="bilingual-layout">
+              <option value="stacked">Stacked</option>
+              <option value="sideBySide">Side by side</option>
+            </select>${icons.chevronDown}
+          </span>
         </label>
 
         <label class="range-setting">
@@ -107,7 +122,10 @@ root.innerHTML = `
 
       <section class="preview-canvas" aria-label="Live caption preview">
         <div class="preview-desktop" id="preview-desktop">
-          <div class="preview-caption" id="preview-caption">We should be there in about ten minutes.</div>
+          <div class="preview-caption" id="preview-caption">
+            <span class="preview-caption-original" lang="ja">今日は何をする予定ですか？</span>
+            <span class="preview-caption-translation" lang="en">What are you planning to do today?</span>
+          </div>
           <div class="preview-taskbar" aria-hidden="true"><span class="windows-mark">⊞</span><span class="taskbar-spacer"></span><span>10:28 AM</span></div>
         </div>
       </section>
@@ -144,6 +162,8 @@ function readSettings(): OverlaySettings {
     fontFamily: requireElement<HTMLSelectElement>("#font-family").value,
     fontSize: Number(requireElement<HTMLSelectElement>("#font-size").value),
     textColor: requireElement<HTMLInputElement>("#text-color").value,
+    translatedTextColor: requireElement<HTMLInputElement>("#translated-text-color").value,
+    bilingualLayout: requireElement<HTMLSelectElement>("#bilingual-layout").value as OverlaySettings["bilingualLayout"],
     backgroundOpacity: Number(requireElement<HTMLInputElement>("#background-opacity").value) / 100,
     width: Number(requireElement<HTMLSelectElement>("#overlay-width").value),
     maximumLines: Number(requireElement<HTMLSelectElement>("#maximum-lines").value),
@@ -156,6 +176,8 @@ function writeSettings(settings: OverlaySettings) {
   requireElement<HTMLSelectElement>("#font-family").value = settings.fontFamily;
   requireElement<HTMLSelectElement>("#font-size").value = String(settings.fontSize);
   requireElement<HTMLInputElement>("#text-color").value = settings.textColor;
+  requireElement<HTMLInputElement>("#translated-text-color").value = settings.translatedTextColor;
+  requireElement<HTMLSelectElement>("#bilingual-layout").value = settings.bilingualLayout;
   requireElement<HTMLInputElement>("#background-opacity").value = String(settings.backgroundOpacity * 100);
   requireElement<HTMLSelectElement>("#overlay-width").value = String(settings.width);
   requireElement<HTMLSelectElement>("#maximum-lines").value = String(settings.maximumLines);
@@ -168,10 +190,12 @@ function renderPreview(settings: OverlaySettings) {
   opacityOutput.value = `${Math.round(settings.backgroundOpacity * 100)}%`;
   preview.style.fontFamily = settings.fontFamily;
   preview.style.fontSize = `${Math.max(18, settings.fontSize * 0.72)}px`;
-  preview.style.color = settings.textColor;
   preview.style.backgroundColor = `rgba(11, 15, 18, ${settings.backgroundOpacity})`;
   preview.style.maxWidth = `${Math.min(720, settings.width * 0.78)}px`;
   preview.style.setProperty("--maximum-lines", String(settings.maximumLines));
+  preview.style.setProperty("--source-caption-color", settings.textColor);
+  preview.style.setProperty("--translated-caption-color", settings.translatedTextColor);
+  preview.dataset.bilingualLayout = settings.bilingualLayout;
 
   const desktop = requireElement<HTMLElement>("#preview-desktop");
   desktop.dataset.position = settings.position;

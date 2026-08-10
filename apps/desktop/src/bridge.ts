@@ -1,9 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import type {
   CaptureSelection,
+  CaptionOutputPayload,
   CaptureStatus,
   ModelCatalogStatus,
   OverlaySettings,
@@ -307,6 +308,20 @@ export async function closeAppearance(): Promise<void> {
 export async function updateOverlaySettings(settings: OverlaySettings): Promise<void> {
   localStorage.setItem("prollyglot.overlay", JSON.stringify(settings));
   if (isTauri()) await invoke("update_overlay_settings", { settings });
+}
+
+export async function updateCaptionOutput(output: CaptionOutputPayload): Promise<void> {
+  if (isTauri()) await emit("caption-output", output);
+}
+
+export async function reportFrontendDiagnostic(scope: string, message: string): Promise<void> {
+  console.error(`[${scope}] ${message}`);
+  if (!isTauri()) return;
+  try {
+    await invoke("report_frontend_diagnostic", { scope, message });
+  } catch (error) {
+    console.error("Could not write the frontend diagnostic to the Prollyglot log.", error);
+  }
 }
 
 export async function windowAction(action: "minimize" | "maximize" | "close"): Promise<void> {

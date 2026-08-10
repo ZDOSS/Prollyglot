@@ -73,10 +73,54 @@ export interface TranscriptSnapshot {
   committed: TranscriptSegment[];
 }
 
+export type CaptionOutputMode = "original" | "english" | "both";
+
+export interface CaptionOutputEntry {
+  key: string;
+  sourceLanguage: string;
+  original: string;
+  translation?: string;
+  isFinal: boolean;
+}
+
+export interface CaptionOutputPayload {
+  mode: CaptionOutputMode;
+  originalCaption: string;
+  entries: CaptionOutputEntry[];
+}
+
+export type TranslationPhase =
+  | "checking"
+  | "notInstalled"
+  | "downloading"
+  | "loading"
+  | "ready"
+  | "corrupt"
+  | "failed";
+
+export interface TranslationModelStatus {
+  phase: TranslationPhase;
+  sourceLanguage: "es" | "ja";
+  targetLanguage: "en";
+  modelId: string;
+  displayName: string;
+  downloadedBytes: number;
+  totalBytes: number;
+  message?: string;
+}
+
+export interface TranslationCatalogStatus {
+  models: TranslationModelStatus[];
+}
+
+export type BilingualLayout = "stacked" | "sideBySide";
+
 export interface OverlaySettings {
   fontFamily: string;
   fontSize: number;
   textColor: string;
+  translatedTextColor: string;
+  bilingualLayout: BilingualLayout;
   backgroundOpacity: number;
   width: number;
   maximumLines: number;
@@ -88,6 +132,8 @@ export const DEFAULT_OVERLAY_SETTINGS: OverlaySettings = {
   fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif',
   fontSize: 36,
   textColor: "#f4f6f5",
+  translatedTextColor: "#86e3b0",
+  bilingualLayout: "stacked",
   backgroundOpacity: 0.75,
   width: 720,
   maximumLines: 3,

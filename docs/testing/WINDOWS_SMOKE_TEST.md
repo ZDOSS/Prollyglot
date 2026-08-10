@@ -37,11 +37,15 @@ Recognizing the audible selected-device output is enough to pass this pre-releas
 
 Open **Settings** and select **Refresh audio sources**. The dialog should immediately say it is refreshing, then report how many playback devices and applications it found. Newly opened audio applications should appear in the main source list after closing Settings.
 
-Settings should list Fast, Balanced, Enhanced, and Multilingual model cards with download sizes and one clearly marked **In use**. To compare recognition, stop captions, download another model, select **Use model**, and replay the same difficult speech. A simple note about which model sounded better is enough; no recording, reference transcript, or screenshot is required for this pre-release check.
+Settings should list Fast, Balanced, Enhanced, and Multilingual recognition-model cards with download sizes and one clearly marked **In use**. It also lists optional Japanese-to-English and Spanish-to-English translation models. To compare recognition, stop captions, download another recognition model, select **Use model**, and replay the same difficult speech. A simple note about which model sounded better is enough; no recording, reference transcript, or screenshot is required for this pre-release check.
 
 Model removal is not required on every build. When specifically checking it, stop captions, choose **Remove**, and confirm that Settings reports success. Removing an unselected model returns it to **Optional**. Removing the selected model returns first-run setup and disables **Start Captions** until that model is reinstalled or another installed model is selected.
 
-When specifically spot-checking multilingual captions, choose **Spanish** or **Japanese** under **Spoken language**. Prollyglot should select Nemotron and ask for its one-time 650.6 MiB download if needed. Play familiar speech, report whether the wording feels usable and how much delay you notice, then repeat with the other language if desired. **Automatic detection** is available for experimentation but may add delay or choose the wrong language. This build captions the original language only; it does not translate. No fixtures, recordings, or screenshots are required.
+When specifically spot-checking multilingual captions, choose **Spanish** or **Japanese** under **Spoken language**. Prollyglot should select Nemotron and ask for its one-time 650.6 MiB recognition-model download if needed. Start with **Original language**, play familiar speech, and report whether the wording feels usable and how much recognition delay you notice.
+
+Then stop captions, select **Original + English**, and accept the separate one-time translator download if needed: 113.8 MiB for Spanish or 109.4 MiB for Japanese. Start captions and replay familiar speech. The original text should remain immediate; the differently colored English line should appear after each source caption is finalized. Open **Transcript** and confirm it follows the newest original/English pair. Open **Appearance**, switch **Bilingual layout** between **Stacked** and **Side by side**, change either caption color, and confirm **Done** returns normally. Selecting **English translation** should show the translated result without retaining the original once English is ready; an unavailable or failed translator must fall back to readable original text rather than stopping captions.
+
+**Automatic detection** remains available for recognition experiments but may add delay or choose the wrong language. Translation is intentionally unavailable under Automatic until the recognizer reports a dependable source language for each finalized segment. No fixtures, recordings, screenshots, or evidence bundle are required.
 
 ## 4. Briefly check one application source
 
@@ -66,6 +70,6 @@ $LatestLog = Get-ChildItem $LogRoot -Filter *.log |
 Get-Content $LatestLog.FullName -Tail 200
 ```
 
-The log includes queue-drop and recovery counts in current builds, but no captured audio or transcript text.
+The log includes queue-drop, recovery, and translation-runtime failure diagnostics in current builds, but no captured audio or transcript text.
 
 The longer [Windows release and hardening plan](WINDOWS_TEST_PLAN.md) remains available for formal milestone acceptance, installer/release candidates, latency work, routing edge cases, and sustained reliability testing.

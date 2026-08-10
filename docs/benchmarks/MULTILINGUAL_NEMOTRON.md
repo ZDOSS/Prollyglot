@@ -39,7 +39,7 @@ The earlier pipeline used linear interpolation when converting common 44.1/48 kH
 - Use the 560 ms checkpoint rather than the 1120 ms variant while caption delay is a known concern.
 - Let the owner compare Nemotron against Enhanced on actual Windows media and accents.
 - Treat Spanish as promising but unapproved, and Japanese plus automatic detection as experimental until representative Windows spot checks say otherwise.
-- Do not imply translation; every current output is in the detected or selected original language.
+- This ASR comparison records original-language recognition only; translation quality is evaluated separately after Nemotron commits source text.
 
 ## Reproduce
 

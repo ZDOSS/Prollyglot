@@ -727,6 +727,8 @@ The overlay should support:
 - background opacity,
 - text alignment,
 - optional original + translated text,
+- independent original and translated text colors,
+- stacked or side-by-side bilingual layout,
 - multi-monitor placement,
 - temporary hiding,
 - fullscreen applications where possible.
@@ -757,6 +759,10 @@ Initial modes might include:
 │ What are you planning to do today?     │
 └─────────────────────────────────────────┘
 ```
+
+Dual language should also offer a side-by-side layout when the selected width
+can keep both columns readable. The source and translation colors should be
+independently configurable so the two outputs remain easy to distinguish.
 
 ### Minimal
 
@@ -927,6 +933,26 @@ Result:
 
 "The government announced a new plan this morning."
 ```
+
+The initial pre-release implementation supports forced Japanese to English and
+forced Spanish to English. Each direction is an optional q8 model downloaded
+only after an explicit action. The model revision and every required artifact's
+size and SHA-256 digest are pinned; inference reads only the verified local
+cache and runs in a dedicated CPU/WebAssembly worker. English-only users do not
+download or load either translator.
+
+Only finalized ASR segments are translated. Original text renders immediately,
+the English line fills in independently, and the queue is bounded so
+translation cannot introduce unbounded delay into live captions. Translation
+failure falls back to the original text and writes a privacy-safe diagnostic
+without logging caption contents.
+
+The implemented display choices are Original, English, and Original + English.
+The bilingual choice supports stacked and side-by-side layouts plus independent
+source and English colors. Automatic mixed-language recognition remains
+original-only until the recognizer reports a dependable detected language on
+each finalized segment; silently guessing which translator to run would make
+both latency and output quality worse.
 
 ---
 
@@ -1707,8 +1733,8 @@ Once that baseline is reliable, Version 0.2 feature work may include:
 - language profiles,
 - production approval and allowed-language constraints for automatic detection,
 - additional or improved multilingual ASR backends,
-- translation,
-- dual subtitles,
+- production approval and additional targets for local translation,
+- richer dual-subtitle layout and language-profile behavior,
 - improved model selection,
 - improved overlay,
 - GPU acceleration options.

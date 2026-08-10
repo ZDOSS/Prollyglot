@@ -41,7 +41,7 @@ Why this direction:
 | 3. Minimal customizable Windows app | The complete daily-use interface, overlay customization, transcript view, and controls work together | Pending |
 | 4. Windows MVP release | A reliable installable Windows build is ready for outside testing | Pending |
 | 5. Ubuntu port | The Windows-proven core runs on one supported Ubuntu LTS release through PipeWire | Pending |
-| 6. Multilingual captions and translation | Downloadable language support, local translation, and dual captions are production-ready | Original-language Nemotron trial integrated for English/Spanish/Japanese/auto; quality approval, constraints, and translation remain pending |
+| 6. Multilingual captions and translation | Downloadable language support, local translation, and dual captions are production-ready | Original-language Nemotron plus first local Japanese/Spanish-to-English and dual-caption slice integrated; Windows quality, latency, and automatic-language constraints remain pending |
 
 ### Windows smoke checkpoint — 2026-08-10
 
@@ -54,6 +54,8 @@ The next owner re-smoke reported better captions and confirmed that Appearance, 
 An optional Nemotron 3.5 Streaming 0.6B integration now provides a higher-resource original-language trial for English, Spanish, Japanese, and automatic detection without changing the Fast default. The INT8 560 ms checkpoint downloads 650.6 MiB and uses roughly 950 MiB peak process memory in the current development-host benchmark. One Spanish publisher fixture spot-checked well after band-limited resampling; one English comparison did not beat the English-only choices, and Japanese/automatic detection did not clear an initial spot check. This retires the integration risk but does not complete Milestone 6 or advertise production multilingual quality.
 
 A subsequent owner test confirmed that Nemotron's selected language conditions recognition: Japanese audio was suppressed under the Spanish setting and produced Japanese text under the Japanese setting. The UI therefore keeps forced language as the accuracy-oriented path and describes Automatic as the mixed-language path. The same feedback requires the live transcript to open on and follow the newest entry while preserving deliberate scrollback, and establishes Japanese/Spanish-to-English as the first optional local translation slice.
+
+That first translation slice is now integrated for owner evaluation. Japanese and Spanish each have a separate explicitly downloaded q8 English translator with pinned revisions, per-file size/SHA-256 verification, persistent local cache, removal, and cache-only inference. Original captions render first; finalized segments enter a bounded translation queue, and failures leave the original overlay and transcript usable. Users can select Original, English, or Original + English, then choose stacked or side-by-side bilingual layout and independent source/translation colors. Development-WebView runs loaded and translated real Japanese and Spanish text, and exercised removal/reinstallation. Native Windows media latency, sustained memory/CPU, and representative quality remain Milestone 6 gates rather than implied approvals.
 
 Sustained Windows video playback then exposed a transcription-backlog failure: the capture session remained alive, but the inference queue reported that it fell behind and captions stopped advancing. The affected build did not persist that exact condition to its diagnostic log. Backlog handling now absorbs a larger normal Nemotron inference burst, drains stale queued audio as one recovery action, abandons an incomplete hypothesis without an expensive final decode, records drop and recovery counts, and clears the warning after the worker returns near the live edge. Native Windows playback remains the acceptance check for this correction.
 
@@ -192,7 +194,7 @@ Port the proven product rather than designing Windows and Linux simultaneously.
 
 Expand language capability only after the base application is dependable on its supported platforms.
 
-The first integration slice is already present for owner evaluation: one explicitly downloaded Nemotron model can produce original-language English, Spanish, or Japanese captions and can run unconstrained automatic detection. It remains an experimental pre-release surface. Translation, dual captions, allowed-language constraints, broader test material, and production quality gates are still pending.
+The first integration slices are present for owner evaluation: one explicitly downloaded Nemotron model can produce original-language English, Spanish, or Japanese captions and can run unconstrained automatic detection, while separate explicitly downloaded models translate finalized forced-Japanese or forced-Spanish text to English. Original, English, and bilingual output modes are wired through the overlay and transcript. These remain experimental pre-release surfaces. Allowed-language constraints, automatic per-segment language reporting, broader test material, representative translation benchmarks, native Windows latency/resource evidence, and production quality gates are still pending.
 
 ### Included outcome
 
