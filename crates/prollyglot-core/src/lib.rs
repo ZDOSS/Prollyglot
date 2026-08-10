@@ -52,6 +52,7 @@ pub struct SourceSnapshot {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum CaptureSelection {
+    SystemDefault,
     SystemOutput { device_id: SourceId },
     Application { process_id: u32 },
 }
@@ -59,6 +60,7 @@ pub enum CaptureSelection {
 impl CaptureSelection {
     pub fn source_id(&self) -> SourceId {
         match self {
+            Self::SystemDefault => SourceId::new("default-output"),
             Self::SystemOutput { device_id } => device_id.clone(),
             Self::Application { process_id } => SourceId::new(format!("process:{process_id}")),
         }
@@ -210,5 +212,21 @@ mod tests {
         };
 
         assert_eq!(frame.duration_micros(), 500_000);
+    }
+
+    #[test]
+    fn default_output_has_a_stable_source_identifier() {
+        assert_eq!(
+            CaptureSelection::SystemDefault.source_id(),
+            SourceId::new("default-output")
+        );
+    }
+
+    #[test]
+    fn default_output_matches_the_desktop_ipc_shape() {
+        let selection: CaptureSelection =
+            serde_json::from_str(r#"{"kind":"systemDefault"}"#).expect("valid selection");
+
+        assert_eq!(selection, CaptureSelection::SystemDefault);
     }
 }

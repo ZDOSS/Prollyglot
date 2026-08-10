@@ -19,6 +19,7 @@ export interface SourceSnapshot {
 }
 
 export type CaptureSelection =
+  | { kind: "systemDefault" }
   | { kind: "systemOutput"; deviceId: SourceId }
   | { kind: "application"; processId: number };
 

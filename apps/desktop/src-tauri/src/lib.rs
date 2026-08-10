@@ -214,6 +214,11 @@ fn start_capture(
                 let next = match event {
                     CaptureEvent::State(capture_state) => CaptureStatus {
                         state: capture_state,
+                        message: if capture_state == CaptureState::Capturing {
+                            None
+                        } else {
+                            previous.message.clone()
+                        },
                         ..previous
                     },
                     CaptureEvent::Frame(frame) => CaptureStatus {
@@ -225,11 +230,14 @@ fn start_capture(
                         peak: frame.peak,
                         ..previous
                     },
-                    CaptureEvent::Warning(message) => CaptureStatus {
-                        state: CaptureState::Waiting,
-                        message: Some(message),
-                        ..previous
-                    },
+                    CaptureEvent::Warning(message) => {
+                        tracing::warn!(%message, "capture is waiting to recover");
+                        CaptureStatus {
+                            state: CaptureState::Waiting,
+                            message: Some(message),
+                            ..previous
+                        }
+                    }
                     CaptureEvent::FramesDropped { total } => {
                         tracing::warn!(total, "audio frames dropped because the pipeline was full");
                         CaptureStatus {

@@ -25,18 +25,18 @@ use windows::{
         },
         Media::Audio::{
             AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY, AUDCLNT_BUFFERFLAGS_SILENT,
-            AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM,
-            AUDCLNT_STREAMFLAGS_EVENTCALLBACK, AUDCLNT_STREAMFLAGS_LOOPBACK,
-            AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY, AUDIOCLIENT_ACTIVATION_PARAMS,
+            AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
+            AUDCLNT_STREAMFLAGS_LOOPBACK, AUDIOCLIENT_ACTIVATION_PARAMS,
             AUDIOCLIENT_ACTIVATION_PARAMS_0, AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK,
             AUDIOCLIENT_PROCESS_LOOPBACK_PARAMS, ActivateAudioInterfaceAsync,
             AudioSessionStateExpired, DEVICE_STATE_ACTIVE, IActivateAudioInterfaceAsyncOperation,
             IActivateAudioInterfaceCompletionHandler,
             IActivateAudioInterfaceCompletionHandler_Impl, IAudioCaptureClient, IAudioClient,
-            IAudioSessionControl2, IAudioSessionManager2, IMMDevice, IMMDeviceEnumerator,
-            MMDeviceEnumerator, PROCESS_LOOPBACK_MODE_INCLUDE_TARGET_PROCESS_TREE,
+            IAudioRenderClient, IAudioSessionControl2, IAudioSessionManager2, IMMDevice,
+            IMMDeviceEnumerator, MMDeviceEnumerator,
+            PROCESS_LOOPBACK_MODE_INCLUDE_TARGET_PROCESS_TREE,
             VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK, WAVE_FORMAT_PCM, WAVEFORMATEX,
-            WAVEFORMATEXTENSIBLE, eConsole, eRender,
+            WAVEFORMATEXTENSIBLE, WAVEFORMATEXTENSIBLE_0, eConsole, eRender,
         },
         System::{
             Com::{
@@ -67,9 +67,14 @@ const WAVE_FORMAT_IEEE_FLOAT: u16 = 3;
 const WAVE_FORMAT_EXTENSIBLE: u16 = 0xfffe;
 const KSDATAFORMAT_SUBTYPE_IEEE_FLOAT: GUID =
     GUID::from_u128(0x00000003_0000_0010_8000_00aa00389b71);
+const KSAUDIO_SPEAKER_STEREO: u32 = 0x0000_0003;
 const CAPTURE_READY_TIMEOUT: Duration = Duration::from_secs(10);
 const PROCESS_ACTIVATION_TIMEOUT: Duration = Duration::from_secs(5);
 const CAPTURE_WAIT_MILLIS: u32 = 250;
+const LOOPBACK_BUFFER_DURATION_100NS: i64 = 5 * 10_000_000;
+const DEFAULT_DEVICE_POLL_INTERVAL: Duration = Duration::from_secs(1);
+const ENDPOINT_RECONNECT_INTERVAL: Duration = Duration::from_secs(3);
+const STOP_POLL_INTERVAL: Duration = Duration::from_millis(50);
 const SILENCE_TIMEOUT: Duration = Duration::from_secs(2);
 const SIGNAL_THRESHOLD: f32 = 0.000_1;
 const DROP_REPORT_INTERVAL: Duration = Duration::from_secs(1);
@@ -362,6 +367,61 @@ unsafe fn device_id(device: &IMMDevice) -> windows::core::Result<String> {
     unsafe { take_task_string(pointer) }
 }
 
+unsafe fn prime_loopback_endpoint(device: &IMMDevice) -> Result<(), CaptureError> {
+    let audio_client: IAudioClient = unsafe { device.Activate(CLSCTX_ALL, None) }
+        .map_err(|error| windows_error("activate silent loopback-primer client", error))?;
+    let mix_format = TaskAllocatedWaveFormat(
+        unsafe { audio_client.GetMixFormat() }
+            .map_err(|error| windows_error("read loopback-primer mix format", error))?,
+    );
+    if mix_format.0.is_null() {
+        return Err(CaptureError::InvalidFormat(
+            "WASAPI returned a null loopback-primer format".into(),
+        ));
+    }
+    let mix = unsafe { std::ptr::read_unaligned(mix_format.0) };
+    let block_align = usize::from(mix.nBlockAlign);
+    if block_align == 0 {
+        return Err(CaptureError::InvalidFormat(
+            "WASAPI returned zero block alignment for loopback priming".into(),
+        ));
+    }
+
+    unsafe {
+        audio_client.Initialize(
+            AUDCLNT_SHAREMODE_SHARED,
+            0,
+            LOOPBACK_BUFFER_DURATION_100NS,
+            0,
+            mix_format.0,
+            None,
+        )
+    }
+    .map_err(|error| windows_error("initialize silent loopback-primer client", error))?;
+
+    let frames = unsafe { audio_client.GetBufferSize() }
+        .map_err(|error| windows_error("read loopback-primer buffer size", error))?;
+    if frames == 0 {
+        return Ok(());
+    }
+    let bytes_len = (frames as usize).checked_mul(block_align).ok_or_else(|| {
+        CaptureError::InvalidFormat("loopback-primer buffer byte length overflowed".into())
+    })?;
+    let render_client: IAudioRenderClient = unsafe { audio_client.GetService() }
+        .map_err(|error| windows_error("open silent loopback-primer render service", error))?;
+    let buffer = unsafe { render_client.GetBuffer(frames) }
+        .map_err(|error| windows_error("open silent loopback-primer buffer", error))?;
+    if buffer.is_null() {
+        let _ = unsafe { render_client.ReleaseBuffer(frames, AUDCLNT_BUFFERFLAGS_SILENT.0 as u32) };
+        return Err(CaptureError::Worker(
+            "WASAPI returned a null loopback-primer buffer".into(),
+        ));
+    }
+    unsafe { std::ptr::write_bytes(buffer, 0, bytes_len) };
+    unsafe { render_client.ReleaseBuffer(frames, 0) }
+        .map_err(|error| windows_error("release silent loopback-primer buffer", error))
+}
+
 unsafe fn device_name(device: &IMMDevice) -> windows::core::Result<String> {
     let store = unsafe { device.OpenPropertyStore(STGM_READ)? };
     let mut value = unsafe { store.GetValue(&PKEY_Device_FriendlyName)? };
@@ -436,6 +496,7 @@ pub(crate) fn start_capture(
     events: Sender<CaptureEvent>,
 ) -> Result<Box<dyn CaptureSession>, CaptureError> {
     let target = match &selection {
+        CaptureSelection::SystemDefault => CaptureTarget::DefaultEndpoint,
         CaptureSelection::SystemOutput { device_id } => CaptureTarget::Endpoint(device_id.clone()),
         CaptureSelection::Application { process_id } if *process_id != 0 => {
             CaptureTarget::Process(*process_id)
@@ -451,6 +512,7 @@ pub(crate) fn start_capture(
 
 #[derive(Clone)]
 enum CaptureTarget {
+    DefaultEndpoint,
     Endpoint(SourceId),
     Process(u32),
 }
@@ -458,6 +520,7 @@ enum CaptureTarget {
 impl CaptureTarget {
     fn source_id(&self) -> SourceId {
         match self {
+            Self::DefaultEndpoint => SourceId::new("default-output"),
             Self::Endpoint(device_id) => device_id.clone(),
             Self::Process(process_id) => SourceId::new(format!("process:{process_id}")),
         }
@@ -465,9 +528,13 @@ impl CaptureTarget {
 
     fn worker_name(&self) -> &'static str {
         match self {
-            Self::Endpoint(_) => "wasapi-endpoint-loopback",
+            Self::DefaultEndpoint | Self::Endpoint(_) => "wasapi-endpoint-loopback",
             Self::Process(_) => "wasapi-process-loopback",
         }
+    }
+
+    const fn is_endpoint(&self) -> bool {
+        matches!(self, Self::DefaultEndpoint | Self::Endpoint(_))
     }
 }
 
@@ -521,48 +588,128 @@ fn capture_worker(
         }
     };
     let source_id = target.source_id();
-    let stream = match unsafe { WasapiCaptureStream::open(&target) } {
-        Ok(stream) => stream,
-        Err(error) => {
-            let _ = ready.send(Err(error));
+    let mut starting = true;
+    let mut last_recovery_message = None::<String>;
+
+    loop {
+        if stop_requested.load(Ordering::Acquire) {
+            let _ = events.try_send(CaptureEvent::State(CaptureState::Stopped));
             return Ok(());
         }
-    };
 
-    if let Err(error) = unsafe { stream.audio_client.Start() } {
-        let _ = ready.send(Err(windows_error("start WASAPI loopback stream", error)));
-        return Ok(());
-    }
-    if ready.send(Ok(())).is_err() {
-        let _ = unsafe { stream.audio_client.Stop() };
-        return Ok(());
-    }
-    publish_event(&events, CaptureEvent::State(CaptureState::Capturing))?;
+        let stream = match unsafe { WasapiCaptureStream::open(&target) }.and_then(|stream| {
+            unsafe { stream.audio_client.Start() }
+                .map_err(|error| windows_error("start WASAPI loopback stream", error))?;
+            Ok(stream)
+        }) {
+            Ok(stream) => stream,
+            Err(error) if starting => {
+                let _ = ready.send(Err(error));
+                return Ok(());
+            }
+            Err(error) if target.is_endpoint() => {
+                publish_endpoint_recovery(&events, &error.to_string(), &mut last_recovery_message)?;
+                if wait_for_stop(&stop_requested, ENDPOINT_RECONNECT_INTERVAL) {
+                    let _ = events.try_send(CaptureEvent::State(CaptureState::Stopped));
+                    return Ok(());
+                }
+                continue;
+            }
+            Err(error) => return publish_terminal_capture_error(&events, error),
+        };
 
-    let capture_result = unsafe { stream.capture(&source_id, &events, &stop_requested) };
-    let stop_result = unsafe { stream.audio_client.Stop() }
-        .map_err(|error| windows_error("stop WASAPI loopback stream", error));
-
-    match (capture_result, stop_result) {
-        (Err(error), _) => {
-            let _ = events.send_timeout(
-                CaptureEvent::Error(error.to_string()),
-                Duration::from_millis(500),
-            );
-            Err(error)
+        if starting {
+            if ready.send(Ok(())).is_err() {
+                let _ = unsafe { stream.audio_client.Stop() };
+                return Ok(());
+            }
+            starting = false;
         }
-        (Ok(()), Err(error)) => {
-            let _ = events.send_timeout(
-                CaptureEvent::Error(error.to_string()),
-                Duration::from_millis(500),
-            );
-            Err(error)
-        }
-        (Ok(()), Ok(())) => {
+        last_recovery_message = None;
+        publish_event(&events, CaptureEvent::State(CaptureState::Capturing))?;
+
+        let capture_result = unsafe { stream.capture(&source_id, &events, &stop_requested) };
+        let stop_result = unsafe { stream.audio_client.Stop() }
+            .map_err(|error| windows_error("stop WASAPI loopback stream", error));
+
+        if stop_requested.load(Ordering::Acquire) {
+            if let Err(error) = stop_result {
+                return publish_terminal_capture_error(&events, error);
+            }
             let _ = events.try_send(CaptureEvent::State(CaptureState::Stopped));
-            Ok(())
+            return Ok(());
+        }
+
+        let cycle_end = match (capture_result, stop_result) {
+            (Ok(CaptureEnd::Reconnect(reason)), _) => CaptureCycleEnd::Reconnect(reason),
+            (Err(error), _) | (_, Err(error)) => CaptureCycleEnd::Error(error),
+            (Ok(CaptureEnd::StopRequested), Ok(())) => CaptureCycleEnd::Error(
+                CaptureError::Worker("the capture stream stopped unexpectedly".into()),
+            ),
+        };
+
+        if !target.is_endpoint() {
+            let error = match cycle_end {
+                CaptureCycleEnd::Error(error) => error,
+                CaptureCycleEnd::Reconnect(reason) => CaptureError::Worker(reason),
+            };
+            return publish_terminal_capture_error(&events, error);
+        }
+
+        let recovery_reason = match cycle_end {
+            CaptureCycleEnd::Reconnect(reason) => reason,
+            CaptureCycleEnd::Error(error) => error.to_string(),
+        };
+        publish_endpoint_recovery(&events, &recovery_reason, &mut last_recovery_message)?;
+        if wait_for_stop(&stop_requested, ENDPOINT_RECONNECT_INTERVAL) {
+            let _ = events.try_send(CaptureEvent::State(CaptureState::Stopped));
+            return Ok(());
         }
     }
+}
+
+fn publish_endpoint_recovery(
+    events: &Sender<CaptureEvent>,
+    reason: &str,
+    last_message: &mut Option<String>,
+) -> Result<(), CaptureError> {
+    let message = format!(
+        "{reason}. Prollyglot is waiting for the playback endpoint and will retry automatically."
+    );
+    if last_message.as_deref() != Some(message.as_str()) {
+        publish_event(events, CaptureEvent::Warning(message.clone()))?;
+        *last_message = Some(message);
+    }
+    Ok(())
+}
+
+fn publish_terminal_capture_error(
+    events: &Sender<CaptureEvent>,
+    error: CaptureError,
+) -> Result<(), CaptureError> {
+    let _ = events.send_timeout(
+        CaptureEvent::Error(error.to_string()),
+        Duration::from_millis(500),
+    );
+    Err(error)
+}
+
+fn wait_for_stop(stop_requested: &AtomicBool, duration: Duration) -> bool {
+    let started_at = Instant::now();
+    while !stop_requested.load(Ordering::Acquire) && started_at.elapsed() < duration {
+        thread::sleep(STOP_POLL_INTERVAL.min(duration.saturating_sub(started_at.elapsed())));
+    }
+    stop_requested.load(Ordering::Acquire)
+}
+
+enum CaptureEnd {
+    StopRequested,
+    Reconnect(String),
+}
+
+enum CaptureCycleEnd {
+    Reconnect(String),
+    Error(CaptureError),
 }
 
 #[implement(IActivateAudioInterfaceCompletionHandler)]
@@ -664,25 +811,61 @@ struct WasapiCaptureStream {
     block_align: usize,
     audio_event: OwnedHandle,
     process_handle: Option<OwnedHandle>,
+    default_endpoint: Option<DefaultEndpointMonitor>,
+}
+
+struct DefaultEndpointMonitor {
+    enumerator: IMMDeviceEnumerator,
+    opened_device_id: String,
+}
+
+struct StreamInitialization {
+    sample_format: NativeAudioFormat,
+    block_align: usize,
+    stream_flags: u32,
+    context: &'static str,
+    process_handle: Option<OwnedHandle>,
+    default_endpoint: Option<DefaultEndpointMonitor>,
 }
 
 impl WasapiCaptureStream {
     unsafe fn open(target: &CaptureTarget) -> Result<Self, CaptureError> {
         match target {
-            CaptureTarget::Endpoint(device_id) => unsafe { Self::open_endpoint(device_id) },
+            CaptureTarget::DefaultEndpoint => unsafe { Self::open_endpoint(None) },
+            CaptureTarget::Endpoint(device_id) => unsafe { Self::open_endpoint(Some(device_id)) },
             CaptureTarget::Process(process_id) => unsafe { Self::open_process(*process_id) },
         }
     }
 
-    unsafe fn open_endpoint(device_id: &SourceId) -> Result<Self, CaptureError> {
+    unsafe fn open_endpoint(requested_device_id: Option<&SourceId>) -> Result<Self, CaptureError> {
         let enumerator: IMMDeviceEnumerator = unsafe {
             CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)
                 .map_err(|error| windows_error("create Windows audio device enumerator", error))?
         };
-        let requested_id = HSTRING::from(device_id.0.as_str());
-        let device = unsafe { enumerator.GetDevice(&requested_id) }.map_err(|error| {
-            CaptureError::SourceUnavailable(format!("{} ({})", device_id, error.code()))
-        })?;
+        let device = match requested_device_id {
+            Some(device_id) => {
+                let requested_id = HSTRING::from(device_id.0.as_str());
+                unsafe { enumerator.GetDevice(&requested_id) }.map_err(|error| {
+                    CaptureError::SourceUnavailable(format!("{} ({})", device_id, error.code()))
+                })?
+            }
+            None => unsafe { enumerator.GetDefaultAudioEndpoint(eRender, eConsole) }.map_err(
+                |error| {
+                    CaptureError::SourceUnavailable(format!(
+                        "default playback device ({})",
+                        error.code()
+                    ))
+                },
+            )?,
+        };
+        let opened_device_id = unsafe { device_id(&device) }
+            .map_err(|error| windows_error("read selected playback-device identifier", error))?;
+        let default_endpoint = requested_device_id
+            .is_none()
+            .then_some(DefaultEndpointMonitor {
+                enumerator,
+                opened_device_id,
+            });
         let audio_client: IAudioClient = unsafe { device.Activate(CLSCTX_ALL, None) }
             .map_err(|error| windows_error("activate WASAPI audio client", error))?;
         let mix_format = TaskAllocatedWaveFormat(
@@ -705,15 +888,24 @@ impl WasapiCaptureStream {
             )));
         }
 
+        // OBS primes endpoint loopback with a silent render buffer so the
+        // shared stream does not stall or develop timestamp glitches across
+        // long silent periods. This is best-effort because capture must still
+        // work on endpoints that reject an auxiliary render client.
+        let _ = unsafe { prime_loopback_endpoint(&device) };
+
         unsafe {
             Self::initialize(
                 audio_client,
                 mix_format.0,
-                sample_format,
-                block_align,
-                AUDCLNT_STREAMFLAGS_LOOPBACK | AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
-                "initialize WASAPI endpoint loopback",
-                None,
+                StreamInitialization {
+                    sample_format,
+                    block_align,
+                    stream_flags: AUDCLNT_STREAMFLAGS_LOOPBACK | AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
+                    context: "initialize WASAPI endpoint loopback",
+                    process_handle: None,
+                    default_endpoint,
+                },
             )
         }
     }
@@ -726,31 +918,38 @@ impl WasapiCaptureStream {
         let sample_format = NativeAudioFormat {
             sample_rate: 48_000,
             channels: 2,
-            sample_format: SampleFormat::I16,
+            sample_format: SampleFormat::F32,
         };
         let block_align = sample_format.bytes_per_frame();
-        let wave_format = WAVEFORMATEX {
-            wFormatTag: WAVE_FORMAT_PCM as u16,
-            nChannels: sample_format.channels,
-            nSamplesPerSec: sample_format.sample_rate,
-            nAvgBytesPerSec: sample_format.sample_rate * block_align as u32,
-            nBlockAlign: block_align as u16,
-            wBitsPerSample: 16,
-            cbSize: 0,
+        let wave_format = WAVEFORMATEXTENSIBLE {
+            Format: WAVEFORMATEX {
+                wFormatTag: WAVE_FORMAT_EXTENSIBLE,
+                nChannels: sample_format.channels,
+                nSamplesPerSec: sample_format.sample_rate,
+                nAvgBytesPerSec: sample_format.sample_rate * block_align as u32,
+                nBlockAlign: block_align as u16,
+                wBitsPerSample: 32,
+                cbSize: (size_of::<WAVEFORMATEXTENSIBLE>() - size_of::<WAVEFORMATEX>()) as u16,
+            },
+            Samples: WAVEFORMATEXTENSIBLE_0 {
+                wValidBitsPerSample: 32,
+            },
+            dwChannelMask: KSAUDIO_SPEAKER_STEREO,
+            SubFormat: KSDATAFORMAT_SUBTYPE_IEEE_FLOAT,
         };
 
         unsafe {
             Self::initialize(
                 audio_client,
-                &wave_format,
-                sample_format,
-                block_align,
-                AUDCLNT_STREAMFLAGS_LOOPBACK
-                    | AUDCLNT_STREAMFLAGS_EVENTCALLBACK
-                    | AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM
-                    | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY,
-                "initialize WASAPI process loopback",
-                process_handle,
+                &wave_format.Format,
+                StreamInitialization {
+                    sample_format,
+                    block_align,
+                    stream_flags: AUDCLNT_STREAMFLAGS_LOOPBACK | AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
+                    context: "initialize WASAPI process loopback",
+                    process_handle,
+                    default_endpoint: None,
+                },
             )
         }
     }
@@ -758,23 +957,19 @@ impl WasapiCaptureStream {
     unsafe fn initialize(
         audio_client: IAudioClient,
         wave_format: *const WAVEFORMATEX,
-        sample_format: NativeAudioFormat,
-        block_align: usize,
-        stream_flags: u32,
-        context: &str,
-        process_handle: Option<OwnedHandle>,
+        initialization: StreamInitialization,
     ) -> Result<Self, CaptureError> {
         unsafe {
             audio_client.Initialize(
                 AUDCLNT_SHAREMODE_SHARED,
-                stream_flags,
-                0,
+                initialization.stream_flags,
+                LOOPBACK_BUFFER_DURATION_100NS,
                 0,
                 wave_format,
                 None,
             )
         }
-        .map_err(|error| windows_error(context, error))?;
+        .map_err(|error| windows_error(initialization.context, error))?;
 
         let audio_event = OwnedHandle(
             unsafe { CreateEventW(None, false, false, None) }
@@ -788,10 +983,11 @@ impl WasapiCaptureStream {
         Ok(Self {
             audio_client,
             capture_client,
-            sample_format,
-            block_align,
+            sample_format: initialization.sample_format,
+            block_align: initialization.block_align,
             audio_event,
-            process_handle,
+            process_handle: initialization.process_handle,
+            default_endpoint: initialization.default_endpoint,
         })
     }
 
@@ -800,7 +996,7 @@ impl WasapiCaptureStream {
         source_id: &SourceId,
         events: &Sender<CaptureEvent>,
         stop_requested: &AtomicBool,
-    ) -> Result<(), CaptureError> {
+    ) -> Result<CaptureEnd, CaptureError> {
         let started_at = Instant::now();
         let mut sequence = 0_u64;
         let mut silence_buffer = Vec::<u8>::new();
@@ -809,6 +1005,7 @@ impl WasapiCaptureStream {
         let mut dropped_frames = 0_u64;
         let mut reported_dropped_frames = 0_u64;
         let mut last_drop_report = Duration::ZERO;
+        let mut last_default_device_poll = Duration::ZERO;
 
         while !stop_requested.load(Ordering::Acquire) {
             if unsafe { self.process_exited()? } {
@@ -818,6 +1015,14 @@ impl WasapiCaptureStream {
             }
 
             let elapsed = started_at.elapsed();
+            if elapsed.saturating_sub(last_default_device_poll) >= DEFAULT_DEVICE_POLL_INTERVAL {
+                last_default_device_poll = elapsed;
+                if unsafe { self.default_endpoint_changed()? } {
+                    return Ok(CaptureEnd::Reconnect(
+                        "the system default playback device changed".into(),
+                    ));
+                }
+            }
             if let Some(state) = activity.tick(elapsed) {
                 pending_state = Some(state);
             }
@@ -918,7 +1123,24 @@ impl WasapiCaptureStream {
             }
         }
 
-        Ok(())
+        Ok(CaptureEnd::StopRequested)
+    }
+
+    unsafe fn default_endpoint_changed(&self) -> Result<bool, CaptureError> {
+        let Some(default_endpoint) = &self.default_endpoint else {
+            return Ok(false);
+        };
+        let current = unsafe {
+            default_endpoint
+                .enumerator
+                .GetDefaultAudioEndpoint(eRender, eConsole)
+        }
+        .map_err(|error| {
+            CaptureError::SourceUnavailable(format!("default playback device ({})", error.code()))
+        })?;
+        let current_id = unsafe { device_id(&current) }
+            .map_err(|error| windows_error("read default playback-device identifier", error))?;
+        Ok(current_id != default_endpoint.opened_device_id)
     }
 
     unsafe fn process_exited(&self) -> Result<bool, CaptureError> {

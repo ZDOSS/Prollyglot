@@ -104,6 +104,7 @@ const dialog = requireElement<HTMLDialogElement>("#utility-dialog");
 
 let snapshot: SourceSnapshot = { playbackDevices: [], applications: [] };
 let currentStatus: CaptureStatus = { state: "stopped", peak: 0, droppedFrames: 0 };
+const FOLLOW_SYSTEM_DEFAULT = "__follow-system-default__";
 
 function requireElement<T extends Element>(selector: string): T {
   const element = document.querySelector<T>(selector);
@@ -132,12 +133,20 @@ function populateSources(nextSnapshot: SourceSnapshot) {
     sourceSelect.value = previousSource;
   }
 
-  deviceSelect.replaceChildren();
+  const defaultDevice = snapshot.playbackDevices.find(({ isDefault }) => isDefault);
+  const followLabel = defaultDevice
+    ? `Follow system default — ${defaultDevice.name}`
+    : "Follow system default";
+  deviceSelect.replaceChildren(
+    option(FOLLOW_SYSTEM_DEFAULT, followLabel, !previousDevice || previousDevice === FOLLOW_SYSTEM_DEFAULT)
+  );
   for (const device of snapshot.playbackDevices) {
-    const label = device.isDefault ? `${device.name} — Default` : device.name;
-    deviceSelect.append(option(device.id, label, device.id === previousDevice || (!previousDevice && device.isDefault)));
+    const label = device.isDefault ? `${device.name} — Pin current default` : device.name;
+    deviceSelect.append(option(device.id, label, device.id === previousDevice));
   }
-  if (!deviceSelect.value && deviceSelect.options[0]) deviceSelect.options[0].selected = true;
+  if (![...deviceSelect.options].some(({ value }) => value === previousDevice)) {
+    deviceSelect.value = FOLLOW_SYSTEM_DEFAULT;
+  }
   updateSourceMode();
 }
 
@@ -149,6 +158,7 @@ function updateSourceMode() {
 function selectedCapture(): CaptureSelection {
   if (sourceSelect.value === "system") {
     if (!deviceSelect.value) throw new Error("No playback device is available.");
+    if (deviceSelect.value === FOLLOW_SYSTEM_DEFAULT) return { kind: "systemDefault" };
     return { kind: "systemOutput", deviceId: deviceSelect.value };
   }
   const processId = Number(sourceSelect.value.split(":")[1]);
