@@ -11,7 +11,8 @@ try {
         -p prollyglot-asr `
         -p prollyglot-asr-sherpa `
         -p prollyglot-transcript `
-        -p prollyglot-model-manager
+        -p prollyglot-model-manager `
+        --all-targets
     pnpm --dir apps/desktop build
     cargo clippy --locked --workspace --all-targets -- -D warnings
 }

@@ -2590,6 +2590,7 @@ name = "prollyglot-asr-sherpa"
 version = "0.1.0"
 dependencies = [
  "prollyglot-asr",
+ "prollyglot-audio-pipeline",
  "prollyglot-model-manager",
  "sherpa-onnx",
  "tempfile",

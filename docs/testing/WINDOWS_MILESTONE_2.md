@@ -101,7 +101,16 @@ Memory and delay must not grow continuously. If inference falls behind, Prollygl
 
 ## Model comparison gate
 
-The initial 20M English Zipformer is a lightweight candidate, not automatically the permanent default. Before accepting Milestone 2, run the same conversation, media, and noisy samples through the selected standard English candidate and retain:
+The initial 20M English Zipformer is a lightweight candidate, not automatically the permanent default. Prollyglot's comparison harness downloads the pinned benchmark-only standard candidate into a separate cache and processes the same local WAV through both models. It does not add the standard model to the app or change the user's installed model.
+
+Prepare a mono WAV with a trustworthy transcript for each conversation, media, and noisy category, then run at least three cached release-mode comparisons per sample:
+
+```powershell
+$BenchmarkModels = Join-Path $env:LOCALAPPDATA "Prollyglot\benchmark-models"
+cargo run --release --locked -p prollyglot-asr-sherpa --example compare_models -- $BenchmarkModels "C:\path\to\sample.wav" "REFERENCE TRANSCRIPT"
+```
+
+The harness accepts different WAV sample rates and resamples internally, but the file must be mono. The additional standard candidate is approximately 70.0 MiB. Retain:
 
 - model/download size;
 - peak memory;
@@ -111,6 +120,8 @@ The initial 20M English Zipformer is a lightweight candidate, not automatically 
 - a transcript comparison or word-error measurement against known text.
 
 Choose the default only after that evidence. If neither model is clearly preferable, keep the lightweight model as the first-run option and defer automatic hardware-based selection; do not hide the unresolved quality tradeoff.
+
+The reproducible harness, candidate details, and initial clean-reference smoke result are documented in [`docs/benchmarks/ENGLISH_MODELS.md`](../benchmarks/ENGLISH_MODELS.md).
 
 ## Report back
 

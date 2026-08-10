@@ -16,5 +16,6 @@ prollyglot-asr = { path = "../asr" }
 sherpa-onnx.workspace = true
 
 [dev-dependencies]
+prollyglot-audio-pipeline = { path = "../audio-pipeline" }
 prollyglot-model-manager = { path = "../model-manager" }
 tempfile = "3.27.0"

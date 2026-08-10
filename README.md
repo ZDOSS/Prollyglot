@@ -32,10 +32,13 @@ The repository currently contains:
 - backend-neutral streaming ASR and stable provisional/final transcript contracts;
 - an explicit first-run model flow with atomic downloads, safe path validation, size/SHA-256 verification, removal, and a pinned Apache-2.0 English streaming-model candidate;
 - a sherpa-onnx adapter that loads the pinned model, preserves phrase openings with internal stream pre-roll, and exposes incremental and finalized English hypotheses;
+- a reproducible small-versus-standard model comparison harness with a separately pinned benchmark candidate;
 - a bounded capture-to-inference bridge with visible backpressure and recovery behavior; and
 - live provisional/final transcript updates wired to the transcript view and customizable always-on-top overlay.
 
 The remaining Milestone 2 gates are real Windows audio/overlay validation, partial-caption latency measurement, and the small-versus-standard model benchmark. See [BUILD_PLAN.md](BUILD_PLAN.md) for milestone status and [the Windows Milestone 2 procedure](docs/testing/WINDOWS_MILESTONE_2.md) for the validation run.
+
+The benchmark tooling and initial clean-reference result are documented in [docs/benchmarks/ENGLISH_MODELS.md](docs/benchmarks/ENGLISH_MODELS.md). That smoke result validates both runtimes but intentionally does not choose a default without conversational and noisy Windows evidence.
 
 ## Capture compatibility and protected media
 

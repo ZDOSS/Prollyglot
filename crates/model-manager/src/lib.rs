@@ -367,6 +367,14 @@ pub fn initial_english_manifest() -> Result<ModelManifest, ModelManagerError> {
     ))
 }
 
+/// Standard-size English candidate used by the Milestone 2 comparison
+/// harness. It is not installed by the product's first-run flow.
+pub fn comparison_english_manifest() -> Result<ModelManifest, ModelManagerError> {
+    ModelManifest::from_json(include_str!(
+        "../../../assets/model-manifests/english-streaming-standard.json"
+    ))
+}
+
 enum ArtifactState {
     Missing,
     Ready,
@@ -583,6 +591,18 @@ mod tests {
         assert_eq!(manifest.languages, vec!["en"]);
         assert_eq!(manifest.license, "Apache-2.0");
         assert_eq!(manifest.download_size_bytes(), 45_202_074);
+    }
+
+    #[test]
+    fn comparison_english_manifest_is_valid_and_distinct() {
+        let lightweight = initial_english_manifest().expect("lightweight manifest");
+        let standard = comparison_english_manifest().expect("comparison manifest");
+
+        assert_eq!(standard.backend, "sherpa-onnx-online-transducer");
+        assert_eq!(standard.languages, vec!["en"]);
+        assert_eq!(standard.license, "Apache-2.0");
+        assert_eq!(standard.download_size_bytes(), 73_440_167);
+        assert_ne!(standard.id, lightweight.id);
     }
 
     #[test]

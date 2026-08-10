@@ -11,7 +11,8 @@ cargo test --locked \
   -p prollyglot-asr \
   -p prollyglot-asr-sherpa \
   -p prollyglot-transcript \
-  -p prollyglot-model-manager
+  -p prollyglot-model-manager \
+  --all-targets
 cargo clippy --locked \
   -p prollyglot-core \
   -p prollyglot-audio-pipeline \
