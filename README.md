@@ -29,10 +29,11 @@ The repository currently contains:
 - Windows application/process-tree capture through the documented process-loopback API;
 - follow-default-device behavior, endpoint reconnection, bounded capture queues, and local diagnostic logging;
 - mono PCM normalization, streaming resampling to model rate, bounded low-latency buffering, energy VAD, and phrase boundaries;
-- backend-neutral streaming ASR and stable provisional/final transcript contracts; and
-- an explicit model manager with atomic downloads, safe path validation, size/SHA-256 verification, and a pinned Apache-2.0 English streaming-model candidate.
+- backend-neutral streaming ASR and stable provisional/final transcript contracts;
+- an explicit model manager with atomic downloads, safe path validation, size/SHA-256 verification, and a pinned Apache-2.0 English streaming-model candidate; and
+- a sherpa-onnx adapter that loads the pinned model and exposes incremental and finalized English hypotheses through the shared speech contract.
 
-The next integration point connects the sherpa-onnx streaming runtime to captured audio, the transcript store, and the live overlay. See [BUILD_PLAN.md](BUILD_PLAN.md) for the milestone status and acceptance gates.
+The next integration point connects captured Windows audio to that runtime, the transcript store, and the live overlay. See [BUILD_PLAN.md](BUILD_PLAN.md) for the milestone status and acceptance gates.
 
 ## Capture compatibility and protected media
 
@@ -80,6 +81,7 @@ apps/desktop/          Tauri desktop shell, control window, and overlay UI
 crates/audio-windows/  Windows endpoint and process-loopback capture
 crates/audio-pipeline/ PCM normalization, resampling, buffering, and VAD
 crates/asr/            Backend-neutral streaming speech contracts
+crates/asr-sherpa/     sherpa-onnx streaming runtime adapter
 crates/model-manager/  Explicit model installation and integrity checks
 crates/transcript/     Provisional and committed transcript state
 assets/                Branding and pinned model manifests

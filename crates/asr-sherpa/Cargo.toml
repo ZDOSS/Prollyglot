@@ -1,0 +1,20 @@
+[package]
+name = "prollyglot-asr-sherpa"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = ["static-runtime"]
+static-runtime = ["sherpa-onnx/static"]
+shared-runtime = ["sherpa-onnx/shared"]
+
+[dependencies]
+prollyglot-asr = { path = "../asr" }
+sherpa-onnx.workspace = true
+
+[dev-dependencies]
+prollyglot-model-manager = { path = "../model-manager" }
+tempfile = "3.27.0"

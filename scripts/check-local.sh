@@ -9,15 +9,18 @@ cargo test --locked \
   -p prollyglot-core \
   -p prollyglot-audio-pipeline \
   -p prollyglot-asr \
+  -p prollyglot-asr-sherpa \
   -p prollyglot-transcript \
   -p prollyglot-model-manager
 cargo clippy --locked \
   -p prollyglot-core \
   -p prollyglot-audio-pipeline \
   -p prollyglot-asr \
+  -p prollyglot-asr-sherpa \
   -p prollyglot-transcript \
   -p prollyglot-model-manager \
   --all-targets -- -D warnings
 cargo check --locked -p prollyglot-audio-windows
 cargo clippy --locked -p prollyglot-audio-windows --target x86_64-pc-windows-msvc -- -D warnings
+cargo clippy --locked -p prollyglot-asr-sherpa --target x86_64-pc-windows-msvc --lib -- -D warnings
 pnpm --dir apps/desktop build
