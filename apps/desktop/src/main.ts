@@ -9,6 +9,7 @@ import {
   onModelStatus,
   onTranscriptUpdate,
   removeEnglishModel,
+  selectEnglishModel,
   showAppearance,
   sourceSnapshot,
   startCapture,
@@ -20,6 +21,7 @@ import { icons } from "./icons";
 import type {
   CaptureSelection,
   CaptureStatus,
+  ModelCatalogStatus,
   ModelStatus,
   SourceSnapshot,
   TranscriptSnapshot
@@ -106,7 +108,7 @@ root.innerHTML = `
       <button type="button" class="utility-action" data-panel="settings">${icons.settings}<span>Settings</span></button>
     </nav>
 
-    <dialog id="utility-dialog" class="utility-dialog">
+    <dialog id="utility-dialog" class="utility-dialog" aria-labelledby="dialog-title">
       <div class="dialog-title-row">
         <h2 id="dialog-title"></h2>
         <button type="button" class="dialog-close" aria-label="Close">${icons.close}</button>
@@ -124,6 +126,7 @@ const captureMessage = requireElement<HTMLElement>("#capture-message");
 const statusLabel = requireElement<HTMLElement>(".status-label");
 const statusText = requireElement<HTMLElement>("#status-text");
 const modelSetup = requireElement<HTMLElement>("#model-setup");
+const modelSetupTitle = requireElement<HTMLElement>("#model-setup-title");
 const modelMessage = requireElement<HTMLElement>("#model-message");
 const modelProgress = requireElement<HTMLProgressElement>("#model-progress");
 const modelAction = requireElement<HTMLButtonElement>("#model-action");
@@ -131,12 +134,19 @@ const dialog = requireElement<HTMLDialogElement>("#utility-dialog");
 
 let snapshot: SourceSnapshot = { playbackDevices: [], applications: [] };
 let currentStatus: CaptureStatus = { state: "stopped", peak: 0, droppedFrames: 0 };
-let currentModel: ModelStatus = {
-  phase: "notInstalled",
+const FALLBACK_MODEL: ModelStatus = {
+  phase: "failed",
   modelId: "initial-english",
-  displayName: "English Streaming Small",
+  displayName: "English streaming model",
+  profile: "English",
+  description: "Local streaming English captions.",
   downloadedBytes: 0,
-  totalBytes: 0
+  totalBytes: 0,
+  message: "No English speech models are available."
+};
+let currentModels: ModelCatalogStatus = {
+  selectedModelId: FALLBACK_MODEL.modelId,
+  models: [FALLBACK_MODEL]
 };
 let currentTranscript: TranscriptSnapshot = { revision: 0, committed: [] };
 let settingsNotice: { message: string; tone: "neutral" | "success" | "error" } | undefined;
@@ -203,6 +213,7 @@ function selectedCapture(): CaptureSelection {
 }
 
 function renderStatus(status: CaptureStatus) {
+  const stateChanged = currentStatus.state !== status.state;
   currentStatus = status;
   statusLabel.dataset.state = status.state;
   const labels: Record<CaptureStatus["state"], string> = {
@@ -219,12 +230,13 @@ function renderStatus(status: CaptureStatus) {
   captureToggle.classList.toggle("stop", status.state === "capturing" || status.state === "waiting");
   updatePrimaryAvailability();
   document.documentElement.style.setProperty("--audio-peak", String(status.peak));
+  if (stateChanged && dialog.open && dialog.dataset.panel === "settings") renderSettingsPanel();
 }
 
 function updatePrimaryAvailability() {
   const transitioning = currentStatus.state === "starting" || currentStatus.state === "stopping";
   const running = currentStatus.state === "capturing" || currentStatus.state === "waiting";
-  captureToggle.disabled = transitioning || (!running && currentModel.phase !== "ready");
+  captureToggle.disabled = transitioning || (!running && selectedModel().phase !== "ready");
 }
 
 function formatBytes(bytes: number): string {
@@ -232,10 +244,37 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function renderModelStatus(status: ModelStatus) {
-  currentModel = status;
+function selectedModel(catalog = currentModels): ModelStatus {
+  return catalog.models.find(({ modelId }) => modelId === catalog.selectedModelId)
+    ?? catalog.models[0]
+    ?? FALLBACK_MODEL;
+}
+
+function renderModelStatus(catalog: ModelCatalogStatus) {
+  const completed = catalog.models.find((model) =>
+    model.phase === "ready"
+    && currentModels.models.find(({ modelId }) => modelId === model.modelId)?.phase === "downloading"
+  );
+  const failed = catalog.models.find((model) =>
+    model.phase === "failed"
+    && currentModels.models.find(({ modelId }) => modelId === model.modelId)?.phase === "downloading"
+  );
+  if (completed) {
+    settingsNotice = {
+      message: `${completed.displayName} is installed and ready to use.`,
+      tone: "success"
+    };
+  } else if (failed) {
+    settingsNotice = {
+      message: failed.message ?? `${failed.displayName} could not be installed.`,
+      tone: "error"
+    };
+  }
+  currentModels = catalog;
+  const status = selectedModel(catalog);
   const ready = status.phase === "ready";
   modelSetup.hidden = ready;
+  modelSetupTitle.textContent = `${status.profile} English captions`;
   modelProgress.hidden = status.phase !== "downloading";
   modelProgress.max = Math.max(status.totalBytes, 1);
   modelProgress.value = Math.min(status.downloadedBytes, modelProgress.max);
@@ -255,7 +294,7 @@ function renderModelStatus(status: ModelStatus) {
     modelMessage.textContent = status.message ?? "The model could not be installed.";
   } else {
     modelAction.textContent = `Download · ${formatBytes(status.totalBytes)}`;
-    modelMessage.textContent = "Download the lightweight English model once, then caption offline.";
+    modelMessage.textContent = `Download ${status.displayName} once, then caption offline.`;
   }
   updatePrimaryAvailability();
   if (dialog.open && dialog.dataset.panel === "settings") renderSettingsPanel();
@@ -354,21 +393,147 @@ function renderSettingsPanel() {
   const content = dialogContent();
   content.innerHTML = `
     <section class="settings-section" aria-labelledby="model-settings-title">
-      <span class="model-kicker">Local speech model</span>
-      <h3 id="model-settings-title"></h3>
-      <p id="model-settings-state" class="settings-copy"></p>
-      <div class="dialog-actions">
-        <button class="secondary-button" id="refresh-sources" type="button">${icons.refresh}<span>Refresh audio sources</span></button>
-        <button class="text-button danger-text" id="remove-model" type="button">Remove model</button>
-      </div>
+      <span class="model-kicker">Local speech models</span>
+      <h3 id="model-settings-title">English caption quality</h3>
+      <p class="settings-copy">Choose a speed and quality tradeoff. Every option streams locally; selections apply to the next caption session.</p>
+      <div id="model-options" class="model-options"></div>
       <p id="settings-action-status" class="settings-action-status" role="status" aria-live="polite"></p>
     </section>
+    <section class="settings-section settings-section-divided" aria-labelledby="audio-settings-title">
+      <span class="model-kicker">Audio</span>
+      <h3 id="audio-settings-title">Available sources</h3>
+      <p class="settings-copy">Refresh after opening or closing an audio-producing application or changing playback devices.</p>
+      <button class="secondary-button settings-wide-action" id="refresh-sources" type="button">${icons.refresh}<span>Refresh audio sources</span></button>
+    </section>
   `;
-  requireElement<HTMLElement>("#model-settings-title").textContent = currentModel.displayName;
-  const modelState = requireElement<HTMLElement>("#model-settings-state");
-  modelState.textContent = currentModel.phase === "ready"
-    ? `Installed locally · ${formatBytes(currentModel.totalBytes)}`
-    : currentModel.message ?? "Not installed";
+
+  const options = requireElement<HTMLElement>("#model-options");
+  const modelChangesBlocked = currentStatus.state !== "stopped" && currentStatus.state !== "failed";
+  const anotherDownloadRunning = currentModels.models.some(({ phase }) => phase === "downloading");
+
+  for (const model of currentModels.models) {
+    const selected = model.modelId === currentModels.selectedModelId;
+    const card = document.createElement("article");
+    card.className = "model-option";
+    card.dataset.selected = String(selected);
+
+    const heading = document.createElement("div");
+    heading.className = "model-option-heading";
+    const names = document.createElement("div");
+    const profile = document.createElement("span");
+    profile.className = "model-profile";
+    profile.textContent = model.profile;
+    const name = document.createElement("h4");
+    name.textContent = model.displayName;
+    names.append(profile, name);
+
+    const badge = document.createElement("span");
+    badge.className = "model-state-badge";
+    badge.dataset.phase = model.phase;
+    badge.textContent = selected
+      ? model.phase === "ready" ? "In use" : "Selected"
+      : model.phase === "ready" ? "Installed" : "Optional";
+    heading.append(names, badge);
+
+    const description = document.createElement("p");
+    description.className = "model-option-description";
+    description.textContent = model.description;
+    const metadata = document.createElement("p");
+    metadata.className = "model-option-metadata";
+    metadata.textContent = `${formatBytes(model.totalBytes)} · CPU · Streaming`;
+    card.append(heading, description, metadata);
+
+    if (model.phase === "downloading") {
+      const progress = document.createElement("progress");
+      progress.className = "model-progress model-option-progress";
+      progress.max = Math.max(model.totalBytes, 1);
+      progress.value = Math.min(model.downloadedBytes, progress.max);
+      card.append(progress);
+    }
+    if (model.message && model.phase !== "ready") {
+      const message = document.createElement("p");
+      message.className = "model-option-message";
+      message.dataset.tone = model.phase === "failed" || model.phase === "corrupt" ? "error" : "neutral";
+      message.textContent = model.message;
+      card.append(message);
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "model-option-actions";
+    const primary = document.createElement("button");
+    primary.type = "button";
+    primary.className = "secondary-button model-option-action";
+
+    if (model.phase === "ready") {
+      primary.textContent = selected ? "In use" : "Use model";
+      primary.disabled = selected || modelChangesBlocked;
+      if (!selected) {
+        primary.addEventListener("click", async () => {
+          primary.disabled = true;
+          setSettingsNotice(`Selecting ${model.displayName}…`, "neutral");
+          try {
+            await selectEnglishModel(model.modelId);
+            settingsNotice = {
+              message: `${model.displayName} will be used for the next caption session.`,
+              tone: "success"
+            };
+            renderModelStatus(await modelStatus());
+          } catch (error) {
+            setSettingsNotice(error instanceof Error ? error.message : String(error), "error");
+            primary.disabled = false;
+          }
+        });
+      }
+    } else if (model.phase === "downloading") {
+      const percent = model.totalBytes > 0
+        ? Math.round((model.downloadedBytes / model.totalBytes) * 100)
+        : 0;
+      primary.textContent = `Downloading ${percent}%`;
+      primary.disabled = true;
+    } else {
+      primary.textContent = model.phase === "corrupt"
+        ? "Repair"
+        : model.phase === "failed" ? "Retry" : "Download";
+      primary.disabled = modelChangesBlocked || anotherDownloadRunning;
+      primary.addEventListener("click", async () => {
+        primary.disabled = true;
+        setSettingsNotice(`Starting ${model.displayName} download…`, "neutral");
+        try {
+          await installEnglishModel(model.modelId);
+        } catch (error) {
+          setSettingsNotice(error instanceof Error ? error.message : String(error), "error");
+          primary.disabled = false;
+        }
+      });
+    }
+    actions.append(primary);
+
+    if (model.phase === "ready") {
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "text-button danger-text";
+      remove.textContent = "Remove";
+      remove.disabled = modelChangesBlocked || anotherDownloadRunning;
+      remove.addEventListener("click", async () => {
+        remove.disabled = true;
+        setSettingsNotice(`Removing ${model.displayName}…`, "neutral");
+        try {
+          await removeEnglishModel(model.modelId);
+          settingsNotice = {
+            message: `${model.displayName} was removed from this PC.`,
+            tone: "success"
+          };
+          renderModelStatus(await modelStatus());
+        } catch (error) {
+          setSettingsNotice(error instanceof Error ? error.message : String(error), "error");
+          remove.disabled = false;
+        }
+      });
+      actions.append(remove);
+    }
+    card.append(actions);
+    options.append(card);
+  }
   renderSettingsNotice();
 
   const refresh = requireElement<HTMLButtonElement>("#refresh-sources");
@@ -389,23 +554,6 @@ function renderSettingsPanel() {
     refresh.disabled = false;
   });
 
-  const remove = requireElement<HTMLButtonElement>("#remove-model");
-  remove.hidden = currentModel.phase !== "ready";
-  remove.addEventListener("click", async () => {
-    remove.disabled = true;
-    setSettingsNotice("Removing the local model…", "neutral");
-    try {
-      await removeEnglishModel();
-      settingsNotice = {
-        message: "Model removed. Download it again whenever you want to caption audio.",
-        tone: "success"
-      };
-      renderModelStatus(await modelStatus());
-    } catch (error) {
-      setSettingsNotice(error instanceof Error ? error.message : String(error), "error");
-      remove.disabled = false;
-    }
-  });
 }
 
 function renderSettingsNotice() {
@@ -424,7 +572,7 @@ sourceSelect.addEventListener("change", updateSourceMode);
 modelAction.addEventListener("click", async () => {
   captureMessage.textContent = "";
   try {
-    await installEnglishModel();
+    await installEnglishModel(selectedModel().modelId);
   } catch (error) {
     captureMessage.textContent = error instanceof Error ? error.message : String(error);
   }
@@ -435,7 +583,7 @@ captureToggle.addEventListener("click", async () => {
     if (currentStatus.state === "capturing" || currentStatus.state === "waiting") {
       await stopCapture();
     } else {
-      if (currentModel.phase !== "ready") throw new Error("Install the local English model first.");
+      if (selectedModel().phase !== "ready") throw new Error("Install the selected English model first.");
       await startCapture(selectedCapture());
     }
   } catch (error) {

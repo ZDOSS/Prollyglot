@@ -17,6 +17,7 @@ use thiserror::Error;
 const MANIFEST_SCHEMA_VERSION: u32 = 1;
 const DOWNLOAD_BUFFER_SIZE: usize = 64 * 1024;
 const USER_AGENT: &str = concat!("Prollyglot/", env!("CARGO_PKG_VERSION"));
+pub const DEFAULT_ENGLISH_MODEL_ID: &str = "sherpa-zipformer-en-20m-2023-02-17";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -367,12 +368,38 @@ pub fn initial_english_manifest() -> Result<ModelManifest, ModelManagerError> {
     ))
 }
 
-/// Standard-size English candidate used by the Milestone 2 comparison
-/// harness. It is not installed by the product's first-run flow.
+/// Standard-size English streaming model.
 pub fn comparison_english_manifest() -> Result<ModelManifest, ModelManagerError> {
     ModelManifest::from_json(include_str!(
         "../../../assets/model-manifests/english-streaming-standard.json"
     ))
+}
+
+/// Larger English streaming model trained on LibriSpeech and GigaSpeech.
+pub fn enhanced_english_manifest() -> Result<ModelManifest, ModelManagerError> {
+    ModelManifest::from_json(include_str!(
+        "../../../assets/model-manifests/english-streaming-enhanced.json"
+    ))
+}
+
+/// Built-in English choices in the order presented by the product.
+pub fn english_model_manifests() -> Result<Vec<ModelManifest>, ModelManagerError> {
+    Ok(vec![
+        initial_english_manifest()?,
+        comparison_english_manifest()?,
+        enhanced_english_manifest()?,
+    ])
+}
+
+pub fn english_manifest(model_id: &str) -> Result<ModelManifest, ModelManagerError> {
+    english_model_manifests()?
+        .into_iter()
+        .find(|manifest| manifest.id == model_id)
+        .ok_or_else(|| {
+            ModelManagerError::InvalidManifest(format!(
+                "unknown built-in English model {model_id:?}"
+            ))
+        })
 }
 
 enum ArtifactState {
@@ -594,15 +621,30 @@ mod tests {
     }
 
     #[test]
-    fn comparison_english_manifest_is_valid_and_distinct() {
+    fn english_model_catalog_is_valid_and_distinct() {
         let lightweight = initial_english_manifest().expect("lightweight manifest");
         let standard = comparison_english_manifest().expect("comparison manifest");
+        let enhanced = enhanced_english_manifest().expect("enhanced manifest");
 
         assert_eq!(standard.backend, "sherpa-onnx-online-transducer");
         assert_eq!(standard.languages, vec!["en"]);
         assert_eq!(standard.license, "Apache-2.0");
         assert_eq!(standard.download_size_bytes(), 73_440_167);
+        assert_eq!(enhanced.backend, "sherpa-onnx-online-transducer");
+        assert_eq!(enhanced.languages, vec!["en"]);
+        assert_eq!(enhanced.license, "Apache-2.0");
+        assert_eq!(enhanced.download_size_bytes(), 190_180_941);
         assert_ne!(standard.id, lightweight.id);
+        assert_ne!(enhanced.id, lightweight.id);
+        assert_ne!(enhanced.id, standard.id);
+        assert_eq!(english_model_manifests().expect("English catalog").len(), 3);
+        assert_eq!(
+            english_manifest(DEFAULT_ENGLISH_MODEL_ID)
+                .expect("default model")
+                .id,
+            lightweight.id
+        );
+        assert!(english_manifest("unknown").is_err());
     }
 
     #[test]

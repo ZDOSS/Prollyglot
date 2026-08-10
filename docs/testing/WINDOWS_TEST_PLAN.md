@@ -249,11 +249,11 @@ If the app crashes, preserve the entire development-terminal output and copy the
 
 ## 6. Test the first-run model lifecycle
 
-Perform this section before normal caption testing. If the model was installed by an earlier run, open **Settings**, press **Remove model**, close Prollyglot, stop `tauri dev` with `Ctrl+C`, and launch it again.
+Perform this section before normal caption testing. If Fast was installed by an earlier run, open **Settings**, make **English Streaming Small** the selected model, press **Remove**, close Prollyglot, stop `tauri dev` with `Ctrl+C`, and launch it again.
 
 ### WIN-MODEL-01 — missing-model state
 
-1. Confirm the card says **English captions** and describes a one-time local download.
+1. Confirm the card says **Fast English captions** and describes a one-time local download.
 2. Confirm the button shows approximately **43.1 MB**.
 3. Confirm **Start Captions** cannot be pressed.
 
@@ -276,7 +276,7 @@ Expected: the partial download is never reported as ready, the retry starts norm
 2. Confirm the model card disappears.
 3. Confirm **Start Captions** becomes available.
 4. Open **Settings**.
-5. Confirm **English Streaming Small** says **Installed locally** and reports approximately 43.1 MB.
+5. Confirm **English Streaming Small** is marked **In use** and reports approximately 43.1 MB; Balanced and Enhanced should remain optional.
 
 Expected: all checks pass. Save `model-installed.png`.
 
@@ -294,14 +294,14 @@ Expected: an already-installed model loads and captions locally with no account 
 
 ### WIN-MODEL-05 — remove and reinstall
 
-1. Start captions, open **Settings**, and press **Remove model** while the session is active.
-2. Confirm the model remains installed and the app tells you to stop captions first.
+1. Start captions and open **Settings**.
+2. Confirm model selection and removal controls are disabled while the session is active and the model remains installed.
 3. Press **Stop Captions** and wait for **Ready**.
-4. Open **Settings** and press **Remove model** again.
+4. Open **Settings** and press **Remove** on English Streaming Small.
 5. Confirm the missing-model card returns and **Start Captions** becomes unavailable.
 6. Reinstall the model and leave it installed for the remaining tests.
 
-Expected: removal is blocked while captions are active, succeeds after Stop, and the reinstalled model returns to **Installed locally**.
+Expected: removal is blocked while captions are active, succeeds after Stop, and the reinstalled model returns to **In use**.
 
 ## 7. Run the pinned ASR sanity check
 
@@ -692,7 +692,7 @@ Expected:
 
 Expected: the installed model remains available, but the previous transcript is not automatically persisted or restored.
 
-## 16. Run the small-versus-standard model comparison
+## 16. Run the English model catalog comparison
 
 Record this section as **WIN-BENCH-01**.
 
@@ -727,7 +727,7 @@ $ReferenceText = Get-Content "C:\path\to\conversation-transcript.txt" -Raw
 }
 ```
 
-Repeat for `media.wav` and `noisy.wav`. The first invocation downloads/verifies both pinned candidates; exclude that download time when comparing cached preparation. While each command runs, observe peak memory and average CPU in Task Manager if the sample is long enough.
+Repeat for `media.wav` and `noisy.wav`. The first invocation downloads/verifies all three pinned product models; exclude that download time when comparing cached preparation. While each command runs, observe peak memory and average CPU in Task Manager if the sample is long enough.
 
 Retain this table:
 
@@ -735,12 +735,15 @@ Retain this table:
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
 | Conversation — Small |  |  |  |  |  |  |  |  |  |
 | Conversation — Standard |  |  |  |  |  |  |  |  |  |
+| Conversation — Enhanced |  |  |  |  |  |  |  |  |  |
 | Media — Small |  |  |  |  |  |  |  |  |  |
 | Media — Standard |  |  |  |  |  |  |  |  |  |
+| Media — Enhanced |  |  |  |  |  |  |  |  |  |
 | Noisy — Small |  |  |  |  |  |  |  |  |  |
 | Noisy — Standard |  |  |  |  |  |  |  |  |  |
+| Noisy — Enhanced |  |  |  |  |  |  |  |  |  |
 
-Both candidates must have RTF below 1.0 to be at least real-time. Do not select the larger default from one clean clip alone; compare quality/latency gains against load time, memory, CPU, and download size across all three categories.
+Every advertised choice must have RTF below 1.0 to be at least real-time on the reference machine. Do not select a larger default from one clean clip alone; compare quality/latency gains against load time, memory, CPU, and download size across all three categories.
 
 ## 17. Finish and report the run
 
@@ -806,6 +809,6 @@ The current Windows caption slice is ready to move beyond Milestone 2 only when:
 - median useful-partial latency is below two seconds on the reference machine;
 - the 30-minute run has no crash, unbounded memory growth, or accumulating delay;
 - logs contain neither fixture caption text nor audio; and
-- representative small-versus-standard evidence is retained, even if it supports keeping the lightweight model for now.
+- representative Fast/Balanced/Enhanced evidence is retained, even if it supports keeping Fast as the default for now.
 
 Hardware-specific conditional cases may remain **BLOCKED** only when the missing hardware is clearly recorded. All reproducible **FAIL** results remain open product work.

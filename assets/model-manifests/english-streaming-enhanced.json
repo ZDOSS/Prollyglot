@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "id": "sherpa-zipformer-en-gigaspeech-2023-06-21",
+  "version": "9a65b6ea94c311ca770c2bf895b30f456a22d703",
+  "displayName": "English Streaming Enhanced",
+  "backend": "sherpa-onnx-online-transducer",
+  "languages": ["en"],
+  "license": "Apache-2.0",
+  "provenance": {
+    "sourceUrl": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-21",
+    "revision": "9a65b6ea94c311ca770c2bf895b30f456a22d703"
+  },
+  "runtime": {
+    "name": "sherpa-onnx",
+    "version": "1.13.4",
+    "license": "Apache-2.0",
+    "sourceUrl": "https://github.com/k2-fsa/sherpa-onnx/tree/v1.13.4"
+  },
+  "approximateMemoryBytes": null,
+  "artifacts": [
+    {
+      "role": "encoder",
+      "path": "encoder-epoch-99-avg-1.int8.onnx",
+      "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-21/resolve/9a65b6ea94c311ca770c2bf895b30f456a22d703/encoder-epoch-99-avg-1.int8.onnx",
+      "sizeBytes": 187823992,
+      "sha256": "32c98281c7bd8b63e3e142d007251b37f120572e8fdea9a4f5a79ce22b10ec4f"
+    },
+    {
+      "role": "decoder",
+      "path": "decoder-epoch-99-avg-1.onnx",
+      "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-21/resolve/9a65b6ea94c311ca770c2bf895b30f456a22d703/decoder-epoch-99-avg-1.onnx",
+      "sizeBytes": 2092566,
+      "sha256": "9da02b77cb08826756ec6a88635f35a40374e4164e7c6359121a9145958a6ceb"
+    },
+    {
+      "role": "joiner",
+      "path": "joiner-epoch-99-avg-1.int8.onnx",
+      "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-21/resolve/9a65b6ea94c311ca770c2bf895b30f456a22d703/joiner-epoch-99-avg-1.int8.onnx",
+      "sizeBytes": 259335,
+      "sha256": "831477d390e59a61f1b6a6f763b9903e6c6366ff6034f1ddba613be82637122f"
+    },
+    {
+      "role": "tokens",
+      "path": "tokens.txt",
+      "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-21/resolve/9a65b6ea94c311ca770c2bf895b30f456a22d703/tokens.txt",
+      "sizeBytes": 5048,
+      "sha256": "49e3c2646595fd907228b3c6787069658f67b17377c60aeb8619c4551b2316fb"
+    }
+  ]
+}

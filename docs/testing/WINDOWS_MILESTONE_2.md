@@ -24,13 +24,13 @@ The local check must pass without using GitHub Actions minutes. Leave Task Manag
 
 ## First-run model flow
 
-1. If the English model is already installed, remove it from Settings and restart Prollyglot.
-2. Confirm the model card is visible immediately, its size is shown, and Start Captions is unavailable until the model is ready.
+1. In Settings, select Fast, remove **English Streaming Small**, and restart Prollyglot.
+2. Confirm the Fast model card is visible immediately, its size is shown, and Start Captions is unavailable until the selected model is ready.
 3. Start the download. Confirm progress changes and that the UI remains responsive.
 4. Close Prollyglot partway through one download, reopen it, and start the download again. It must recover without treating a partial file as an installed model.
-5. Complete the download. The card should disappear, Start Captions should become available, and Settings should report the model as installed locally.
+5. Complete the download. The first-run card should disappear, Start Captions should become available, and Settings should mark Fast **In use** while listing Balanced and Enhanced as optional.
 6. Disconnect the network, restart Prollyglot, and start captions. An installed model must work offline with no account or network request.
-7. Stop captions, remove the model, and confirm Start Captions becomes unavailable again. Reinstall it before continuing.
+7. Stop captions, remove Fast, and confirm Start Captions becomes unavailable again because the selected model is missing. Reinstall it before continuing.
 
 Expected download size is approximately 43.1 MiB (45,202,074 bytes). Every installed artifact is checked against the pinned size and SHA-256 digest before it becomes ready.
 
@@ -104,7 +104,7 @@ Memory and delay must not grow continuously. If inference falls behind, Prollygl
 
 ## Model comparison gate
 
-The initial 20M English Zipformer is a lightweight candidate, not automatically the permanent default. Prollyglot's comparison harness downloads the pinned benchmark-only standard candidate into a separate cache and processes the same local WAV through both models. It does not add the standard model to the app or change the user's installed model.
+The initial 20M English Zipformer remains the Fast default, not automatically the permanent accuracy winner. Prollyglot exposes Fast, Balanced, and Enhanced as separately downloadable choices, and the comparison harness processes the same local WAV through the exact three pinned product manifests in an isolated cache. Running the harness does not change the app's selected model.
 
 Prepare a mono WAV with a trustworthy transcript for each conversation, media, and noisy category, then run at least three cached release-mode comparisons per sample:
 
@@ -113,7 +113,7 @@ $BenchmarkModels = Join-Path $env:LOCALAPPDATA "Prollyglot\benchmark-models"
 cargo run --release --locked -p prollyglot-asr-sherpa --example compare_models -- $BenchmarkModels "C:\path\to\sample.wav" "REFERENCE TRANSCRIPT"
 ```
 
-The harness accepts different WAV sample rates and resamples internally, but the file must be mono. The additional standard candidate is approximately 70.0 MiB. Retain:
+The harness accepts different WAV sample rates and resamples internally, but the file must be mono. Downloads are approximately 43.1 MiB for Fast, 70.0 MiB for Balanced, and 181.4 MiB for Enhanced. Retain:
 
 - model/download size;
 - peak memory;
@@ -122,7 +122,7 @@ The harness accepts different WAV sample rates and resamples internally, but the
 - median and 95th-percentile partial latency; and
 - a transcript comparison or word-error measurement against known text.
 
-Choose the default only after that evidence. If neither model is clearly preferable, keep the lightweight model as the first-run option and defer automatic hardware-based selection; do not hide the unresolved quality tradeoff.
+Change the default only after that evidence. If no larger model is clearly preferable, keep Fast as the first-run option and let users make the explicit tradeoff; do not hide the unresolved quality differences behind an automatic choice.
 
 The reproducible harness, candidate details, and initial clean-reference smoke result are documented in [`docs/benchmarks/ENGLISH_MODELS.md`](../benchmarks/ENGLISH_MODELS.md).
 
@@ -130,4 +130,4 @@ The reproducible harness, candidate details, and initial clean-reference smoke r
 
 Please return the machine details, first-run/offline results, both source-mode results, restart and source-exit behavior, transcript/overlay observations, latency table, 30-minute resource figures, backpressure warnings, model-comparison table, and nearby Prollyglot log lines for any failure.
 
-Milestone 2 is accepted only after the end-to-end behavior passes and the small-versus-standard model decision is supported by measured evidence.
+Milestone 2 is accepted only after the end-to-end behavior passes and the three-model catalog is supported by measured representative evidence.

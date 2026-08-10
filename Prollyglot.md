@@ -482,9 +482,15 @@ The application should present simple quality choices while retaining advanced e
 
 ## Recommended POC
 
-Start with `sherpa-onnx` behind Prollyglot's replaceable speech-engine contract and a genuinely streaming English model. The first lightweight candidate is the Apache-2.0 20M Zipformer English transducer published for sherpa-onnx. Its exact upstream revision, runtime files, sizes, SHA-256 digests, and license must remain recorded in a versioned model manifest.
+Start with `sherpa-onnx` behind Prollyglot's replaceable speech-engine contract and genuinely streaming English models. The Windows MVP exposes three pinned Apache-2.0 Zipformer choices in Settings:
 
-The lightweight candidate is not the final default until it has been measured against a standard-size English streaming model on conversational speech, media, and noisy game/call audio. The comparison should include accuracy, partial-caption latency, real-time factor, memory use, and download size.
+- **Fast:** the 20M model and current first-run default, prioritizing the smallest download and lowest CPU cost;
+- **Balanced:** a standard-size streaming model for users who can spend more resources; and
+- **Enhanced:** the largest initial option, trained on both LibriSpeech and GigaSpeech to provide a broader recognition candidate for varied dialogue and accents.
+
+These names describe product profiles and training/resource tradeoffs, not a guarantee that the larger model will transcribe every speaker more accurately. The user can install more than one model, explicitly select which one the next caption session loads, remove unused models, and keep that selection across restarts. Model changes are disabled during an active caption session.
+
+Fast remains the initial default until representative Windows comparisons justify changing it. Comparisons should cover accented and unaccented conversation, media, and noisy game/call audio, and should include accuracy, partial-caption latency, real-time factor, memory use, and download size. Every model's exact upstream revision, runtime files, sizes, SHA-256 digests, and license must remain recorded in a versioned manifest.
 
 Initial goal:
 
@@ -1157,24 +1163,18 @@ Prollyglot should include a model manager.
 Example:
 
 ```text
-Models
+English caption quality
 
-Moonshine English Small
-123 MB
-Installed
+Fast — English Streaming Small
+43.1 MiB · In use
 [ Remove ]
 
-Moonshine Japanese
-58 MB
-Installed
-[ Remove ]
+Balanced — English Streaming Standard
+70.0 MiB · Installed
+[ Use model ] [ Remove ]
 
-Nemotron Multilingual
-Not installed
-[ Download ]
-
-Voxtral Realtime
-Not installed
+Enhanced — English Streaming Enhanced
+181.4 MiB · Optional
 [ Download ]
 ```
 
@@ -1185,7 +1185,10 @@ The model manager should show:
 - download size,
 - approximate memory requirement where known,
 - backend,
-- installed state.
+- streaming/hardware capability,
+- installed state,
+- selected state,
+- a short, evidence-based explanation of the tradeoff.
 
 ---
 

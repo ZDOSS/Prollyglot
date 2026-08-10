@@ -37,7 +37,7 @@ Why this direction:
 | Milestone | Integrated outcome | Status |
 | --- | --- | --- |
 | 1. Windows capture foundation | A real Windows desktop shell can enumerate and capture either a selected output device or selected application | Selected-device Windows smoke passed; application and lifecycle validation remain |
-| 2. Live English captions | Captured audio becomes stable partial and final English captions locally | Device-to-caption smoke passed; short-utterance/context fixes await re-smoke and representative model evidence remains |
+| 2. Live English captions | Captured audio becomes stable partial and final English captions locally | Device-to-caption and corrected UI/context re-smokes passed; accented/conversational model evidence and application/lifecycle validation remain |
 | 3. Minimal customizable Windows app | The complete daily-use interface, overlay customization, transcript view, and controls work together | Pending |
 | 4. Windows MVP release | A reliable installable Windows build is ready for outside testing | Pending |
 | 5. Ubuntu port | The Windows-proven core runs on one supported Ubuntu LTS release through PipeWire | Pending |
@@ -47,7 +47,9 @@ Why this direction:
 
 The repository owner's first native-Windows run confirmed that **Everything I hear** receives audible audio from the selected playback device and produces local captions. It also exposed an unsolicited startup preview, unstable painting while partial captions changed, and Settings actions with no visible result. Those UI paths were corrected in the next integration point and require a focused re-smoke.
 
-A follow-up run exposed an Appearance window trapped behind its always-on-top preview and captions that discarded quiet lead-in audio, finalized too aggressively around short pauses, replaced conversational context immediately, and held the last result too briefly. The next integration hides the real overlay while Appearance is open, restores it when live captions continue, retains speech pre-roll and trailing context, and displays recent pause-bounded utterances on separate lines. This does not claim speaker identification; conversational model accuracy remains an explicit evidence gap.
+A follow-up run exposed an Appearance window trapped behind its always-on-top preview and captions that discarded quiet lead-in audio, finalized too aggressively around short pauses, replaced conversational context immediately, and held the last result too briefly. The correction hides the real overlay while Appearance is open, restores it when live captions continue, retains speech pre-roll and trailing context, and displays recent pause-bounded utterances on separate lines. This does not claim speaker identification.
+
+The next owner re-smoke reported better captions and confirmed that Appearance, Transcript, and Settings all open and close. Short remarks and a slight Southern accent still produced unreliable text. Prollyglot now exposes three local streaming choices—Fast, Balanced, and Enhanced—with verified download/removal, persistent selection, and a broader LibriSpeech-plus-GigaSpeech Enhanced option. Local clean-reference timing confirms that all three are comfortably faster than real time, but representative Windows dialogue remains the accuracy gate.
 
 Routine development now uses [`docs/testing/WINDOWS_SMOKE_TEST.md`](docs/testing/WINDOWS_SMOKE_TEST.md). Interrupted-download recovery, formal latency measurement, screenshots, OBS parity, and sustained-resource evidence are intentionally deferred to milestone hardening or release boundaries rather than imposed on every pre-release build.
 
@@ -90,18 +92,18 @@ Turn the capture foundation into the first complete product vertical slice: sele
 
 - Resampling, channel conversion, a bounded ring buffer, voice activity detection, phrase segmentation, and backpressure behavior.
 - A modular `SpeechEngine` contract with lifecycle, engine metadata, partial results, committed results, and structured failures.
-- A model manifest and manager that downloads, verifies, loads, unloads, and removes the initial English streaming model.
+- A model catalog and manager that downloads, verifies, selects, loads, unloads, and removes the Fast, Balanced, and Enhanced English streaming choices.
 - License and provenance records for the runtime and model weights before either is distributed.
 - Stable provisional versus committed transcript state with timestamps.
 - End-to-end captions from both Windows capture modes to the overlay and transcript store.
-- Internal benchmarks comparing candidate small and standard English models on conversational, media, and noisy game/call samples.
+- Internal benchmarks comparing all three English choices on accented and unaccented conversation, media, and noisy game/call samples.
 - Useful errors for silence, unsupported capture, missing models, corrupt downloads, and insufficient memory.
 
 ### Acceptance boundary
 
 Run the end-to-end procedure in [`docs/testing/WINDOWS_MILESTONE_2.md`](docs/testing/WINDOWS_MILESTONE_2.md) on the reference Windows 11 machine and retain the benchmark results.
 
-- A new user can install or download the English model from inside the app and caption real Windows system or application audio without a cloud service.
+- A new user can download and select an English model from inside the app and caption real Windows system or application audio without a cloud service.
 - Captions update incrementally, finalized text does not churn, and silence does not trigger continuous inference.
 - On the reference Windows test machine, lightweight mode is at least real-time and reaches a measured median partial-caption latency below two seconds on the benchmark set.
 - Model downloads are integrity-checked and interrupted downloads recover safely.

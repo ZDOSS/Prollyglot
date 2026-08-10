@@ -432,8 +432,11 @@ input:focus-visible {
 
 .utility-dialog {
   width: min(400px, calc(100% - 32px));
+  max-height: calc(100% - 32px);
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-lg);
+  padding: 0;
+  overflow-y: auto;
   background: var(--color-surface);
   color: var(--color-text);
   box-shadow: 0 22px 64px rgb(0 0 0 / 45%);
@@ -444,10 +447,16 @@ input:focus-visible {
 }
 
 .dialog-title-row {
+  position: sticky;
+  z-index: 2;
+  top: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  padding: var(--space-4);
+  background: var(--color-surface);
 }
 
 .dialog-title-row h2 {
@@ -468,6 +477,10 @@ input:focus-visible {
 
 .dialog-close:hover {
   background: var(--color-surface-hover);
+}
+
+#dialog-content {
+  padding: 0 var(--space-4) var(--space-4);
 }
 
 .empty-copy {
@@ -551,6 +564,115 @@ input:focus-visible {
   display: grid;
   gap: var(--space-2);
   margin-top: var(--space-4);
+}
+
+.settings-section-divided {
+  border-top: 1px solid var(--color-border);
+  margin-top: var(--space-5);
+  padding-top: var(--space-5);
+}
+
+.model-options {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.model-option {
+  display: grid;
+  gap: 7px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  background: color-mix(in srgb, var(--color-surface-raised) 58%, transparent);
+}
+
+.model-option[data-selected="true"] {
+  border-color: color-mix(in srgb, var(--color-accent) 66%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent-soft) 48%, var(--color-surface));
+}
+
+.model-option-heading,
+.model-option-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.model-profile {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--color-accent);
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.model-option h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.model-state-badge {
+  flex: 0 0 auto;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 3px 7px;
+  color: var(--color-text-muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.model-option[data-selected="true"] .model-state-badge,
+.model-state-badge[data-phase="ready"] {
+  border-color: color-mix(in srgb, var(--color-accent) 48%, var(--color-border));
+  color: var(--color-accent);
+}
+
+.model-option-description,
+.model-option-metadata,
+.model-option-message {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.model-option-description {
+  color: var(--color-text-muted);
+}
+
+.model-option-metadata {
+  color: var(--color-text-faint);
+}
+
+.model-option-message {
+  color: var(--color-text-muted);
+}
+
+.model-option-message[data-tone="error"] {
+  color: var(--color-danger);
+}
+
+.model-option-progress {
+  margin-top: 2px;
+}
+
+.model-option-actions {
+  margin-top: var(--space-1);
+}
+
+.model-option-action {
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  font-size: 12px;
+}
+
+.settings-wide-action {
+  width: 100%;
+  margin-top: var(--space-2);
 }
 
 .dialog-actions {

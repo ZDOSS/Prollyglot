@@ -17,7 +17,7 @@ Prollyglot is a free and open-source desktop utility that captures audio from a 
 - **Only this application:** caption the selected Windows process and its process tree without including unrelated application audio.
 - **Local by default:** no account, telemetry requirement, cloud transcription, audio upload, or transcript upload.
 - **Minimal and customizable:** one focused Start/Stop path plus an independent always-on-top overlay with readable appearance controls.
-- **Modular speech models:** separately downloaded and integrity-checked language models rather than one enormous application package.
+- **Selectable speech quality:** three separately downloaded, integrity-checked English streaming models—Fast, Balanced, and Enhanced—rather than one enormous application package.
 - **Ubuntu after Windows:** one Ubuntu LTS release using PipeWire and a native `.deb`, once the Windows MVP is reliable.
 
 ## Current status
@@ -31,15 +31,15 @@ The repository currently contains:
 - mono PCM normalization, streaming resampling to model rate, bounded low-latency buffering, energy VAD, and phrase boundaries;
 - short-utterance-friendly speech gating with quiet-speech recall, pre-roll, and trailing decoder context;
 - backend-neutral streaming ASR and stable provisional/final transcript contracts;
-- an explicit first-run model flow with atomic downloads, safe path validation, size/SHA-256 verification, removal, and a pinned Apache-2.0 English streaming-model candidate;
-- a sherpa-onnx adapter that loads the pinned model, preserves phrase openings with internal stream pre-roll, and exposes incremental and finalized English hypotheses;
-- a reproducible small-versus-standard model comparison harness with a separately pinned benchmark candidate;
+- an explicit first-run model flow with atomic downloads, safe path validation, size/SHA-256 verification, working removal, and persistent selection among three pinned Apache-2.0 English streaming models;
+- a sherpa-onnx adapter that loads the selected model, preserves phrase openings with internal stream pre-roll, and exposes incremental and finalized English hypotheses;
+- a reproducible three-model comparison harness covering the same Fast, Balanced, and Enhanced choices exposed by the app;
 - a bounded capture-to-inference bridge with visible backpressure and recovery behavior; and
 - live provisional/final transcript updates wired to the transcript view and a customizable always-on-top overlay that retains bounded, line-separated conversational context.
 
-The first real-Windows smokes confirmed selected-device capture and exposed startup-preview, overlay painting, Appearance dismissal, short-utterance, context-retention, and Settings-feedback defects. Those paths have been corrected and are ready for a focused re-smoke. The remaining Milestone 2 gates include application capture, lifecycle and overlay validation, partial-caption latency measurement, and representative conversational model evidence. See [BUILD_PLAN.md](BUILD_PLAN.md) for milestone status and use the [Windows development smoke test](docs/testing/WINDOWS_SMOKE_TEST.md) for ordinary pre-release checks.
+The first real-Windows smokes confirmed selected-device capture and exposed startup-preview, overlay painting, Appearance dismissal, short-utterance, context-retention, and Settings-feedback defects. The latest owner re-smoke found better results and confirmed that Appearance, Transcript, and Settings now open and close correctly. Recognition of some short speech and accented dialogue remains inconsistent, so Settings now offers Fast (43.1 MiB), Balanced (70.0 MiB), and Enhanced (181.4 MiB) models without pretending that model size alone guarantees better results. The remaining Milestone 2 gates include application capture, lifecycle and overlay validation, partial-caption latency measurement, and representative conversational model evidence. See [BUILD_PLAN.md](BUILD_PLAN.md) for milestone status and use the [Windows development smoke test](docs/testing/WINDOWS_SMOKE_TEST.md) for ordinary pre-release checks.
 
-The benchmark tooling and initial clean-reference result are documented in [docs/benchmarks/ENGLISH_MODELS.md](docs/benchmarks/ENGLISH_MODELS.md). That smoke result validates both runtimes but intentionally does not choose a default without conversational and noisy Windows evidence.
+The benchmark tooling and initial clean-reference results are documented in [docs/benchmarks/ENGLISH_MODELS.md](docs/benchmarks/ENGLISH_MODELS.md). All three choices stream comfortably faster than real time on the development host, but the clean fixture does not establish an accuracy winner; representative accented, conversational, and noisy Windows evidence still decides whether the default should change.
 
 ## Capture compatibility and protected media
 

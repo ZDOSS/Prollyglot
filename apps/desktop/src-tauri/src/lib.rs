@@ -251,23 +251,28 @@ async fn start_capture(
     drop(stale_session);
 
     tracing::info!(?selection, "starting caption session");
+    let model_id = models::selected_model_id(&state.model).map_err(|message| {
+        publish_capture_failure(&app, &state.status, source_label.clone(), message)
+    })?;
     let model_root = models::models_root(&app).map_err(|message| {
         publish_capture_failure(&app, &state.status, source_label.clone(), message)
     })?;
-    let prepared =
-        tauri::async_runtime::spawn_blocking(move || transcription::prepare_stream(model_root))
-            .await
-            .map_err(|error| {
-                publish_capture_failure(
-                    &app,
-                    &state.status,
-                    source_label.clone(),
-                    format!("Could not join the model-loading worker: {error}"),
-                )
-            })?
-            .map_err(|message| {
-                publish_capture_failure(&app, &state.status, source_label.clone(), message)
-            })?;
+    tracing::info!(%model_id, "loading selected speech model");
+    let prepared = tauri::async_runtime::spawn_blocking(move || {
+        transcription::prepare_stream(model_root, &model_id)
+    })
+    .await
+    .map_err(|error| {
+        publish_capture_failure(
+            &app,
+            &state.status,
+            source_label.clone(),
+            format!("Could not join the model-loading worker: {error}"),
+        )
+    })?
+    .map_err(|message| {
+        publish_capture_failure(&app, &state.status, source_label.clone(), message)
+    })?;
 
     let transcript_snapshot = {
         let mut transcript = state.transcript.lock();
@@ -788,6 +793,7 @@ pub fn run() {
             transcript_snapshot,
             clear_transcript,
             models::model_status,
+            models::select_english_model,
             models::install_english_model,
             models::remove_english_model,
             show_appearance_window,

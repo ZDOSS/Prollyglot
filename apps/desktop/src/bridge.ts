@@ -5,7 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import type {
   CaptureSelection,
   CaptureStatus,
-  ModelStatus,
+  ModelCatalogStatus,
   OverlaySettings,
   SourceSnapshot,
   TranscriptSnapshot
@@ -34,14 +34,39 @@ const mockStatusListeners = new Set<(status: CaptureStatus) => void>();
 let mockTimer: number | undefined;
 let mockStartTimer: number | undefined;
 let mockCaptionTimers: number[] = [];
-let mockModelStatus: ModelStatus = {
-  phase: "notInstalled",
-  modelId: "sherpa-zipformer-en-20m-2023-02-17",
-  displayName: "English Streaming Small",
-  downloadedBytes: 0,
-  totalBytes: 45_202_074
+let mockModelCatalog: ModelCatalogStatus = {
+  selectedModelId: "sherpa-zipformer-en-20m-2023-02-17",
+  models: [
+    {
+      phase: "notInstalled",
+      modelId: "sherpa-zipformer-en-20m-2023-02-17",
+      displayName: "English Streaming Small",
+      profile: "Fast",
+      description: "Lowest download and CPU cost for responsive captions on ordinary PCs.",
+      downloadedBytes: 0,
+      totalBytes: 45_202_074
+    },
+    {
+      phase: "notInstalled",
+      modelId: "sherpa-zipformer-en-standard-2023-06-26",
+      displayName: "English Streaming Standard",
+      profile: "Balanced",
+      description: "A larger streaming model with more capacity while remaining comfortably real-time in local tests.",
+      downloadedBytes: 0,
+      totalBytes: 73_440_167
+    },
+    {
+      phase: "notInstalled",
+      modelId: "sherpa-zipformer-en-gigaspeech-2023-06-21",
+      displayName: "English Streaming Enhanced",
+      profile: "Enhanced",
+      description: "The broadest English option, trained on LibriSpeech and GigaSpeech for a better chance on varied speech.",
+      downloadedBytes: 0,
+      totalBytes: 190_180_941
+    }
+  ]
 };
-const mockModelListeners = new Set<(status: ModelStatus) => void>();
+const mockModelListeners = new Set<(status: ModelCatalogStatus) => void>();
 let mockTranscript: TranscriptSnapshot = { revision: 0, committed: [] };
 const mockTranscriptListeners = new Set<(snapshot: TranscriptSnapshot) => void>();
 
@@ -50,7 +75,13 @@ const publishMockStatus = () => {
 };
 
 const publishMockModel = () => {
-  for (const listener of mockModelListeners) listener(mockModelStatus);
+  for (const listener of mockModelListeners) listener(structuredClone(mockModelCatalog));
+};
+
+const mockModel = (modelId: string) => {
+  const model = mockModelCatalog.models.find(({ modelId: candidate }) => candidate === modelId);
+  if (!model) throw new Error("The selected English model is unavailable.");
+  return model;
 };
 
 const publishMockTranscript = () => {
@@ -132,56 +163,63 @@ export async function stopCapture(): Promise<void> {
   publishMockStatus();
 }
 
-export async function modelStatus(): Promise<ModelStatus> {
-  if (!isTauri()) return structuredClone(mockModelStatus);
-  return invoke<ModelStatus>("model_status");
+export async function modelStatus(): Promise<ModelCatalogStatus> {
+  if (!isTauri()) return structuredClone(mockModelCatalog);
+  return invoke<ModelCatalogStatus>("model_status");
 }
 
-export async function installEnglishModel(): Promise<void> {
+export async function selectEnglishModel(modelId: string): Promise<void> {
   if (isTauri()) {
-    await invoke("install_english_model");
+    await invoke("select_english_model", { modelId });
     return;
   }
-  mockModelStatus = {
-    ...mockModelStatus,
-    phase: "downloading",
-    downloadedBytes: 0,
-    message: "Downloading encoder…"
-  };
+  mockModel(modelId);
+  mockModelCatalog.selectedModelId = modelId;
+  publishMockModel();
+}
+
+export async function installEnglishModel(modelId: string): Promise<void> {
+  if (isTauri()) {
+    await invoke("install_english_model", { modelId });
+    return;
+  }
+  const model = mockModel(modelId);
+  model.phase = "downloading";
+  model.downloadedBytes = 0;
+  model.message = "Downloading encoder…";
   publishMockModel();
   window.setTimeout(() => {
-    mockModelStatus = {
-      ...mockModelStatus,
-      phase: "downloading",
-      downloadedBytes: Math.round(mockModelStatus.totalBytes * 0.62),
-      message: "Downloading encoder…"
-    };
+    const downloading = mockModel(modelId);
+    downloading.phase = "downloading";
+    downloading.downloadedBytes = Math.round(downloading.totalBytes * 0.62);
+    downloading.message = "Downloading encoder…";
     publishMockModel();
   }, 450);
   window.setTimeout(() => {
-    mockModelStatus = {
-      ...mockModelStatus,
-      phase: "ready",
-      downloadedBytes: mockModelStatus.totalBytes,
-      message: undefined
-    };
+    const downloaded = mockModel(modelId);
+    downloaded.phase = "ready";
+    downloaded.downloadedBytes = downloaded.totalBytes;
+    downloaded.message = undefined;
     publishMockModel();
   }, 1_050);
 }
 
-export async function removeEnglishModel(): Promise<void> {
+export async function removeEnglishModel(modelId: string): Promise<void> {
   if (isTauri()) {
-    await invoke("remove_english_model");
+    await invoke("remove_english_model", { modelId });
     return;
   }
-  mockModelStatus = { ...mockModelStatus, phase: "notInstalled", downloadedBytes: 0 };
+  const model = mockModel(modelId);
+  model.phase = "notInstalled";
+  model.downloadedBytes = 0;
+  model.message = undefined;
   publishMockModel();
 }
 
 export async function onModelStatus(
-  callback: (status: ModelStatus) => void
+  callback: (status: ModelCatalogStatus) => void
 ): Promise<UnlistenFn> {
-  if (isTauri()) return listen<ModelStatus>("model-status", ({ payload }) => callback(payload));
+  if (isTauri()) return listen<ModelCatalogStatus>("model-status", ({ payload }) => callback(payload));
   mockModelListeners.add(callback);
   return () => mockModelListeners.delete(callback);
 }

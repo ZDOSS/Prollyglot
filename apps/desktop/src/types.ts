@@ -45,9 +45,16 @@ export interface ModelStatus {
   phase: ModelPhase;
   modelId: string;
   displayName: string;
+  profile: string;
+  description: string;
   downloadedBytes: number;
   totalBytes: number;
   message?: string;
+}
+
+export interface ModelCatalogStatus {
+  selectedModelId: string;
+  models: ModelStatus[];
 }
 
 export interface TranscriptSegment {

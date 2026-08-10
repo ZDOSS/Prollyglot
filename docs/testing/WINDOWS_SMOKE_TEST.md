@@ -20,7 +20,7 @@ The app should open without a UAC prompt or blank window. No subtitle preview sh
 
 Open **Appearance** once. Its sample stays inside the Appearance window rather than opening a second always-on-top preview over the controls. Confirm both **Done** and the title-bar **Close** return to the main window; no screenshot is required.
 
-If the English model is missing, download it normally and wait for it to finish. Interrupted-download recovery is deferred to a later hardening pass and is not part of this smoke test.
+If the selected English model is missing, download it normally and wait for it to finish. Fast is the smallest default; Balanced and Enhanced are optional choices under **Settings**. Interrupted-download recovery is deferred to a later hardening pass and is not part of this smoke test.
 
 ## 2. Smoke-test Everything I hear
 
@@ -37,7 +37,9 @@ Recognizing the audible selected-device output is enough to pass this pre-releas
 
 Open **Settings** and select **Refresh audio sources**. The dialog should immediately say it is refreshing, then report how many playback devices and applications it found. Newly opened audio applications should appear in the main source list after closing Settings.
 
-Model removal is not required on every build. When specifically checking it, stop captions first, choose **Remove model**, and confirm that Settings reports success, the model becomes **Not installed**, and **Start Captions** becomes unavailable. Download the model again only if more caption testing is needed.
+Settings should list Fast, Balanced, and Enhanced model cards with download sizes and one clearly marked **In use**. To compare recognition, stop captions, download another model, select **Use model**, and replay the same difficult speech. A simple note about which model sounded better is enough; no recording, reference transcript, or screenshot is required for this pre-release check.
+
+Model removal is not required on every build. When specifically checking it, stop captions, choose **Remove**, and confirm that Settings reports success. Removing an unselected model returns it to **Optional**. Removing the selected model returns first-run setup and disables **Start Captions** until that model is reinstalled or another installed model is selected.
 
 ## 4. Briefly check one application source
 

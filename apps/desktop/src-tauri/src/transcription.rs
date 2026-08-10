@@ -9,7 +9,7 @@ use prollyglot_asr::{SpeechAudio, SpeechEngine, SpeechEvent, SpeechStream, Speec
 use prollyglot_asr_sherpa::SherpaOnlineEngine;
 use prollyglot_audio_pipeline::{AudioPipeline, AudioPipelineConfig, SpeechChunkRouter};
 use prollyglot_core::AudioFrame;
-use prollyglot_model_manager::{ModelManager, initial_english_manifest};
+use prollyglot_model_manager::{ModelManager, english_manifest};
 use prollyglot_transcript::{
     TranscriptMutation, TranscriptSnapshot, TranscriptStore, recent_caption_lines,
 };
@@ -21,8 +21,11 @@ const SPEECH_PREROLL_CHUNKS: usize = 3;
 const MAX_OVERLAY_SEGMENTS: usize = 4;
 const OVERLAY_CONTEXT_GAP_MICROS: u64 = 2_000_000;
 
-pub fn prepare_stream(models_root: std::path::PathBuf) -> Result<Box<dyn SpeechStream>, String> {
-    let manifest = initial_english_manifest().map_err(|error| error.to_string())?;
+pub fn prepare_stream(
+    models_root: std::path::PathBuf,
+    model_id: &str,
+) -> Result<Box<dyn SpeechStream>, String> {
+    let manifest = english_manifest(model_id).map_err(|error| error.to_string())?;
     let manager = ModelManager::new(models_root);
     let location = manager
         .location(&manifest)

@@ -9,9 +9,7 @@ use std::{
 use prollyglot_asr::{SpeechAudio, SpeechEngine, SpeechEvent, SpeechStreamConfig};
 use prollyglot_asr_sherpa::SherpaOnlineEngine;
 use prollyglot_audio_pipeline::StreamingResampler;
-use prollyglot_model_manager::{
-    ModelManager, ModelManifest, comparison_english_manifest, initial_english_manifest,
-};
+use prollyglot_model_manager::{ModelManager, ModelManifest, english_model_manifests};
 use sherpa_onnx::Wave;
 
 const TARGET_SAMPLE_RATE: u32 = 16_000;
@@ -83,7 +81,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     );
     println!("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |");
 
-    for manifest in [initial_english_manifest()?, comparison_english_manifest()?] {
+    for manifest in english_model_manifests()? {
         eprintln!("Preparing {}…", manifest.display_name);
         let result = benchmark_model(
             &model_root,
