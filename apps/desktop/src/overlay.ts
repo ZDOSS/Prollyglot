@@ -8,7 +8,8 @@ import { DEFAULT_OVERLAY_SETTINGS, type OverlaySettings } from "./types";
 const root = document.querySelector<HTMLElement>("#overlay-app");
 if (!root) throw new Error("missing overlay root");
 
-root.innerHTML = '<div id="caption-surface" class="caption-surface" role="status" aria-live="polite"></div>';
+root.innerHTML =
+  '<div id="caption-surface" class="caption-surface" role="status" aria-live="polite" data-tauri-drag-region></div>';
 
 function requireElement<T extends Element>(selector: string): T {
   const element = document.querySelector<T>(selector);
@@ -25,6 +26,7 @@ function applySettings(settings: OverlaySettings) {
   surface.style.backgroundColor = `rgba(11, 15, 18, ${settings.backgroundOpacity})`;
   surface.style.maxWidth = `${settings.width}px`;
   surface.style.setProperty("--maximum-lines", String(settings.maximumLines));
+  surface.dataset.clickThrough = String(settings.clickThrough);
 }
 
 function storedSettings(): OverlaySettings {

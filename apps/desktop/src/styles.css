@@ -741,6 +741,11 @@ input[type="range"]::-moz-range-thumb {
   line-height: 1.25;
   text-align: center;
   text-wrap: balance;
+  user-select: none;
+}
+
+.caption-surface[data-click-through="false"] {
+  cursor: move;
 }
 
 @media (max-width: 720px) {

@@ -8,7 +8,10 @@ use prollyglot_core::{
     CaptureEvent, CaptureSelection, CaptureSession, CaptureState, SourceSnapshot,
 };
 use serde::{Deserialize, Serialize};
-use tauri::{Emitter, Manager, PhysicalPosition, State};
+use tauri::{
+    Emitter, LogicalSize, Manager, PhysicalPosition, PhysicalRect, PhysicalSize, State,
+    WebviewWindow,
+};
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -293,6 +296,88 @@ fn validated_settings(settings: OverlaySettings) -> Result<OverlaySettings, Stri
     Ok(settings)
 }
 
+fn configure_overlay_window(
+    overlay: &WebviewWindow,
+    settings: &OverlaySettings,
+) -> Result<(), String> {
+    overlay
+        .set_ignore_cursor_events(settings.click_through)
+        .map_err(|error| error.to_string())?;
+    overlay
+        .set_focusable(!settings.click_through)
+        .map_err(|error| error.to_string())?;
+
+    let monitor = match overlay
+        .current_monitor()
+        .map_err(|error| error.to_string())?
+    {
+        Some(monitor) => monitor,
+        None => overlay
+            .primary_monitor()
+            .map_err(|error| error.to_string())?
+            .ok_or("No monitor is available for the caption overlay.")?,
+    };
+    let scale_factor = monitor.scale_factor();
+    let work_area = *monitor.work_area();
+    let maximum_logical_width = (f64::from(work_area.size.width) / scale_factor - 32.0).max(320.0);
+    let maximum_logical_height = (f64::from(work_area.size.height) / scale_factor - 32.0).max(80.0);
+    let logical_width = (f64::from(settings.width) + 40.0).clamp(320.0, maximum_logical_width);
+    let logical_height = (f64::from(settings.font_size) * 1.25 * f64::from(settings.maximum_lines)
+        + 48.0)
+        .clamp(80.0, maximum_logical_height);
+    overlay
+        .set_size(LogicalSize::new(logical_width, logical_height))
+        .map_err(|error| error.to_string())?;
+
+    let physical_size = PhysicalSize::new(
+        (logical_width * scale_factor).round() as u32,
+        (logical_height * scale_factor).round() as u32,
+    );
+    let margin = (24.0 * scale_factor).round() as i32;
+    overlay
+        .set_position(anchored_overlay_position(
+            settings.position,
+            work_area,
+            physical_size,
+            margin,
+        ))
+        .map_err(|error| error.to_string())
+}
+
+fn anchored_overlay_position(
+    anchor: OverlayPosition,
+    work_area: PhysicalRect<i32, u32>,
+    overlay_size: PhysicalSize<u32>,
+    margin: i32,
+) -> PhysicalPosition<i32> {
+    let origin_x = i64::from(work_area.position.x);
+    let origin_y = i64::from(work_area.position.y);
+    let width = i64::from(work_area.size.width);
+    let height = i64::from(work_area.size.height);
+    let overlay_width = i64::from(overlay_size.width);
+    let overlay_height = i64::from(overlay_size.height);
+    let margin = i64::from(margin.max(0));
+
+    let left = origin_x + margin;
+    let centered = origin_x + (width - overlay_width) / 2;
+    let right = origin_x + width - overlay_width - margin;
+    let top = origin_y + margin;
+    let bottom = origin_y + height - overlay_height - margin;
+
+    let (x, y) = match anchor {
+        OverlayPosition::TopCenter => (centered, top),
+        OverlayPosition::BottomCenter => (centered, bottom),
+        OverlayPosition::BottomLeft => (left, bottom),
+        OverlayPosition::BottomRight => (right, bottom),
+    };
+    let maximum_x = origin_x + (width - overlay_width).max(0);
+    let maximum_y = origin_y + (height - overlay_height).max(0);
+    PhysicalPosition::new(
+        x.clamp(origin_x, maximum_x) as i32,
+        y.clamp(origin_y, maximum_y) as i32,
+    )
+}
+
 #[tauri::command]
 fn update_overlay_settings(
     app: tauri::AppHandle,
@@ -303,9 +388,7 @@ fn update_overlay_settings(
     let overlay = app
         .get_webview_window("overlay")
         .ok_or("Caption overlay is unavailable.")?;
-    overlay
-        .set_ignore_cursor_events(settings.click_through)
-        .map_err(|error| error.to_string())?;
+    configure_overlay_window(&overlay, &settings)?;
     overlay
         .emit("overlay-settings", &settings)
         .map_err(|error| error.to_string())?;
@@ -323,14 +406,12 @@ fn show_overlay_preview(
         .get_webview_window("overlay")
         .ok_or("Caption overlay is unavailable.")?;
     let settings = state.overlay_settings.lock().clone();
+    configure_overlay_window(&overlay, &settings)?;
     overlay
         .emit("overlay-settings", settings)
         .map_err(|error| error.to_string())?;
     overlay
         .emit("overlay-caption", caption)
-        .map_err(|error| error.to_string())?;
-    overlay
-        .set_position(PhysicalPosition::new(100, 100))
         .map_err(|error| error.to_string())?;
     overlay.show().map_err(|error| error.to_string())
 }
@@ -367,8 +448,42 @@ mod tests {
 
     #[test]
     fn overlay_settings_reject_unsafe_ranges() {
-        let mut settings = OverlaySettings::default();
-        settings.background_opacity = 1.5;
+        let settings = OverlaySettings {
+            background_opacity: 1.5,
+            ..OverlaySettings::default()
+        };
         assert!(validated_settings(settings).is_err());
+    }
+
+    #[test]
+    fn overlay_anchor_uses_monitor_work_area() {
+        let work_area = PhysicalRect {
+            position: PhysicalPosition::new(0, 0),
+            size: PhysicalSize::new(1_920, 1_040),
+        };
+        let overlay = PhysicalSize::new(760, 160);
+
+        assert_eq!(
+            anchored_overlay_position(OverlayPosition::BottomCenter, work_area, overlay, 32),
+            PhysicalPosition::new(580, 848)
+        );
+        assert_eq!(
+            anchored_overlay_position(OverlayPosition::TopCenter, work_area, overlay, 32),
+            PhysicalPosition::new(580, 32)
+        );
+    }
+
+    #[test]
+    fn overlay_anchor_supports_negative_monitor_coordinates() {
+        let work_area = PhysicalRect {
+            position: PhysicalPosition::new(-1_920, -120),
+            size: PhysicalSize::new(1_920, 1_040),
+        };
+        let overlay = PhysicalSize::new(760, 160);
+
+        assert_eq!(
+            anchored_overlay_position(OverlayPosition::BottomRight, work_area, overlay, 32),
+            PhysicalPosition::new(-792, 728)
+        );
     }
 }
