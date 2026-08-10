@@ -1,12 +1,12 @@
-# Werehamster
+# Prollyglot
 
 **Local, cross-platform subtitles for anything making sound on your computer.**
 
-Werehamster is a free and open-source desktop application for Windows and Linux that captures audio from the whole system or a selected application and produces live subtitles locally.
+Prollyglot is a free and open-source desktop application for Windows and Linux that captures audio from the whole system or a selected application and produces live subtitles locally.
 
 The user should be able to select something such as Discord, a browser, a game, VLC, Spotify, a news stream, or the entire system output and receive live transcription without the source application needing native caption support.
 
-Werehamster should also support optional translation, allowing foreign-language audio to be transcribed in its original language and displayed either as original-language subtitles, translated subtitles, or both.
+Prollyglot should also support optional translation, allowing foreign-language audio to be transcribed in its original language and displayed either as original-language subtitles, translated subtitles, or both.
 
 The project should prioritize local processing, low resource consumption, modular speech models, privacy, and a small native desktop footprint.
 
@@ -16,7 +16,7 @@ The project should prioritize local processing, low resource consumption, modula
 
 The basic interaction should be:
 
-1. Open Werehamster.
+1. Open Prollyglot.
 2. Select an audio source.
 3. Select the spoken language or automatic language detection.
 4. Select the desired caption language.
@@ -53,7 +53,7 @@ Japanese + English
 [ Start Captions ]
 ```
 
-Werehamster should not require:
+Prollyglot should not require:
 
 - a browser extension,
 - application plugins,
@@ -73,7 +73,7 @@ The central product promise is:
 
 # 2. Project goals
 
-Werehamster should provide:
+Prollyglot should provide:
 
 - live transcription of arbitrary desktop audio,
 - whole-system audio capture,
@@ -95,7 +95,7 @@ Werehamster should provide:
 - simple installation,
 - sensible defaults.
 
-Werehamster should remain useful on ordinary consumer hardware.
+Prollyglot should remain useful on ordinary consumer hardware.
 
 A dedicated high-end GPU should improve performance but should not be a fundamental requirement for basic English captioning.
 
@@ -103,7 +103,7 @@ A dedicated high-end GPU should improve performance but should not be a fundamen
 
 # 3. Project philosophy
 
-Werehamster should remain a focused desktop utility.
+Prollyglot should remain a focused desktop utility.
 
 It should not gradually become:
 
@@ -127,11 +127,11 @@ The project should prefer small independent components over a monolithic archite
 
 # 4. Supported platforms
 
-## Initial supported platforms
+## Platform roadmap
 
 ### Windows
 
-Primary initial target:
+Primary development and first production target:
 
 - Windows 11
 
@@ -141,19 +141,25 @@ Potential later support:
 
 Audio capture should use native Windows audio facilities rather than virtual devices.
 
+The Windows version should reach MVP quality before release work shifts to Linux-specific capture, packaging, and overlay behavior.
+
 ### Linux
 
-Primary initial Linux target:
+Secondary target after the Windows MVP is reliable:
 
-- Ubuntu
+- one current Ubuntu LTS release, selected when Linux work begins,
 - PipeWire
 - Wayland
 - X11 where practical
 
-Other modern PipeWire-based distributions should be architecturally compatible, but should initially be considered community-supported rather than guaranteed.
+The first official Linux package should be a native `.deb` for the supported Ubuntu release.
 
-Werehamster should not initially spend substantial engineering effort supporting:
+Debian and other Debian-based distributions may be compatible, but should initially be considered community-supported rather than guaranteed. Prollyglot should not promise support based only on a distribution being able to install a `.deb` file.
 
+Prollyglot should not initially spend substantial engineering effort supporting:
+
+- multiple Linux packaging formats,
+- Flatpak, Snap, or distribution-specific repositories,
 - obsolete PulseAudio-only systems,
 - JACK-specific configurations,
 - unusual custom desktop stacks,
@@ -165,12 +171,12 @@ Linux support should be real, but deliberately scoped.
 
 # 5. Cross-platform architecture
 
-The platform-specific portion of Werehamster should be kept as small as possible.
+The platform-specific portion of Prollyglot should be kept as small as possible.
 
 The overall architecture should resemble:
 
 ```text
-                    WEREHAMSTER
+                     PROLLYGLOT
 
                 ┌─────────────────┐
                 │  Audio Capture  │
@@ -210,11 +216,25 @@ Everything downstream from raw audio capture should ideally use shared code.
 
 ## 6.1 Whole-system capture
 
-Werehamster should support:
+Prollyglot should support:
 
 > Caption everything I hear.
 
-This mode captures the mixed audio being sent to the user's playback device.
+This mode captures the mixed audio being sent to one user-selected playback device.
+
+The default selection should follow the operating system's current default playback device. The user should also be able to pin capture to a specific device such as speakers, headphones, an HDMI display, or a USB audio interface.
+
+“Everything I hear” does not mean combining every playback device simultaneously. It means everything being rendered through the selected device.
+
+Example:
+
+```text
+Audio source
+Everything I hear
+
+Playback device
+Follow system default — Speakers
+```
 
 Possible use cases:
 
@@ -231,7 +251,7 @@ Possible use cases:
 
 # 6.2 Per-application capture
 
-This should be one of Werehamster's defining features.
+This should be one of Prollyglot's defining features.
 
 The user should be able to select:
 
@@ -253,7 +273,7 @@ The abstraction exposed by the shared application should be something like:
 
 ```text
 AudioSource
-- SystemOutput
+- SystemOutput(device)
 - Application
 - InputDevice
 ```
@@ -268,14 +288,15 @@ Windows should use WASAPI.
 
 The backend should support:
 
-- ordinary output loopback,
+- ordinary output loopback for the selected playback device,
 - per-process/application loopback where supported,
 - input-device capture,
 - device enumeration,
+- default-device and explicit-device selection,
 - application enumeration,
 - stream lifecycle monitoring.
 
-The rest of Werehamster should not need to know that WASAPI exists.
+The rest of Prollyglot should not need to know that WASAPI exists.
 
 ---
 
@@ -294,7 +315,7 @@ The backend should support:
 
 Linux applications may expose multiple PipeWire nodes.
 
-Werehamster should therefore group related streams into a user-facing application where possible rather than exposing raw PipeWire internals.
+Prollyglot should therefore group related streams into a user-facing application where possible rather than exposing raw PipeWire internals.
 
 For example, instead of:
 
@@ -311,6 +332,24 @@ Firefox
 ```
 
 with an advanced stream selector available if needed.
+
+---
+
+# 6.5 Protected and unavailable audio
+
+Prollyglot should use documented operating-system capture APIs and should not attempt to disable, strip, or bypass DRM or protected-media controls.
+
+Protected content, exclusive-mode output, or another OS-enforced restriction may produce silence or an unavailable stream even though the user can hear playback.
+
+When capture is unavailable, Prollyglot should:
+
+- keep the rest of the application responsive,
+- explain that the operating system did not expose capturable audio,
+- avoid claiming that every protected source is supported,
+- suggest source-provided captions when available,
+- allow deliberate microphone capture as an accessibility fallback without enabling it automatically.
+
+The core product should not depend on protected-content capture working.
 
 ---
 
@@ -370,7 +409,7 @@ The audio processing path should avoid unnecessary copies.
 
 # 9. Voice activity detection
 
-Werehamster should use VAD where beneficial.
+Prollyglot should use VAD where beneficial.
 
 VAD can:
 
@@ -405,13 +444,13 @@ trait SpeechEngine {
 
 Exact implementation language may vary, but the architectural contract should remain similar.
 
-This allows Werehamster to support multiple engines without rewriting the application.
+This allows Prollyglot to support multiple engines without rewriting the application.
 
 ---
 
 # 11. ASR engine strategy
 
-Werehamster should not permanently tie itself to one speech-recognition model family.
+Prollyglot should not permanently tie itself to one speech-recognition model family.
 
 The speech-model landscape changes quickly.
 
@@ -451,7 +490,7 @@ The first successful milestone should not require multilingual support.
 
 # 13. Language packs
 
-Werehamster should support independently downloadable language packs whenever the selected model architecture permits it.
+Prollyglot should support independently downloadable language packs whenever the selected model architecture permits it.
 
 Example:
 
@@ -549,7 +588,7 @@ This is particularly important for low-resource machines.
 
 Some backends will support many languages using one model.
 
-Werehamster should support this architecture too.
+Prollyglot should support this architecture too.
 
 For such models:
 
@@ -582,7 +621,7 @@ Restricting likely languages may improve UX by preventing nonsensical language s
 
 # 17. Automatic backend selection
 
-Eventually Werehamster should provide:
+Eventually Prollyglot should provide:
 
 ```text
 Engine
@@ -637,7 +676,7 @@ This is essential for captions that feel stable.
 
 # 19. Caption overlay
 
-Werehamster should provide an independent subtitle overlay window.
+Prollyglot should provide an independent subtitle overlay window.
 
 The overlay should support:
 
@@ -704,7 +743,7 @@ Users should be able to choose:
 - bottom-right,
 - custom position.
 
-Werehamster should remember the preferred position.
+Prollyglot should remember the preferred position.
 
 Eventually application-specific positioning may be useful.
 
@@ -721,7 +760,7 @@ Not required for initial release.
 
 # 22. Transcript view
 
-Werehamster should optionally retain the current session transcript.
+Prollyglot should optionally retain the current session transcript.
 
 Example:
 
@@ -755,13 +794,13 @@ Optional later formats:
 
 Timestamps should be preserved when possible.
 
-Werehamster should not automatically persist transcripts unless the user enables that behavior.
+Prollyglot should not automatically persist transcripts unless the user enables that behavior.
 
 ---
 
 # 24. Privacy
 
-Werehamster should be local-first.
+Prollyglot should be local-first.
 
 Default behavior:
 
@@ -780,7 +819,7 @@ The UI should make it obvious when an engine processes information remotely.
 
 # 25. Recording policy
 
-Werehamster should not record raw audio by default.
+Prollyglot should not record raw audio by default.
 
 The application only needs transient audio buffers for inference.
 
@@ -886,7 +925,7 @@ Japanese transcription
 ↓
 English translation
 ↓
-Werehamster overlay
+Prollyglot overlay
 ```
 
 Potential sources include:
@@ -904,7 +943,7 @@ The user should not need the source website to provide captions.
 
 # 30. Gaming use case
 
-Werehamster should work with games where technically possible.
+Prollyglot should work with games where technically possible.
 
 Use cases:
 
@@ -927,7 +966,7 @@ Display
 English
 ```
 
-Werehamster should not inject itself into game processes.
+Prollyglot should not inject itself into game processes.
 
 It should operate through the OS audio layer and overlay system.
 
@@ -946,7 +985,7 @@ Discord
 ↓
 OS audio stream
 ↓
-Werehamster
+Prollyglot
 ↓
 captions
 ```
@@ -984,13 +1023,13 @@ Speaker 1:
 Okay.
 ```
 
-Actual human names should not be inferred unless Werehamster has reliable external information.
+Actual human names should not be inferred unless Prollyglot has reliable external information.
 
 ---
 
 # 33. Browser extension
 
-A browser extension is not required for Werehamster.
+A browser extension is not required for Prollyglot.
 
 The desktop application should already be able to caption browser audio through OS capture.
 
@@ -1007,13 +1046,13 @@ The extension should remain optional.
 
 # 34. User interface
 
-The default Werehamster window should be small and approachable.
+The default Prollyglot window should be small and approachable.
 
 Example:
 
 ```text
 ┌────────────────────────────────────────┐
-│ WEREHAMSTER                            │
+│ PROLLYGLOT                             │
 │                                        │
 │ Audio                                  │
 │ Discord                             ▾  │
@@ -1042,7 +1081,7 @@ While running:
 
 ```text
 ┌────────────────────────────────────────┐
-│ WEREHAMSTER                     ● LIVE │
+│ PROLLYGLOT                      ● LIVE │
 │                                        │
 │ Discord                                │
 │ English → English                      │
@@ -1077,7 +1116,7 @@ These settings should stay out of the standard setup path.
 
 # 37. Model manager
 
-Werehamster should include a model manager.
+Prollyglot should include a model manager.
 
 Example:
 
@@ -1121,7 +1160,7 @@ Models should live separately from the application binary.
 Example:
 
 ```text
-werehamster/
+prollyglot/
 models/
 cache/
 config/
@@ -1137,7 +1176,7 @@ The project should not distribute a gigantic executable containing every speech 
 
 Application updates and model updates should be separate.
 
-Model changes should not require reinstalling Werehamster.
+Model changes should not require reinstalling Prollyglot.
 
 Future engine plugins should ideally be independently versioned.
 
@@ -1165,7 +1204,7 @@ General goals:
 - optional GPU-oriented models,
 - highest available transcription quality.
 
-Werehamster should degrade gracefully.
+Prollyglot should degrade gracefully.
 
 Failure to have a powerful GPU should not make the application useless.
 
@@ -1216,7 +1255,7 @@ Engine implementations may support:
 - ROCm,
 - other acceleration APIs.
 
-Werehamster's core should not assume NVIDIA hardware.
+Prollyglot's core should not assume NVIDIA hardware.
 
 This matters especially for:
 
@@ -1231,7 +1270,7 @@ Backends should advertise their supported execution providers.
 
 # 43. FOSS requirements
 
-Werehamster itself should use an OSI-compatible open-source license.
+Prollyglot itself should use an OSI-compatible open-source license.
 
 Dependencies should be checked for:
 
@@ -1309,7 +1348,7 @@ The final UI technology should be selected based primarily on overlay reliabilit
 Possible project layout:
 
 ```text
-werehamster/
+prollyglot/
 
 crates/
     core/
@@ -1434,7 +1473,7 @@ Better:
 ```text
 Discord stopped producing audio.
 
-Werehamster is waiting for it to resume.
+Prollyglot is waiting for it to resume.
 ```
 
 Or:
@@ -1449,7 +1488,7 @@ Try Lightweight mode.
 
 # 51. Application lifecycle handling
 
-Werehamster should gracefully handle:
+Prollyglot should gracefully handle:
 
 - selected application closing,
 - selected application restarting,
@@ -1482,7 +1521,7 @@ Hotkeys should be configurable.
 
 # 53. Accessibility
 
-Because Werehamster is fundamentally an accessibility-adjacent application, the UI should support:
+Because Prollyglot is fundamentally an accessibility-adjacent application, the UI should support:
 
 - keyboard navigation,
 - scalable text,
@@ -1528,7 +1567,7 @@ Goal:
 ### POC 1 — Windows
 
 - enumerate output sources,
-- capture full system audio,
+- capture full system audio from the selected playback device,
 - run English speech recognition,
 - print transcript to console,
 - display simple overlay.
@@ -1539,6 +1578,8 @@ Goal:
 - select application,
 - capture only that application,
 - transcribe it.
+
+The first usable release should be built and hardened from these Windows POCs before Linux-specific implementation becomes release-critical.
 
 ### POC 3 — Linux
 
@@ -1558,13 +1599,12 @@ At this point the core technical risk has largely been addressed.
 
 # 56. MVP
 
-After the POCs succeed:
+After the Windows POCs succeed:
 
-### Required
+### Required for the first Windows release
 
 - Windows 11,
-- Ubuntu/PipeWire,
-- full-system capture,
+- selected-device system capture,
 - application capture,
 - English transcription,
 - lightweight ASR backend,
@@ -1585,11 +1625,20 @@ After the POCs succeed:
 - system tray,
 - global hotkey.
 
+### Deferred until the Windows MVP is reliable
+
+- Ubuntu/PipeWire implementation,
+- Ubuntu `.deb` packaging,
+- Wayland- and X11-specific overlay validation,
+- Linux application-stream grouping and lifecycle handling.
+
 ---
 
-# 57. Version 0.2
+# 57. Linux follow-up and Version 0.2
 
-Possible next milestone:
+The first post-MVP platform milestone should bring the shared pipeline to one supported Ubuntu LTS release using PipeWire and a native `.deb` package.
+
+Once that baseline is reliable, Version 0.2 feature work may include:
 
 - language profiles,
 - automatic language detection,
@@ -1698,10 +1747,10 @@ Add additional documents only when they solve an actual maintenance problem.
 
 # 62. Success criteria
 
-Werehamster is successful when a user can install it and do this:
+Prollyglot is successful when a user can install it and do this:
 
 ```text
-Open Werehamster.
+Open Prollyglot.
 
 Select:
 Firefox
@@ -1743,6 +1792,8 @@ And both should work without:
 - modifying Firefox,
 - installing a browser extension,
 - owning a high-end GPU.
+
+These scenarios must first meet release quality on Windows 11. The same scenarios become the acceptance target for the later supported Ubuntu release.
 
 ---
 
@@ -1788,21 +1839,29 @@ Mitigation:
 
 Support small CPU-friendly models first and treat large models as optional.
 
+## Protected or unavailable capture
+
+Some audible Windows content may be unavailable to documented loopback APIs because of protected-media policy, exclusive-mode output, or driver behavior.
+
+Mitigation:
+
+Treat this as an explicit compatibility boundary, report sustained silent or unavailable capture clearly, and do not build or recommend a DRM-bypass path.
+
 ---
 
 # 64. Project identity
 
-**Name:** Werehamster
+**Name:** Prollyglot
 
 The name should not force the interface into excessive novelty.
 
-A restrained visual identity could still use a small hamster/transformation motif without turning an accessibility utility into a joke application.
+A restrained visual identity could use a subtle language or sound motif without turning an accessibility utility into a novelty application.
 
 The software itself should feel competent and lightweight.
 
 Possible short description:
 
-> Werehamster is a FOSS desktop subtitle layer for Windows and Linux. Select an application or your entire system, transcribe its audio locally, and optionally translate it in real time.
+> Prollyglot is a FOSS desktop subtitle layer for Windows and Linux. Select an application or your entire system, transcribe its audio locally, and optionally translate it in real time.
 
 Possible shorter repository description:
 
@@ -1816,4 +1875,4 @@ Whenever a proposed feature appears, ask:
 
 > Does this make arbitrary computer audio easier to caption?
 
-If not, it probably does not belong in Werehamster yet.
+If not, it probably does not belong in Prollyglot yet.
