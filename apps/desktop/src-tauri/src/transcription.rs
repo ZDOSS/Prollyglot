@@ -79,10 +79,14 @@ fn run_inner(
                     .map_err(|error| error.to_string())?;
                 if report.stream_reset {
                     speech_router.reset();
-                    let events = stream
-                        .end_utterance(frame_start)
+                    // A discontinuity means part of this utterance is gone.
+                    // Finalizing it is both misleading and particularly
+                    // expensive for Nemotron; abandon only the provisional
+                    // hypothesis and resume with current audio instead.
+                    stream
+                        .discard_utterance(frame_start)
                         .map_err(|error| error.to_string())?;
-                    update_transcript(app, transcript, events, &mut clear_caption_at);
+                    discard_provisional(app, transcript, &mut clear_caption_at);
                 }
                 if report.dropped_samples > 0 {
                     tracing::warn!(
@@ -128,6 +132,25 @@ fn run_inner(
         .map_err(|error| error.to_string())?;
     update_transcript(app, transcript, events, &mut clear_caption_at);
     Ok(())
+}
+
+fn discard_provisional(
+    app: &AppHandle,
+    transcript: &Arc<Mutex<TranscriptStore>>,
+    clear_caption_at: &mut Option<Instant>,
+) {
+    let mut store = transcript.lock();
+    let mutation = store.discard_provisional();
+    let snapshot = (mutation != TranscriptMutation::Unchanged).then(|| store.snapshot().clone());
+    drop(store);
+
+    if let Some(snapshot) = snapshot
+        && let Err(error) = app.emit("transcript-update", snapshot)
+    {
+        tracing::warn!(%error, "could not emit discarded provisional transcript");
+    }
+    clear_overlay_caption(app);
+    *clear_caption_at = None;
 }
 
 fn update_transcript(

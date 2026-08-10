@@ -1885,7 +1885,7 @@ Some speech models may technically work but feel terrible as live captions.
 
 Mitigation:
 
-Benchmark real conversational audio and prioritize streaming-native engines.
+Benchmark real conversational audio and prioritize streaming-native engines. The bounded inference queue should absorb ordinary decoder bursts without adding unbounded delay. If the queue does overflow, Prollyglot should discard stale queued audio in one operation, abandon any incomplete hypothesis without forcing an expensive final decode, resume near the current live edge, and record both the drop and later recovery in the privacy-safe diagnostic log. It should not remain trapped repeatedly finalizing discontinuous audio while captions stop advancing.
 
 ## Translation latency
 

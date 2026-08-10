@@ -131,6 +131,9 @@ pub trait SpeechEngine: Send {
 /// may revise only the current partial hypothesis.
 pub trait SpeechStream: Send {
     fn push_audio(&mut self, audio: SpeechAudio) -> Result<Vec<SpeechEvent>, SpeechError>;
+    /// Discards an unfinished hypothesis after an audio discontinuity and
+    /// starts a clean stream without decoding the incomplete utterance.
+    fn discard_utterance(&mut self, at_micros: u64) -> Result<(), SpeechError>;
     fn end_utterance(&mut self, at_micros: u64) -> Result<Vec<SpeechEvent>, SpeechError>;
     fn finish(&mut self, at_micros: u64) -> Result<Vec<SpeechEvent>, SpeechError>;
 }

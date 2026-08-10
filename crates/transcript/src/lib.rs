@@ -110,6 +110,16 @@ impl TranscriptStore {
         TranscriptMutation::Cleared
     }
 
+    /// Removes only the replaceable hypothesis when its source audio became
+    /// discontinuous. Already committed transcript segments remain intact.
+    pub fn discard_provisional(&mut self) -> TranscriptMutation {
+        if self.snapshot.provisional.take().is_none() {
+            return TranscriptMutation::Unchanged;
+        }
+        self.bump_revision();
+        TranscriptMutation::ProvisionalChanged
+    }
+
     fn apply_partial(&mut self, hypothesis: SpeechHypothesis) -> TranscriptMutation {
         if self.finalized_utterances.contains(&hypothesis.utterance_id) {
             return TranscriptMutation::Unchanged;
@@ -236,6 +246,21 @@ mod tests {
 
         assert!(store.snapshot().provisional.is_none());
         assert!(store.snapshot().committed.is_empty());
+    }
+
+    #[test]
+    fn discarding_a_provisional_segment_preserves_committed_history() {
+        let mut store = TranscriptStore::default();
+        store.apply(SpeechEvent::Final(hypothesis(1, "finished", 200)));
+        store.apply(SpeechEvent::Partial(hypothesis(2, "unfinished", 300)));
+
+        assert_eq!(
+            store.discard_provisional(),
+            TranscriptMutation::ProvisionalChanged
+        );
+        assert!(store.snapshot().provisional.is_none());
+        assert_eq!(store.snapshot().committed.len(), 1);
+        assert_eq!(store.snapshot().committed[0].text, "finished");
     }
 
     #[test]

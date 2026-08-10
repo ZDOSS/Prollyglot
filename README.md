@@ -83,6 +83,20 @@ On a non-Windows development host, the shared core, frontend, and Windows cross-
 
 Physical WASAPI routing, process isolation, device switching, overlay layering, and end-to-end caption latency still require a real Windows machine. The [Milestone 1](docs/testing/WINDOWS_MILESTONE_1.md) and [Milestone 2](docs/testing/WINDOWS_MILESTONE_2.md) checklists summarize formal acceptance boundaries; they are not the routine tester loop.
 
+### Windows diagnostic log
+
+Prollyglot writes a rolling local log containing lifecycle, capture, model, and backlog diagnostics. It does not include captured audio or transcript text. From any PowerShell directory, show the newest log with:
+
+```powershell
+$LogRoot = Join-Path $env:LOCALAPPDATA "com.prollyglot.desktop\logs"
+$LatestLog = Get-ChildItem $LogRoot -Filter *.log |
+  Sort-Object LastWriteTime -Descending |
+  Select-Object -First 1
+Get-Content $LatestLog.FullName -Tail 200
+```
+
+Use this only when troubleshooting a failure. A normal smoke-test pass does not require saving or submitting logs.
+
 ## Repository map
 
 ```text

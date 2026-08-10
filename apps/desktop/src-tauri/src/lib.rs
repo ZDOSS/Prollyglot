@@ -53,6 +53,11 @@ enum AudioQueueResult {
     Disconnected,
 }
 
+const INFERENCE_QUEUE_CAPACITY: usize = 128;
+const INFERENCE_QUEUE_RECOVERY_DEPTH: usize = INFERENCE_QUEUE_CAPACITY / 4;
+const INFERENCE_BACKLOG_MESSAGE_PREFIX: &str = "Transcription fell behind;";
+const INFERENCE_BACKLOG_RECOVERY_GRACE: Duration = Duration::from_secs(2);
+
 fn queue_latest_audio(
     sender: &crossbeam_channel::Sender<AudioFrame>,
     overflow_receiver: &crossbeam_channel::Receiver<AudioFrame>,
@@ -61,7 +66,14 @@ fn queue_latest_audio(
     match sender.try_send(frame) {
         Ok(()) => AudioQueueResult::Queued { dropped: 0 },
         Err(TrySendError::Full(frame)) => {
-            let dropped = u64::from(overflow_receiver.try_recv().is_ok());
+            // A full queue means transcription is already processing stale
+            // audio. Empty it in one step so the worker can resume near the
+            // live edge instead of dropping a single packet on every capture
+            // callback and repeatedly resetting on sequence gaps.
+            let mut dropped = 0_u64;
+            while overflow_receiver.try_recv().is_ok() {
+                dropped = dropped.saturating_add(1);
+            }
             match sender.try_send(frame) {
                 Ok(()) => AudioQueueResult::Queued { dropped },
                 Err(TrySendError::Full(_)) => AudioQueueResult::Queued {
@@ -284,7 +296,10 @@ async fn start_capture(
         tracing::warn!(%error, "could not emit cleared transcript");
     }
 
-    let (audio_sender, audio_receiver) = crossbeam_channel::bounded(32);
+    // Nemotron decodes in larger streaming windows than the smaller English
+    // models. Keep enough raw WASAPI packets to absorb a normal inference
+    // burst without turning that model latency into a discontinuity.
+    let (audio_sender, audio_receiver) = crossbeam_channel::bounded(INFERENCE_QUEUE_CAPACITY);
     let overflow_audio_receiver = audio_receiver.clone();
     let (transcription_error_sender, transcription_error_receiver) = crossbeam_channel::bounded(1);
     let transcription_panic_sender = transcription_error_sender.clone();
@@ -344,6 +359,8 @@ async fn start_capture(
         .spawn(move || {
             let mut last_peak_publish = None::<Instant>;
             let mut last_drop_publish = None::<Instant>;
+            let mut inference_backlog_started = None::<Instant>;
+            let mut last_inference_drop = None::<Instant>;
             let mut capture_dropped = 0_u64;
             let mut inference_dropped = 0_u64;
             loop {
@@ -380,10 +397,14 @@ async fn start_capture(
                     },
                     CaptureEvent::Frame(frame) => {
                         let peak = frame.peak;
-                        match queue_latest_audio(&audio_sender, &overflow_audio_receiver, frame) {
+                        let dropped_now =
+                            match queue_latest_audio(&audio_sender, &overflow_audio_receiver, frame) {
                             AudioQueueResult::Queued { dropped } => {
                                 if dropped > 0 {
+                                    let now = Instant::now();
                                     inference_dropped = inference_dropped.saturating_add(dropped);
+                                    inference_backlog_started.get_or_insert(now);
+                                    last_inference_drop = Some(now);
                                     let should_publish = last_drop_publish
                                         .is_none_or(|last| last.elapsed() >= Duration::from_secs(1));
                                     let mut current = status_for_events.lock();
@@ -395,10 +416,17 @@ async fn start_capture(
                                         ));
                                         let next = current.clone();
                                         drop(current);
+                                        tracing::warn!(
+                                            dropped_packets = dropped,
+                                            total_dropped_packets = inference_dropped,
+                                            queue_capacity = INFERENCE_QUEUE_CAPACITY,
+                                            "transcription inference queue fell behind"
+                                        );
                                         publish_status(&app_for_events, &status_for_events, next);
-                                        last_drop_publish = Some(Instant::now());
+                                        last_drop_publish = Some(now);
                                     }
                                 }
+                                dropped
                             }
                             AudioQueueResult::Disconnected => {
                                 let message = transcription_error_receiver
@@ -417,6 +445,31 @@ async fn start_capture(
                                     },
                                 );
                                 break;
+                            }
+                        };
+
+                        if dropped_now == 0
+                            && audio_sender.len() <= INFERENCE_QUEUE_RECOVERY_DEPTH
+                            && last_inference_drop.is_some_and(|last| {
+                                last.elapsed() >= INFERENCE_BACKLOG_RECOVERY_GRACE
+                            })
+                        {
+                            let backlog_millis = inference_backlog_started
+                                .map_or(0, |started| started.elapsed().as_millis());
+                            tracing::info!(
+                                total_dropped_packets = inference_dropped,
+                                backlog_millis,
+                                queue_depth = audio_sender.len(),
+                                "transcription inference queue recovered"
+                            );
+                            inference_backlog_started = None;
+                            last_inference_drop = None;
+                            last_drop_publish = None;
+                            let mut current = status_for_events.lock();
+                            if current.message.as_deref().is_some_and(|message| {
+                                message.starts_with(INFERENCE_BACKLOG_MESSAGE_PREFIX)
+                            }) {
+                                current.message = None;
                             }
                         }
 
@@ -859,7 +912,7 @@ mod tests {
     }
 
     #[test]
-    fn full_inference_queue_discards_the_oldest_packet() {
+    fn full_inference_queue_discards_all_stale_packets() {
         let (sender, receiver) = crossbeam_channel::bounded(2);
         let overflow_receiver = receiver.clone();
         let frame = |sequence| AudioFrame {
@@ -876,9 +929,9 @@ mod tests {
 
         assert!(matches!(
             queue_latest_audio(&sender, &overflow_receiver, frame(2)),
-            AudioQueueResult::Queued { dropped: 1 }
+            AudioQueueResult::Queued { dropped: 2 }
         ));
-        assert_eq!(receiver.recv().expect("new oldest").sequence, 1);
         assert_eq!(receiver.recv().expect("newest").sequence, 2);
+        assert!(receiver.try_recv().is_err());
     }
 }

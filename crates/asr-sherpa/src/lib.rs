@@ -256,6 +256,13 @@ impl SpeechStream for SherpaOnlineStream {
         Ok(events)
     }
 
+    fn discard_utterance(&mut self, at_micros: u64) -> Result<(), SpeechError> {
+        self.ensure_open()?;
+        self.latest_audio_micros = self.latest_audio_micros.max(at_micros);
+        self.start_next_stream();
+        Ok(())
+    }
+
     fn end_utterance(&mut self, at_micros: u64) -> Result<Vec<SpeechEvent>, SpeechError> {
         self.ensure_open()?;
         self.latest_audio_micros = self.latest_audio_micros.max(at_micros);
@@ -263,10 +270,7 @@ impl SpeechStream for SherpaOnlineStream {
         self.stream.input_finished();
         self.decode_ready();
         let event = self.final_event().into_iter().collect();
-        self.stream = self.recognizer.create_stream();
-        configure_stream_language(&self.stream, self.model_kind, &self.language);
-        self.advance_utterance();
-        self.prime_stream();
+        self.start_next_stream();
         Ok(event)
     }
 
@@ -351,6 +355,13 @@ impl SherpaOnlineStream {
         self.utterance_id = self.utterance_id.wrapping_add(1);
         self.utterance_start_micros = None;
         self.last_partial.clear();
+    }
+
+    fn start_next_stream(&mut self) {
+        self.stream = self.recognizer.create_stream();
+        configure_stream_language(&self.stream, self.model_kind, &self.language);
+        self.advance_utterance();
+        self.prime_stream();
     }
 }
 

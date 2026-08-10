@@ -56,4 +56,16 @@ If the application does not appear or capture, report the application name and w
 
 For a pass, a short message such as “launch clean; device capture, overlay, Refresh, and app capture passed” is sufficient. For a failure, send the action, visible result, and exact error text if there was one. Logs or screenshots are follow-up diagnostics, not routine proof.
 
+If captions report that transcription fell behind or stop updating unexpectedly, the newest privacy-safe diagnostic log can be read from any PowerShell directory while the app is open or after it closes:
+
+```powershell
+$LogRoot = Join-Path $env:LOCALAPPDATA "com.prollyglot.desktop\logs"
+$LatestLog = Get-ChildItem $LogRoot -Filter *.log |
+  Sort-Object LastWriteTime -Descending |
+  Select-Object -First 1
+Get-Content $LatestLog.FullName -Tail 200
+```
+
+The log includes queue-drop and recovery counts in current builds, but no captured audio or transcript text.
+
 The longer [Windows release and hardening plan](WINDOWS_TEST_PLAN.md) remains available for formal milestone acceptance, installer/release candidates, latency work, routing edge cases, and sustained reliability testing.

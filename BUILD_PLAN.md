@@ -55,6 +55,8 @@ An optional Nemotron 3.5 Streaming 0.6B integration now provides a higher-resour
 
 A subsequent owner test confirmed that Nemotron's selected language conditions recognition: Japanese audio was suppressed under the Spanish setting and produced Japanese text under the Japanese setting. The UI therefore keeps forced language as the accuracy-oriented path and describes Automatic as the mixed-language path. The same feedback requires the live transcript to open on and follow the newest entry while preserving deliberate scrollback, and establishes Japanese/Spanish-to-English as the first optional local translation slice.
 
+Sustained Windows video playback then exposed a transcription-backlog failure: the capture session remained alive, but the inference queue reported that it fell behind and captions stopped advancing. The affected build did not persist that exact condition to its diagnostic log. Backlog handling now absorbs a larger normal Nemotron inference burst, drains stale queued audio as one recovery action, abandons an incomplete hypothesis without an expensive final decode, records drop and recovery counts, and clears the warning after the worker returns near the live edge. Native Windows playback remains the acceptance check for this correction.
+
 Routine development now uses [`docs/testing/WINDOWS_SMOKE_TEST.md`](docs/testing/WINDOWS_SMOKE_TEST.md). Interrupted-download recovery, formal latency measurement, screenshots, OBS parity, and sustained-resource evidence are intentionally deferred to milestone hardening or release boundaries rather than imposed on every pre-release build.
 
 ## Milestone 1 — Windows capture foundation
