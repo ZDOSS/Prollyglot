@@ -20,7 +20,7 @@ The app should open without a UAC prompt or blank window. No subtitle preview sh
 
 Open **Appearance** once. Its sample stays inside the Appearance window rather than opening a second always-on-top preview over the controls. Confirm both **Done** and the title-bar **Close** return to the main window; no screenshot is required.
 
-If the selected English model is missing, download it normally and wait for it to finish. Fast is the smallest default; Balanced and Enhanced are optional choices under **Settings**. Interrupted-download recovery is deferred to a later hardening pass and is not part of this smoke test.
+If the selected model is missing, download it normally and wait for it to finish. Fast is the smallest English default; Balanced and Enhanced are optional English choices under **Settings**. Nemotron is a much larger optional multilingual trial and does not need to be downloaded for an ordinary English smoke. Interrupted-download recovery is deferred to a later hardening pass and is not part of this smoke test.
 
 ## 2. Smoke-test Everything I hear
 
@@ -37,9 +37,11 @@ Recognizing the audible selected-device output is enough to pass this pre-releas
 
 Open **Settings** and select **Refresh audio sources**. The dialog should immediately say it is refreshing, then report how many playback devices and applications it found. Newly opened audio applications should appear in the main source list after closing Settings.
 
-Settings should list Fast, Balanced, and Enhanced model cards with download sizes and one clearly marked **In use**. To compare recognition, stop captions, download another model, select **Use model**, and replay the same difficult speech. A simple note about which model sounded better is enough; no recording, reference transcript, or screenshot is required for this pre-release check.
+Settings should list Fast, Balanced, Enhanced, and Multilingual model cards with download sizes and one clearly marked **In use**. To compare recognition, stop captions, download another model, select **Use model**, and replay the same difficult speech. A simple note about which model sounded better is enough; no recording, reference transcript, or screenshot is required for this pre-release check.
 
 Model removal is not required on every build. When specifically checking it, stop captions, choose **Remove**, and confirm that Settings reports success. Removing an unselected model returns it to **Optional**. Removing the selected model returns first-run setup and disables **Start Captions** until that model is reinstalled or another installed model is selected.
+
+When specifically spot-checking multilingual captions, choose **Spanish** or **Japanese** under **Spoken language**. Prollyglot should select Nemotron and ask for its one-time 650.6 MiB download if needed. Play familiar speech, report whether the wording feels usable and how much delay you notice, then repeat with the other language if desired. **Automatic detection** is available for experimentation but may add delay or choose the wrong language. This build captions the original language only; it does not translate. No fixtures, recordings, or screenshots are required.
 
 ## 4. Briefly check one application source
 

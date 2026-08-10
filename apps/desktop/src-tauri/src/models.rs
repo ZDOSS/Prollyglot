@@ -12,8 +12,8 @@ use std::{
 use parking_lot::Mutex;
 use prollyglot_core::CaptureState;
 use prollyglot_model_manager::{
-    DEFAULT_ENGLISH_MODEL_ID, DownloadProgress, ModelInstallState, ModelManager, ModelManifest,
-    english_manifest, english_model_manifests,
+    DEFAULT_SPEECH_MODEL_ID, DownloadProgress, ModelInstallState, ModelManager, ModelManifest,
+    NEMOTRON_MULTILINGUAL_MODEL_ID, speech_manifest, speech_model_manifests,
 };
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -21,7 +21,8 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use crate::RuntimeState;
 
 const MODEL_STATUS_EVENT: &str = "model-status";
-const SELECTED_MODEL_FILE: &str = "selected-english-model.txt";
+const SELECTED_MODEL_FILE: &str = "selected-speech-model.txt";
+const LEGACY_SELECTED_MODEL_FILE: &str = "selected-english-model.txt";
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -42,6 +43,7 @@ pub struct ModelStatus {
     pub display_name: String,
     pub profile: String,
     pub description: String,
+    pub languages: Vec<String>,
     pub downloaded_bytes: u64,
     pub total_bytes: u64,
     pub message: Option<String>,
@@ -56,9 +58,9 @@ pub struct ModelCatalogStatus {
 
 impl Default for ModelCatalogStatus {
     fn default() -> Self {
-        match english_model_manifests() {
+        match speech_model_manifests() {
             Ok(manifests) => Self {
-                selected_model_id: DEFAULT_ENGLISH_MODEL_ID.into(),
+                selected_model_id: DEFAULT_SPEECH_MODEL_ID.into(),
                 models: manifests
                     .iter()
                     .map(|manifest| {
@@ -67,13 +69,14 @@ impl Default for ModelCatalogStatus {
                     .collect(),
             },
             Err(error) => Self {
-                selected_model_id: DEFAULT_ENGLISH_MODEL_ID.into(),
+                selected_model_id: DEFAULT_SPEECH_MODEL_ID.into(),
                 models: vec![ModelStatus {
                     phase: ModelPhase::Failed,
-                    model_id: DEFAULT_ENGLISH_MODEL_ID.into(),
-                    display_name: "English streaming model".into(),
+                    model_id: DEFAULT_SPEECH_MODEL_ID.into(),
+                    display_name: "Streaming speech model".into(),
                     profile: "Fast".into(),
-                    description: "Local streaming English captions.".into(),
+                    description: "Local streaming captions.".into(),
+                    languages: vec!["en".into()],
                     downloaded_bytes: 0,
                     total_bytes: 0,
                     message: Some(error.to_string()),
@@ -116,16 +119,26 @@ pub fn initialize(app: &AppHandle, runtime: &ModelRuntime) {
     *runtime.catalog.lock() = next;
 }
 
-pub fn selected_model_id(runtime: &ModelRuntime) -> Result<String, String> {
+pub fn selected_model_id(runtime: &ModelRuntime, language: &str) -> Result<String, String> {
     let catalog = runtime.catalog.lock();
     let selected = catalog
         .models
         .iter()
         .find(|model| model.model_id == catalog.selected_model_id)
-        .ok_or("The selected English model is unavailable.")?;
+        .ok_or("The selected speech model is unavailable.")?;
     if selected.phase != ModelPhase::Ready {
         return Err(format!(
             "Install {} before starting captions.",
+            selected.display_name
+        ));
+    }
+    if !selected
+        .languages
+        .iter()
+        .any(|candidate| candidate == language)
+    {
+        return Err(format!(
+            "{} does not support the selected spoken language.",
             selected.display_name
         ));
     }
@@ -138,12 +151,12 @@ pub fn model_status(state: State<'_, RuntimeState>) -> ModelCatalogStatus {
 }
 
 #[tauri::command]
-pub fn select_english_model(
+pub fn select_speech_model(
     app: AppHandle,
     state: State<'_, RuntimeState>,
     model_id: String,
 ) -> Result<(), String> {
-    let manifest = english_manifest(&model_id).map_err(|error| error.to_string())?;
+    let manifest = speech_manifest(&model_id).map_err(|error| error.to_string())?;
     let _control = state.control.lock();
     require_stopped(&state)?;
     persist_selected_model(&app, &manifest.id)?;
@@ -158,18 +171,18 @@ pub fn select_english_model(
 }
 
 #[tauri::command]
-pub fn install_english_model(
+pub fn install_speech_model(
     app: AppHandle,
     state: State<'_, RuntimeState>,
     model_id: String,
 ) -> Result<(), String> {
-    let manifest = english_manifest(&model_id).map_err(|error| error.to_string())?;
+    let manifest = speech_manifest(&model_id).map_err(|error| error.to_string())?;
     let root = models_root(&app)?;
     state
         .model
         .installing
         .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-        .map_err(|_| "Another English model is already downloading.".to_owned())?;
+        .map_err(|_| "Another speech model is already downloading.".to_owned())?;
 
     update_model(
         &app,
@@ -211,7 +224,7 @@ pub fn install_english_model(
                     None,
                 ),
                 Err(error) => {
-                    tracing::error!(model_id = %manifest.id, %error, "English model installation failed");
+                    tracing::error!(model_id = %manifest.id, %error, "speech model installation failed");
                     update_model(
                         &app_for_worker,
                         &catalog,
@@ -241,12 +254,12 @@ pub fn install_english_model(
 }
 
 #[tauri::command]
-pub fn remove_english_model(
+pub fn remove_speech_model(
     app: AppHandle,
     state: State<'_, RuntimeState>,
     model_id: String,
 ) -> Result<(), String> {
-    let manifest = english_manifest(&model_id).map_err(|error| error.to_string())?;
+    let manifest = speech_manifest(&model_id).map_err(|error| error.to_string())?;
     let _control = state.control.lock();
     require_stopped(&state)?;
     if state.model.installing.load(Ordering::Acquire) {
@@ -284,7 +297,7 @@ fn require_stopped(state: &RuntimeState) -> Result<(), String> {
 }
 
 fn inspect(app: &AppHandle, selected_model_id: String) -> Result<ModelCatalogStatus, String> {
-    let manifests = english_model_manifests().map_err(|error| error.to_string())?;
+    let manifests = speech_model_manifests().map_err(|error| error.to_string())?;
     let manager = ModelManager::new(models_root(app)?);
     let models = manifests
         .iter()
@@ -331,6 +344,7 @@ fn status_for_manifest(
         display_name: manifest.display_name.clone(),
         profile: profile.into(),
         description: description.into(),
+        languages: manifest.languages.clone(),
         downloaded_bytes,
         total_bytes: manifest.download_size_bytes(),
         message,
@@ -339,7 +353,7 @@ fn status_for_manifest(
 
 fn product_metadata(model_id: &str) -> (&'static str, &'static str) {
     match model_id {
-        DEFAULT_ENGLISH_MODEL_ID => (
+        DEFAULT_SPEECH_MODEL_ID => (
             "Fast",
             "Lowest download and CPU cost for responsive captions on ordinary PCs.",
         ),
@@ -351,36 +365,49 @@ fn product_metadata(model_id: &str) -> (&'static str, &'static str) {
             "Enhanced",
             "The broadest English option, trained on LibriSpeech and GigaSpeech for a better chance on varied speech.",
         ),
-        _ => ("English", "Local streaming English captions."),
+        NEMOTRON_MULTILINGUAL_MODEL_ID => (
+            "Multilingual",
+            "A high-resource 600M-parameter CPU trial for English, Spanish, Japanese, or automatic detection. Expect about 1 GB of app memory; Japanese and automatic detection are experimental.",
+        ),
+        _ => ("Speech", "Local streaming captions."),
     }
 }
 
 fn read_selected_model(app: &AppHandle) -> String {
-    let path = match selected_model_path(app) {
-        Ok(path) => path,
-        Err(error) => {
-            tracing::warn!(%error, "could not resolve the selected-model preference");
-            return DEFAULT_ENGLISH_MODEL_ID.into();
-        }
-    };
-    let value = match fs::read_to_string(&path) {
-        Ok(value) => value,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            return DEFAULT_ENGLISH_MODEL_ID.into();
-        }
-        Err(error) => {
-            tracing::warn!(%error, path = %path.display(), "could not read the selected-model preference");
-            return DEFAULT_ENGLISH_MODEL_ID.into();
-        }
-    };
-    let model_id = value.trim();
-    match english_manifest(model_id) {
-        Ok(_) => model_id.into(),
-        Err(error) => {
-            tracing::warn!(%error, "ignoring an unknown selected-model preference");
-            DEFAULT_ENGLISH_MODEL_ID.into()
+    let paths = [
+        (SELECTED_MODEL_FILE, false),
+        (LEGACY_SELECTED_MODEL_FILE, true),
+    ];
+    for (file_name, legacy) in paths {
+        let path = match selected_model_path_for(app, file_name) {
+            Ok(path) => path,
+            Err(error) => {
+                tracing::warn!(%error, "could not resolve the selected-model preference");
+                return DEFAULT_SPEECH_MODEL_ID.into();
+            }
+        };
+        let value = match fs::read_to_string(&path) {
+            Ok(value) => value,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            Err(error) => {
+                tracing::warn!(%error, path = %path.display(), "could not read the selected-model preference");
+                return DEFAULT_SPEECH_MODEL_ID.into();
+            }
+        };
+        let model_id = value.trim();
+        match speech_manifest(model_id) {
+            Ok(_) => {
+                if legacy && let Err(error) = persist_selected_model(app, model_id) {
+                    tracing::warn!(%error, "could not migrate the selected-model preference");
+                }
+                return model_id.into();
+            }
+            Err(error) => {
+                tracing::warn!(%error, "ignoring an unknown selected-model preference");
+            }
         }
     }
+    DEFAULT_SPEECH_MODEL_ID.into()
 }
 
 fn persist_selected_model(app: &AppHandle, model_id: &str) -> Result<(), String> {
@@ -403,9 +430,13 @@ fn persist_selected_model(app: &AppHandle, model_id: &str) -> Result<(), String>
 }
 
 fn selected_model_path(app: &AppHandle) -> Result<PathBuf, String> {
+    selected_model_path_for(app, SELECTED_MODEL_FILE)
+}
+
+fn selected_model_path_for(app: &AppHandle, file_name: &str) -> Result<PathBuf, String> {
     app.path()
         .app_local_data_dir()
-        .map(|directory| directory.join(SELECTED_MODEL_FILE))
+        .map(|directory| directory.join(file_name))
         .map_err(|error| format!("Could not resolve the local preferences directory: {error}"))
 }
 

@@ -8,11 +8,15 @@ use prollyglot_asr::{
 };
 use sherpa_onnx::{OnlineRecognizer, OnlineRecognizerConfig, OnlineStream};
 
-const ENGINE_ID: &str = "sherpa-onnx-online-transducer";
+const ENGINE_ID: &str = "sherpa-onnx-online";
+const TRANSDUCER_BACKEND: &str = "sherpa-onnx-online-transducer";
+const NEMOTRON_BACKEND: &str = "sherpa-onnx-online-nemotron";
 const ENDPOINT_RULE_1_TRAILING_SILENCE_SECONDS: f32 = 2.4;
 const ENDPOINT_RULE_2_TRAILING_SILENCE_SECONDS: f32 = 1.2;
 const ENDPOINT_RULE_3_UTTERANCE_SECONDS: f32 = 20.0;
 const STREAM_PREROLL_MILLIS: u32 = 800;
+const NEMOTRON_LEFT_PADDING_MILLIS: u32 = 500;
+const NEMOTRON_RIGHT_PADDING_MILLIS: u32 = 800;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SherpaOnlineConfig {
@@ -29,6 +33,13 @@ pub struct SherpaOnlineEngine {
     info: SpeechEngineInfo,
     config: SherpaOnlineConfig,
     recognizer: Option<Arc<OnlineRecognizer>>,
+    loaded_model_kind: Option<LoadedModelKind>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LoadedModelKind {
+    Transducer,
+    Nemotron,
 }
 
 impl SherpaOnlineEngine {
@@ -45,6 +56,7 @@ impl SherpaOnlineEngine {
                 num_threads: config.num_threads.max(1),
             },
             recognizer: None,
+            loaded_model_kind: None,
         }
     }
 }
@@ -69,6 +81,20 @@ impl SpeechEngine for SherpaOnlineEngine {
     }
 
     fn load_model(&mut self, model: &ModelLocation) -> Result<(), SpeechError> {
+        let model_kind = match model.backend.as_str() {
+            TRANSDUCER_BACKEND => LoadedModelKind::Transducer,
+            NEMOTRON_BACKEND => LoadedModelKind::Nemotron,
+            backend => {
+                return Err(SpeechError::new(
+                    SpeechErrorKind::BackendUnavailable,
+                    format!(
+                        "speech model {} uses unsupported backend {backend}",
+                        model.id
+                    ),
+                    false,
+                ));
+            }
+        };
         let encoder = required_artifact(model, "encoder")?;
         let decoder = required_artifact(model, "decoder")?;
         let joiner = required_artifact(model, "joiner")?;
@@ -81,6 +107,9 @@ impl SpeechEngine for SherpaOnlineEngine {
         config.model_config.tokens = Some(path_string(tokens)?);
         config.model_config.num_threads = self.config.num_threads;
         config.model_config.provider = Some("cpu".into());
+        if model_kind == LoadedModelKind::Nemotron {
+            config.model_config.modeling_unit = Some("cjkchar".into());
+        }
         config.decoding_method = Some("greedy_search".into());
         config.enable_endpoint = true;
         // The Rust wrapper's numeric defaults are zero, which makes endpoint
@@ -100,12 +129,16 @@ impl SpeechEngine for SherpaOnlineEngine {
                 true,
             )
         })?;
+        self.info.languages.clone_from(&model.languages);
         self.recognizer = Some(Arc::new(recognizer));
+        self.loaded_model_kind = Some(model_kind);
         Ok(())
     }
 
     fn unload_model(&mut self) -> Result<(), SpeechError> {
         self.recognizer = None;
+        self.loaded_model_kind = None;
+        self.info.languages.clear();
         Ok(())
     }
 
@@ -130,14 +163,23 @@ impl SpeechEngine for SherpaOnlineEngine {
         let recognizer = Arc::clone(self.recognizer.as_ref().ok_or_else(|| {
             SpeechError::new(
                 SpeechErrorKind::MissingModel,
-                "load an English caption model before starting transcription",
+                "load a speech model before starting transcription",
                 true,
             )
         })?);
+        let model_kind = self.loaded_model_kind.ok_or_else(|| {
+            SpeechError::new(
+                SpeechErrorKind::Internal,
+                "the loaded speech model has no runtime configuration",
+                false,
+            )
+        })?;
         let stream = recognizer.create_stream();
+        configure_stream_language(&stream, model_kind, &config.language);
         let speech_stream = SherpaOnlineStream {
             recognizer,
             stream,
+            model_kind,
             sample_rate: config.sample_rate,
             language: config.language,
             utterance_id: 0,
@@ -156,6 +198,7 @@ struct SherpaOnlineStream {
     // are dropped in declaration order, so keep this ordering intentional.
     stream: OnlineStream,
     recognizer: Arc<OnlineRecognizer>,
+    model_kind: LoadedModelKind,
     sample_rate: u32,
     language: String,
     utterance_id: u64,
@@ -206,6 +249,7 @@ impl SpeechStream for SherpaOnlineStream {
                 events.push(event);
             }
             self.recognizer.reset(&self.stream);
+            configure_stream_language(&self.stream, self.model_kind, &self.language);
             self.advance_utterance();
             self.prime_stream();
         }
@@ -215,10 +259,12 @@ impl SpeechStream for SherpaOnlineStream {
     fn end_utterance(&mut self, at_micros: u64) -> Result<Vec<SpeechEvent>, SpeechError> {
         self.ensure_open()?;
         self.latest_audio_micros = self.latest_audio_micros.max(at_micros);
+        self.flush_padding();
         self.stream.input_finished();
         self.decode_ready();
         let event = self.final_event().into_iter().collect();
         self.stream = self.recognizer.create_stream();
+        configure_stream_language(&self.stream, self.model_kind, &self.language);
         self.advance_utterance();
         self.prime_stream();
         Ok(event)
@@ -252,10 +298,24 @@ impl SherpaOnlineStream {
     }
 
     fn prime_stream(&self) {
-        let sample_count = self.sample_rate as usize * STREAM_PREROLL_MILLIS as usize / 1_000;
+        let padding_millis = match self.model_kind {
+            LoadedModelKind::Transducer => STREAM_PREROLL_MILLIS,
+            LoadedModelKind::Nemotron => NEMOTRON_LEFT_PADDING_MILLIS,
+        };
+        let sample_count = self.sample_rate as usize * padding_millis as usize / 1_000;
         self.stream
             .accept_waveform(self.sample_rate as i32, &vec![0.0; sample_count]);
         self.decode_ready();
+    }
+
+    fn flush_padding(&self) {
+        if self.model_kind != LoadedModelKind::Nemotron {
+            return;
+        }
+        let sample_count =
+            self.sample_rate as usize * NEMOTRON_RIGHT_PADDING_MILLIS as usize / 1_000;
+        self.stream
+            .accept_waveform(self.sample_rate as i32, &vec![0.0; sample_count]);
     }
 
     fn current_text(&self) -> String {
@@ -291,6 +351,12 @@ impl SherpaOnlineStream {
         self.utterance_id = self.utterance_id.wrapping_add(1);
         self.utterance_start_micros = None;
         self.last_partial.clear();
+    }
+}
+
+fn configure_stream_language(stream: &OnlineStream, model_kind: LoadedModelKind, language: &str) {
+    if model_kind == LoadedModelKind::Nemotron {
+        stream.set_option("language", language);
     }
 }
 
@@ -349,6 +415,8 @@ mod tests {
         let error = engine
             .load_model(&ModelLocation {
                 id: "incomplete".into(),
+                backend: TRANSDUCER_BACKEND.into(),
+                languages: vec!["en".into()],
                 directory: directory.path().into(),
                 artifacts: Default::default(),
             })

@@ -18,6 +18,9 @@ const MANIFEST_SCHEMA_VERSION: u32 = 1;
 const DOWNLOAD_BUFFER_SIZE: usize = 64 * 1024;
 const USER_AGENT: &str = concat!("Prollyglot/", env!("CARGO_PKG_VERSION"));
 pub const DEFAULT_ENGLISH_MODEL_ID: &str = "sherpa-zipformer-en-20m-2023-02-17";
+pub const DEFAULT_SPEECH_MODEL_ID: &str = DEFAULT_ENGLISH_MODEL_ID;
+pub const NEMOTRON_MULTILINGUAL_MODEL_ID: &str =
+    "nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -320,6 +323,8 @@ impl ModelManager {
             .collect::<BTreeMap<_, _>>();
         Ok(ModelLocation {
             id: manifest.id.clone(),
+            backend: manifest.backend.clone(),
+            languages: manifest.languages.clone(),
             directory,
             artifacts,
         })
@@ -382,6 +387,15 @@ pub fn enhanced_english_manifest() -> Result<ModelManifest, ModelManagerError> {
     ))
 }
 
+/// NVIDIA's multilingual 0.6B streaming model converted to pinned INT8 ONNX
+/// artifacts for sherpa-onnx. The 560 ms checkpoint is the balanced streaming
+/// profile; larger upstream chunks trade additional delay for accuracy.
+pub fn nemotron_multilingual_manifest() -> Result<ModelManifest, ModelManagerError> {
+    ModelManifest::from_json(include_str!(
+        "../../../assets/model-manifests/nemotron-3.5-streaming-multilingual.json"
+    ))
+}
+
 /// Built-in English choices in the order presented by the product.
 pub fn english_model_manifests() -> Result<Vec<ModelManifest>, ModelManagerError> {
     Ok(vec![
@@ -398,6 +412,24 @@ pub fn english_manifest(model_id: &str) -> Result<ModelManifest, ModelManagerErr
         .ok_or_else(|| {
             ModelManagerError::InvalidManifest(format!(
                 "unknown built-in English model {model_id:?}"
+            ))
+        })
+}
+
+/// Every speech model currently exposed by Prollyglot, in product order.
+pub fn speech_model_manifests() -> Result<Vec<ModelManifest>, ModelManagerError> {
+    let mut manifests = english_model_manifests()?;
+    manifests.push(nemotron_multilingual_manifest()?);
+    Ok(manifests)
+}
+
+pub fn speech_manifest(model_id: &str) -> Result<ModelManifest, ModelManagerError> {
+    speech_model_manifests()?
+        .into_iter()
+        .find(|manifest| manifest.id == model_id)
+        .ok_or_else(|| {
+            ModelManagerError::InvalidManifest(format!(
+                "unknown built-in speech model {model_id:?}"
             ))
         })
 }
@@ -645,6 +677,25 @@ mod tests {
             lightweight.id
         );
         assert!(english_manifest("unknown").is_err());
+    }
+
+    #[test]
+    fn multilingual_model_is_pinned_and_included_in_the_speech_catalog() {
+        let manifest = nemotron_multilingual_manifest().expect("Nemotron manifest");
+
+        assert_eq!(manifest.backend, "sherpa-onnx-online-nemotron");
+        assert_eq!(manifest.languages, vec!["auto", "en", "es", "ja"]);
+        assert_eq!(manifest.license, "OpenMDW-1.1");
+        assert_eq!(manifest.download_size_bytes(), 682_215_356);
+        assert_eq!(manifest.id, NEMOTRON_MULTILINGUAL_MODEL_ID);
+        assert_eq!(speech_model_manifests().expect("speech catalog").len(), 4);
+        assert_eq!(
+            speech_manifest(NEMOTRON_MULTILINGUAL_MODEL_ID)
+                .expect("multilingual model")
+                .id,
+            manifest.id
+        );
+        assert!(speech_manifest("unknown").is_err());
     }
 
     #[test]

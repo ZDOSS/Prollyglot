@@ -14,7 +14,7 @@ All three are Apache-2.0 streaming transducers and use the same sherpa-onnx 1.13
 
 ## Reproduce a comparison
 
-The harness accepts a mono WAV at any positive sample rate, resamples it to 16 kHz, installs or verifies all three candidates in an isolated cache, streams identical 100 ms chunks through each model, and prints a Markdown row containing:
+The harness accepts a mono WAV at any positive sample rate, band-limits and resamples it to 16 kHz, installs or verifies the candidates in an isolated cache, streams identical 100 ms chunks through each model, and prints a Markdown row containing:
 
 - model preparation and load time;
 - inference time and real-time factor (RTF);
@@ -34,6 +34,8 @@ cargo run --release --locked -p prollyglot-asr-sherpa --example compare_models -
 ```
 
 Use `-` instead of reference text when no trustworthy transcript exists. The first invocation includes model downloads; use at least three cached invocations for timing comparisons. Peak memory and average CPU remain external observations because the cross-platform harness deliberately avoids a platform-specific process monitor.
+
+The three-argument form above preserves the English-only comparison. Add a fourth `en`, `es`, `ja`, or `auto` argument to compare every compatible catalog model; Japanese references are reported as character error rate rather than word error rate. The multilingual results and limitations are recorded in [`MULTILINGUAL_NEMOTRON.md`](MULTILINGUAL_NEMOTRON.md).
 
 ## Initial two-model clean-reference baseline — 2026-08-09
 

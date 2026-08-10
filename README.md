@@ -17,7 +17,7 @@ Prollyglot is a free and open-source desktop utility that captures audio from a 
 - **Only this application:** caption the selected Windows process and its process tree without including unrelated application audio.
 - **Local by default:** no account, telemetry requirement, cloud transcription, audio upload, or transcript upload.
 - **Minimal and customizable:** one focused Start/Stop path plus an independent always-on-top overlay with readable appearance controls.
-- **Selectable speech quality:** three separately downloaded, integrity-checked English streaming models—Fast, Balanced, and Enhanced—rather than one enormous application package.
+- **Selectable local speech models:** three English streaming choices—Fast, Balanced, and Enhanced—plus an optional higher-resource multilingual Nemotron trial for English, Spanish, Japanese, and automatic detection.
 - **Ubuntu after Windows:** one Ubuntu LTS release using PipeWire and a native `.deb`, once the Windows MVP is reliable.
 
 ## Current status
@@ -28,18 +28,19 @@ The repository currently contains:
 - Windows playback-device capture through WASAPI loopback;
 - Windows application/process-tree capture through the documented process-loopback API;
 - follow-default-device behavior, endpoint reconnection, bounded capture queues, and local diagnostic logging;
-- mono PCM normalization, streaming resampling to model rate, bounded low-latency buffering, energy VAD, and phrase boundaries;
+- mono PCM normalization, band-limited streaming resampling to model rate, bounded low-latency buffering, energy VAD, and phrase boundaries;
 - short-utterance-friendly speech gating with quiet-speech recall, pre-roll, and trailing decoder context;
 - backend-neutral streaming ASR and stable provisional/final transcript contracts;
-- an explicit first-run model flow with atomic downloads, safe path validation, size/SHA-256 verification, working removal, and persistent selection among three pinned Apache-2.0 English streaming models;
-- a sherpa-onnx adapter that loads the selected model, preserves phrase openings with internal stream pre-roll, and exposes incremental and finalized English hypotheses;
-- a reproducible three-model comparison harness covering the same Fast, Balanced, and Enhanced choices exposed by the app;
+- an explicit first-run model flow with atomic downloads, safe path validation, size/SHA-256 verification, working removal, and persistent selection among four pinned local streaming models;
+- a sherpa-onnx adapter that loads Zipformer or Nemotron streaming models, preserves phrase openings and decoder context, and exposes incremental and finalized hypotheses;
+- original-language caption controls for English, Spanish, Japanese, and automatic detection, with unsupported model/language combinations prevented before capture starts;
+- reproducible English and multilingual comparison tooling covering the same model choices exposed by the app;
 - a bounded capture-to-inference bridge with visible backpressure and recovery behavior; and
 - live provisional/final transcript updates wired to the transcript view and a customizable always-on-top overlay that retains bounded, line-separated conversational context.
 
-The first real-Windows smokes confirmed selected-device capture and exposed startup-preview, overlay painting, Appearance dismissal, short-utterance, context-retention, and Settings-feedback defects. The latest owner re-smoke found better results and confirmed that Appearance, Transcript, and Settings now open and close correctly. Recognition of some short speech and accented dialogue remains inconsistent, so Settings now offers Fast (43.1 MiB), Balanced (70.0 MiB), and Enhanced (181.4 MiB) models without pretending that model size alone guarantees better results. The remaining Milestone 2 gates include application capture, lifecycle and overlay validation, partial-caption latency measurement, and representative conversational model evidence. See [BUILD_PLAN.md](BUILD_PLAN.md) for milestone status and use the [Windows development smoke test](docs/testing/WINDOWS_SMOKE_TEST.md) for ordinary pre-release checks.
+The first real-Windows smokes confirmed selected-device capture and exposed startup-preview, overlay painting, Appearance dismissal, short-utterance, context-retention, and Settings-feedback defects. The latest owner re-smoke found better results and confirmed that Appearance, Transcript, and Settings now open and close correctly. Recognition of some short speech and accented dialogue remains inconsistent. Settings therefore offers Fast (43.1 MiB), Balanced (70.0 MiB), and Enhanced (181.4 MiB), plus an opt-in Nemotron 3.5 Streaming 0.6B model (650.6 MiB) for original-language English, Spanish, Japanese, or automatic detection. Nemotron is a CPU path in the current build, is not the default, and does not yet have enough representative evidence to promise better English or production-ready Japanese/automatic detection. Translation is not implemented. The remaining Milestone 2 gates include application capture, lifecycle and overlay validation, partial-caption latency measurement, and representative conversational model evidence. See [BUILD_PLAN.md](BUILD_PLAN.md) for milestone status and use the [Windows development smoke test](docs/testing/WINDOWS_SMOKE_TEST.md) for ordinary pre-release checks.
 
-The benchmark tooling and initial clean-reference results are documented in [docs/benchmarks/ENGLISH_MODELS.md](docs/benchmarks/ENGLISH_MODELS.md). All three choices stream comfortably faster than real time on the development host, but the clean fixture does not establish an accuracy winner; representative accented, conversational, and noisy Windows evidence still decides whether the default should change.
+The English benchmark tooling and initial clean-reference results are documented in [docs/benchmarks/ENGLISH_MODELS.md](docs/benchmarks/ENGLISH_MODELS.md). All three English choices stream comfortably faster than real time on the development host, but the clean fixture does not establish an accuracy winner. The separate [Nemotron multilingual trial](docs/benchmarks/MULTILINGUAL_NEMOTRON.md) records resource cost and provisional English, Spanish, Japanese, and automatic-detection results. Representative Windows listening still decides what is genuinely useful.
 
 ## Capture compatibility and protected media
 

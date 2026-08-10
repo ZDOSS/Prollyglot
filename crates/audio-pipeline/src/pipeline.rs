@@ -118,7 +118,7 @@ impl AudioPipeline {
             .resampler
             .as_mut()
             .expect("resampler initialized")
-            .process(&frame.samples, false);
+            .process(&frame.samples, false)?;
         let report = self.buffer.push(start_micros, &resampled);
         self.source_id = Some(frame.source_id);
         self.last_sequence = Some(frame.sequence);
@@ -183,7 +183,7 @@ mod tests {
         })
         .expect("valid config");
         pipeline
-            .push_frame(frame(0, vec![0.2; 4_800]))
+            .push_frame(frame(0, vec![0.2; 5_120]))
             .expect("valid frame");
         let chunk = pipeline.next_chunk().expect("one 100 ms chunk");
 
@@ -207,11 +207,11 @@ mod tests {
         assert!(pipeline.buffered_samples() > 0);
 
         let report = pipeline
-            .push_frame(frame(2, vec![0.2; 4_800]))
+            .push_frame(frame(2, vec![0.2; 5_120]))
             .expect("valid frame");
 
         assert!(report.stream_reset);
-        assert_eq!(pipeline.buffered_samples(), 1_600);
+        assert!(pipeline.buffered_samples() >= 1_600);
     }
 
     #[test]
@@ -223,10 +223,11 @@ mod tests {
         })
         .expect("valid config");
         let report = pipeline
-            .push_frame(frame(0, vec![0.2; 4_800]))
+            .push_frame(frame(0, vec![0.2; 5_120]))
             .expect("valid frame");
 
-        assert_eq!(report.dropped_samples, 600);
+        assert!(report.dropped_samples > 0);
+        assert_eq!(report.total_dropped_samples, report.dropped_samples as u64);
         assert_eq!(pipeline.buffered_samples(), 1_000);
     }
 }

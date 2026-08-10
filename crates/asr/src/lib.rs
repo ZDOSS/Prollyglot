@@ -34,6 +34,8 @@ pub enum EngineState {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ModelLocation {
     pub id: String,
+    pub backend: String,
+    pub languages: Vec<String>,
     pub directory: PathBuf,
     /// Resolved model artifacts keyed by backend-defined roles such as
     /// `encoder`, `decoder`, `joiner`, and `tokens`.

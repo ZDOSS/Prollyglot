@@ -9,7 +9,9 @@ use std::{
 use prollyglot_asr::{SpeechAudio, SpeechEngine, SpeechEvent, SpeechStreamConfig};
 use prollyglot_asr_sherpa::SherpaOnlineEngine;
 use prollyglot_audio_pipeline::StreamingResampler;
-use prollyglot_model_manager::{ModelManager, ModelManifest, english_model_manifests};
+use prollyglot_model_manager::{
+    ModelManager, ModelManifest, english_model_manifests, speech_model_manifests,
+};
 use sherpa_onnx::Wave;
 
 const TARGET_SAMPLE_RATE: u32 = 16_000;
@@ -25,7 +27,8 @@ struct BenchmarkResult {
     first_partial_audio_millis: Option<u64>,
     first_partial_compute_time: Option<Duration>,
     partial_updates: usize,
-    word_error_rate: Option<f64>,
+    error_rate_name: &'static str,
+    error_rate: Option<f64>,
     transcript: String,
 }
 
@@ -38,10 +41,10 @@ fn main() {
 
 fn run() -> Result<(), Box<dyn Error>> {
     let arguments = env::args_os().skip(1).collect::<Vec<_>>();
-    if arguments.len() != 3 {
+    if !(3..=4).contains(&arguments.len()) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "usage: compare_models <model-cache-directory> <mono-wav> \"<reference text or ->\"",
+            "usage: compare_models <model-cache-directory> <mono-wav> \"<reference text or ->\" [language: en|es|ja|auto]",
         )
         .into());
     }
@@ -49,6 +52,9 @@ fn run() -> Result<(), Box<dyn Error>> {
     let model_root = PathBuf::from(&arguments[0]);
     let wave_path = PathBuf::from(&arguments[1]);
     let reference = arguments[2].to_string_lossy().into_owned();
+    let language = arguments
+        .get(3)
+        .map_or_else(|| "en".into(), |value| value.to_string_lossy().into_owned());
     let wave_path_text = wave_path.to_str().ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -75,13 +81,29 @@ fn run() -> Result<(), Box<dyn Error>> {
     println!("Audio: {}", wave_path.display());
     println!("Duration: {:.3} seconds", audio_duration.as_secs_f64());
     println!("Model cache: {}", model_root.display());
+    println!("Spoken language: {language}");
     println!();
     println!(
-        "| Model | Download MiB | Prepare s | Load s | Inference s | RTF | First partial audio ms | First partial compute ms | Partial updates | WER | Transcript |"
+        "| Model | Download MiB | Prepare s | Load s | Inference s | RTF | First partial audio ms | First partial compute ms | Partial updates | Error rate | Transcript |"
     );
     println!("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |");
 
-    for manifest in english_model_manifests()? {
+    let manifests = if arguments.len() == 3 {
+        english_model_manifests()?
+    } else {
+        speech_model_manifests()?
+            .into_iter()
+            .filter(|manifest| manifest.languages.contains(&language))
+            .collect()
+    };
+    if manifests.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("no built-in model supports language {language:?}"),
+        )
+        .into());
+    }
+    for manifest in manifests {
         eprintln!("Preparing {}…", manifest.display_name);
         let result = benchmark_model(
             &model_root,
@@ -89,6 +111,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             &samples,
             audio_duration,
             reference.as_deref(),
+            &language,
         )?;
         print_result(&result);
     }
@@ -100,7 +123,7 @@ fn resample(samples: &[f32], input_rate: u32) -> Result<Vec<f32>, Box<dyn Error>
         return Ok(samples.to_vec());
     }
     let mut resampler = StreamingResampler::new(input_rate, TARGET_SAMPLE_RATE)?;
-    Ok(resampler.process(samples, true))
+    Ok(resampler.process(samples, true)?)
 }
 
 fn benchmark_model(
@@ -109,6 +132,7 @@ fn benchmark_model(
     samples: &[f32],
     audio_duration: Duration,
     reference: Option<&str>,
+    language: &str,
 ) -> Result<BenchmarkResult, Box<dyn Error>> {
     let manager = ModelManager::new(model_root);
     let prepare_started = Instant::now();
@@ -119,7 +143,10 @@ fn benchmark_model(
     let load_started = Instant::now();
     engine.load_model(&location)?;
     let load_time = load_started.elapsed();
-    let mut stream = engine.start_stream(SpeechStreamConfig::default())?;
+    let mut stream = engine.start_stream(SpeechStreamConfig {
+        language: language.into(),
+        ..SpeechStreamConfig::default()
+    })?;
 
     let inference_started = Instant::now();
     let mut first_partial_audio_millis = None;
@@ -169,7 +196,14 @@ fn benchmark_model(
         first_partial_audio_millis,
         first_partial_compute_time,
         partial_updates,
-        word_error_rate: reference.map(|expected| word_error_rate(expected, &transcript)),
+        error_rate_name: if language == "ja" { "CER" } else { "WER" },
+        error_rate: reference.map(|expected| {
+            if language == "ja" {
+                character_error_rate(expected, &transcript)
+            } else {
+                word_error_rate(expected, &transcript)
+            }
+        }),
         transcript,
     })
 }
@@ -204,9 +238,10 @@ fn print_result(result: &BenchmarkResult) {
         || "n/a".into(),
         |value| format!("{:.1}", value.as_secs_f64() * 1_000.0),
     );
-    let wer = result
-        .word_error_rate
-        .map_or_else(|| "n/a".into(), |value| format!("{:.1}%", value * 100.0));
+    let error_rate = result.error_rate.map_or_else(
+        || "n/a".into(),
+        |value| format!("{} {:.1}%", result.error_rate_name, value * 100.0),
+    );
     let transcript = result.transcript.replace('|', "\\|").replace('\n', " ");
     println!(
         "| {} | {:.1} | {:.3} | {:.3} | {:.3} | {:.3} | {} | {} | {} | {} | {} |",
@@ -219,7 +254,7 @@ fn print_result(result: &BenchmarkResult) {
         audio_millis,
         compute_millis,
         result.partial_updates,
-        wer,
+        error_rate,
         transcript
     );
 }
@@ -227,6 +262,16 @@ fn print_result(result: &BenchmarkResult) {
 fn word_error_rate(reference: &str, hypothesis: &str) -> f64 {
     let reference = normalized_words(reference);
     let hypothesis = normalized_words(hypothesis);
+    normalized_error_rate(&reference, &hypothesis)
+}
+
+fn character_error_rate(reference: &str, hypothesis: &str) -> f64 {
+    let reference = normalized_characters(reference);
+    let hypothesis = normalized_characters(hypothesis);
+    normalized_error_rate(&reference, &hypothesis)
+}
+
+fn normalized_error_rate<T: Eq>(reference: &[T], hypothesis: &[T]) -> f64 {
     if reference.is_empty() {
         return f64::from(!hypothesis.is_empty());
     }
@@ -259,6 +304,13 @@ fn normalized_words(text: &str) -> Vec<String> {
         .collect()
 }
 
+fn normalized_characters(text: &str) -> Vec<char> {
+    text.chars()
+        .flat_map(char::to_lowercase)
+        .filter(|character| character.is_alphanumeric())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -267,5 +319,11 @@ mod tests {
     fn word_error_rate_handles_insertions_deletions_and_case() {
         assert_eq!(word_error_rate("One two three", "one two three"), 0.0);
         assert!((word_error_rate("one two three", "one four") - 2.0 / 3.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn character_error_rate_ignores_spacing_and_punctuation() {
+        assert_eq!(character_error_rate("今日は。", "今日 は"), 0.0);
+        assert!((character_error_rate("今日は", "今日") - 1.0 / 3.0).abs() < f64::EPSILON);
     }
 }

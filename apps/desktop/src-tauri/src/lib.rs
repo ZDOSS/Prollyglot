@@ -216,6 +216,7 @@ async fn start_capture(
     app: tauri::AppHandle,
     state: State<'_, RuntimeState>,
     selection: CaptureSelection,
+    language: String,
 ) -> Result<(), String> {
     let source_label = Some(selection.source_id().to_string());
     let mut stale_session = {
@@ -250,16 +251,16 @@ async fn start_capture(
     }
     drop(stale_session);
 
-    tracing::info!(?selection, "starting caption session");
-    let model_id = models::selected_model_id(&state.model).map_err(|message| {
+    tracing::info!(?selection, %language, "starting caption session");
+    let model_id = models::selected_model_id(&state.model, &language).map_err(|message| {
         publish_capture_failure(&app, &state.status, source_label.clone(), message)
     })?;
     let model_root = models::models_root(&app).map_err(|message| {
         publish_capture_failure(&app, &state.status, source_label.clone(), message)
     })?;
-    tracing::info!(%model_id, "loading selected speech model");
+    tracing::info!(%model_id, %language, "loading selected speech model");
     let prepared = tauri::async_runtime::spawn_blocking(move || {
-        transcription::prepare_stream(model_root, &model_id)
+        transcription::prepare_stream(model_root, &model_id, language)
     })
     .await
     .map_err(|error| {
@@ -793,9 +794,9 @@ pub fn run() {
             transcript_snapshot,
             clear_transcript,
             models::model_status,
-            models::select_english_model,
-            models::install_english_model,
-            models::remove_english_model,
+            models::select_speech_model,
+            models::install_speech_model,
+            models::remove_speech_model,
             show_appearance_window,
             close_appearance_window,
             update_overlay_settings,

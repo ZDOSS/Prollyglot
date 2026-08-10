@@ -8,4 +8,5 @@ repository.workspace = true
 
 [dependencies]
 prollyglot-core = { path = "../prollyglot-core" }
+rubato.workspace = true
 thiserror.workspace = true

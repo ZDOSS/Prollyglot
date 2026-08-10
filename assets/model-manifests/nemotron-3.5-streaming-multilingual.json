@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "id": "nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11",
+  "version": "ab43d895f5985b1bbab8b6eac8607fcdc05343f3",
+  "displayName": "Nemotron 3.5 Streaming 0.6B",
+  "backend": "sherpa-onnx-online-nemotron",
+  "languages": ["auto", "en", "es", "ja"],
+  "license": "OpenMDW-1.1",
+  "provenance": {
+    "sourceUrl": "https://huggingface.co/csukuangfj2/sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11",
+    "revision": "ab43d895f5985b1bbab8b6eac8607fcdc05343f3"
+  },
+  "runtime": {
+    "name": "sherpa-onnx",
+    "version": "1.13.4",
+    "license": "Apache-2.0",
+    "sourceUrl": "https://github.com/k2-fsa/sherpa-onnx/tree/v1.13.4"
+  },
+  "approximateMemoryBytes": null,
+  "artifacts": [
+    {
+      "role": "encoder",
+      "path": "encoder.int8.onnx",
+      "url": "https://huggingface.co/csukuangfj2/sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11/resolve/ab43d895f5985b1bbab8b6eac8607fcdc05343f3/encoder.int8.onnx",
+      "sizeBytes": 657601403,
+      "sha256": "012e9321373af99021415e0b0eb3ec827b4be3153be6f30d9b448fe65e896e68"
+    },
+    {
+      "role": "decoder",
+      "path": "decoder.int8.onnx",
+      "url": "https://huggingface.co/csukuangfj2/sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11/resolve/ab43d895f5985b1bbab8b6eac8607fcdc05343f3/decoder.int8.onnx",
+      "sizeBytes": 14978075,
+      "sha256": "19f9c98fc6d0a2c33a65a43b36fdb2e914c26c0aa9764be3aebc502a1e982fb0"
+    },
+    {
+      "role": "joiner",
+      "path": "joiner.int8.onnx",
+      "url": "https://huggingface.co/csukuangfj2/sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11/resolve/ab43d895f5985b1bbab8b6eac8607fcdc05343f3/joiner.int8.onnx",
+      "sizeBytes": 9504438,
+      "sha256": "4101c7c679a0bc30483794b27a059e34e79232aa2068d78d51231a22c8b0d7ce"
+    },
+    {
+      "role": "tokens",
+      "path": "tokens.txt",
+      "url": "https://huggingface.co/csukuangfj2/sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11/resolve/ab43d895f5985b1bbab8b6eac8607fcdc05343f3/tokens.txt",
+      "sizeBytes": 131440,
+      "sha256": "729cc103155bafa785f9cd45746cd41cabe97eab7182fc04d594129587958f8a"
+    }
+  ]
+}

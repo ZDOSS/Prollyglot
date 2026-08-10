@@ -47,6 +47,7 @@ export interface ModelStatus {
   displayName: string;
   profile: string;
   description: string;
+  languages: string[];
   downloadedBytes: number;
   totalBytes: number;
   message?: string;

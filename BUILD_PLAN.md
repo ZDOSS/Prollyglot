@@ -41,7 +41,7 @@ Why this direction:
 | 3. Minimal customizable Windows app | The complete daily-use interface, overlay customization, transcript view, and controls work together | Pending |
 | 4. Windows MVP release | A reliable installable Windows build is ready for outside testing | Pending |
 | 5. Ubuntu port | The Windows-proven core runs on one supported Ubuntu LTS release through PipeWire | Pending |
-| 6. Multilingual captions and translation | Downloadable language support, local translation, and dual captions are production-ready | Pending |
+| 6. Multilingual captions and translation | Downloadable language support, local translation, and dual captions are production-ready | Original-language Nemotron trial integrated for English/Spanish/Japanese/auto; quality approval, constraints, and translation remain pending |
 
 ### Windows smoke checkpoint — 2026-08-10
 
@@ -50,6 +50,8 @@ The repository owner's first native-Windows run confirmed that **Everything I he
 A follow-up run exposed an Appearance window trapped behind its always-on-top preview and captions that discarded quiet lead-in audio, finalized too aggressively around short pauses, replaced conversational context immediately, and held the last result too briefly. The correction hides the real overlay while Appearance is open, restores it when live captions continue, retains speech pre-roll and trailing context, and displays recent pause-bounded utterances on separate lines. This does not claim speaker identification.
 
 The next owner re-smoke reported better captions and confirmed that Appearance, Transcript, and Settings all open and close. Short remarks and a slight Southern accent still produced unreliable text. Prollyglot now exposes three local streaming choices—Fast, Balanced, and Enhanced—with verified download/removal, persistent selection, and a broader LibriSpeech-plus-GigaSpeech Enhanced option. Local clean-reference timing confirms that all three are comfortably faster than real time, but representative Windows dialogue remains the accuracy gate.
+
+An optional Nemotron 3.5 Streaming 0.6B integration now provides a higher-resource original-language trial for English, Spanish, Japanese, and automatic detection without changing the Fast default. The INT8 560 ms checkpoint downloads 650.6 MiB and uses roughly 950 MiB peak process memory in the current development-host benchmark. One Spanish publisher fixture spot-checked well after band-limited resampling; one English comparison did not beat the English-only choices, and Japanese/automatic detection did not clear an initial spot check. This retires the integration risk but does not complete Milestone 6 or advertise production multilingual quality.
 
 Routine development now uses [`docs/testing/WINDOWS_SMOKE_TEST.md`](docs/testing/WINDOWS_SMOKE_TEST.md). Interrupted-download recovery, formal latency measurement, screenshots, OBS parity, and sustained-resource evidence are intentionally deferred to milestone hardening or release boundaries rather than imposed on every pre-release build.
 
@@ -92,7 +94,7 @@ Turn the capture foundation into the first complete product vertical slice: sele
 
 - Resampling, channel conversion, a bounded ring buffer, voice activity detection, phrase segmentation, and backpressure behavior.
 - A modular `SpeechEngine` contract with lifecycle, engine metadata, partial results, committed results, and structured failures.
-- A model catalog and manager that downloads, verifies, selects, loads, unloads, and removes the Fast, Balanced, and Enhanced English streaming choices.
+- A model catalog and manager that downloads, verifies, selects, loads, unloads, and removes the Fast, Balanced, and Enhanced English streaming choices. The optional Nemotron multilingual trial shares this lifecycle without becoming a Milestone 2 dependency.
 - License and provenance records for the runtime and model weights before either is distributed.
 - Stable provisional versus committed transcript state with timestamps.
 - End-to-end captions from both Windows capture modes to the overlay and transcript store.
@@ -185,6 +187,8 @@ Port the proven product rather than designing Windows and Linux simultaneously.
 ## Milestone 6 — Multilingual captions and translation
 
 Expand language capability only after the base application is dependable on its supported platforms.
+
+The first integration slice is already present for owner evaluation: one explicitly downloaded Nemotron model can produce original-language English, Spanish, or Japanese captions and can run unconstrained automatic detection. It remains an experimental pre-release surface. Translation, dual captions, allowed-language constraints, broader test material, and production quality gates are still pending.
 
 ### Included outcome
 

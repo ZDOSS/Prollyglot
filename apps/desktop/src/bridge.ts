@@ -43,6 +43,7 @@ let mockModelCatalog: ModelCatalogStatus = {
       displayName: "English Streaming Small",
       profile: "Fast",
       description: "Lowest download and CPU cost for responsive captions on ordinary PCs.",
+      languages: ["en"],
       downloadedBytes: 0,
       totalBytes: 45_202_074
     },
@@ -52,6 +53,7 @@ let mockModelCatalog: ModelCatalogStatus = {
       displayName: "English Streaming Standard",
       profile: "Balanced",
       description: "A larger streaming model with more capacity while remaining comfortably real-time in local tests.",
+      languages: ["en"],
       downloadedBytes: 0,
       totalBytes: 73_440_167
     },
@@ -61,8 +63,19 @@ let mockModelCatalog: ModelCatalogStatus = {
       displayName: "English Streaming Enhanced",
       profile: "Enhanced",
       description: "The broadest English option, trained on LibriSpeech and GigaSpeech for a better chance on varied speech.",
+      languages: ["en"],
       downloadedBytes: 0,
       totalBytes: 190_180_941
+    },
+    {
+      phase: "notInstalled",
+      modelId: "nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11",
+      displayName: "Nemotron 3.5 Streaming 0.6B",
+      profile: "Multilingual",
+      description: "A high-resource 600M-parameter CPU trial for English, Spanish, Japanese, or automatic detection. Expect about 1 GB of app memory; Japanese and automatic detection are experimental.",
+      languages: ["auto", "en", "es", "ja"],
+      downloadedBytes: 0,
+      totalBytes: 682_215_356
     }
   ]
 };
@@ -80,7 +93,7 @@ const publishMockModel = () => {
 
 const mockModel = (modelId: string) => {
   const model = mockModelCatalog.models.find(({ modelId: candidate }) => candidate === modelId);
-  if (!model) throw new Error("The selected English model is unavailable.");
+  if (!model) throw new Error("The selected speech model is unavailable.");
   return model;
 };
 
@@ -93,9 +106,9 @@ export async function sourceSnapshot(): Promise<SourceSnapshot> {
   return invoke<SourceSnapshot>("source_snapshot");
 }
 
-export async function startCapture(selection: CaptureSelection): Promise<void> {
+export async function startCapture(selection: CaptureSelection, language: string): Promise<void> {
   if (isTauri()) {
-    await invoke("start_capture", { selection });
+    await invoke("start_capture", { selection, language });
     return;
   }
 
@@ -119,7 +132,7 @@ export async function startCapture(selection: CaptureSelection): Promise<void> {
             utteranceId: 0,
             startMicros: 0,
             endMicros: 900_000,
-            sourceLanguage: "en",
+            sourceLanguage: language,
             text: "We should be there",
             isFinal: false
           },
@@ -135,7 +148,7 @@ export async function startCapture(selection: CaptureSelection): Promise<void> {
               utteranceId: 0,
               startMicros: 0,
               endMicros: 1_800_000,
-              sourceLanguage: "en",
+              sourceLanguage: language,
               text: "We should be there in about ten minutes.",
               isFinal: true
             }
@@ -168,9 +181,9 @@ export async function modelStatus(): Promise<ModelCatalogStatus> {
   return invoke<ModelCatalogStatus>("model_status");
 }
 
-export async function selectEnglishModel(modelId: string): Promise<void> {
+export async function selectSpeechModel(modelId: string): Promise<void> {
   if (isTauri()) {
-    await invoke("select_english_model", { modelId });
+    await invoke("select_speech_model", { modelId });
     return;
   }
   mockModel(modelId);
@@ -178,9 +191,9 @@ export async function selectEnglishModel(modelId: string): Promise<void> {
   publishMockModel();
 }
 
-export async function installEnglishModel(modelId: string): Promise<void> {
+export async function installSpeechModel(modelId: string): Promise<void> {
   if (isTauri()) {
-    await invoke("install_english_model", { modelId });
+    await invoke("install_speech_model", { modelId });
     return;
   }
   const model = mockModel(modelId);
@@ -204,9 +217,9 @@ export async function installEnglishModel(modelId: string): Promise<void> {
   }, 1_050);
 }
 
-export async function removeEnglishModel(modelId: string): Promise<void> {
+export async function removeSpeechModel(modelId: string): Promise<void> {
   if (isTauri()) {
-    await invoke("remove_english_model", { modelId });
+    await invoke("remove_speech_model", { modelId });
     return;
   }
   const model = mockModel(modelId);

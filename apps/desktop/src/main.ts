@@ -3,13 +3,13 @@ import "./styles.css";
 import {
   captureStatus,
   clearTranscript,
-  installEnglishModel,
+  installSpeechModel,
   modelStatus,
   onCaptureStatus,
   onModelStatus,
   onTranscriptUpdate,
-  removeEnglishModel,
-  selectEnglishModel,
+  removeSpeechModel,
+  selectSpeechModel,
   showAppearance,
   sourceSnapshot,
   startCapture,
@@ -49,8 +49,8 @@ root.innerHTML = `
       <section id="model-setup" class="model-setup" aria-labelledby="model-setup-title" hidden>
         <div class="model-copy">
           <span class="model-kicker">Local model required</span>
-          <h2 id="model-setup-title">English captions</h2>
-          <p id="model-message">Download the lightweight English model once, then caption offline.</p>
+          <h2 id="model-setup-title">Local captions</h2>
+          <p id="model-message">Download the selected speech model once, then caption offline.</p>
         </div>
         <progress id="model-progress" class="model-progress" max="1" value="0" hidden></progress>
         <button id="model-action" class="secondary-button model-action" type="button">Download model</button>
@@ -81,6 +81,9 @@ root.innerHTML = `
           <div class="select-wrap">
             <select id="spoken-language" class="select-control">
               <option value="en">English</option>
+              <option value="es">Spanish</option>
+              <option value="ja">Japanese</option>
+              <option value="auto">Automatic detection</option>
             </select>
             ${icons.chevronDown}
           </div>
@@ -89,11 +92,12 @@ root.innerHTML = `
         <div class="field-group">
           <label class="field-label" for="caption-language">Captions</label>
           <div class="select-wrap">
-            <select id="caption-language" class="select-control">
-              <option value="en">English</option>
+            <select id="caption-language" class="select-control" disabled aria-describedby="caption-language-help">
+              <option value="original">Original language</option>
             </select>
             ${icons.chevronDown}
           </div>
+          <span id="caption-language-help" class="sr-only">Translation is not available in this build.</span>
         </div>
       </div>
 
@@ -121,6 +125,7 @@ root.innerHTML = `
 const sourceSelect = requireElement<HTMLSelectElement>("#audio-source");
 const deviceSelect = requireElement<HTMLSelectElement>("#playback-device");
 const deviceField = requireElement<HTMLElement>("#device-field");
+const spokenLanguage = requireElement<HTMLSelectElement>("#spoken-language");
 const captureToggle = requireElement<HTMLButtonElement>("#capture-toggle");
 const captureMessage = requireElement<HTMLElement>("#capture-message");
 const statusLabel = requireElement<HTMLElement>(".status-label");
@@ -140,6 +145,7 @@ const FALLBACK_MODEL: ModelStatus = {
   displayName: "English streaming model",
   profile: "English",
   description: "Local streaming English captions.",
+  languages: ["en"],
   downloadedBytes: 0,
   totalBytes: 0,
   message: "No English speech models are available."
@@ -150,7 +156,14 @@ let currentModels: ModelCatalogStatus = {
 };
 let currentTranscript: TranscriptSnapshot = { revision: 0, committed: [] };
 let settingsNotice: { message: string; tone: "neutral" | "success" | "error" } | undefined;
+let acceptedSpokenLanguage = "en";
 const FOLLOW_SYSTEM_DEFAULT = "__follow-system-default__";
+const LANGUAGE_LABELS: Record<string, string> = {
+  auto: "Automatic detection",
+  en: "English",
+  es: "Spanish",
+  ja: "Japanese"
+};
 
 function requireElement<T extends Element>(selector: string): T {
   const element = document.querySelector<T>(selector);
@@ -212,6 +225,27 @@ function selectedCapture(): CaptureSelection {
   return { kind: "application", processId };
 }
 
+function languageLabel(language: string): string {
+  return LANGUAGE_LABELS[language] ?? language;
+}
+
+function captionAction(language: string): string {
+  return language === "auto"
+    ? "detect and caption the spoken language"
+    : `caption ${languageLabel(language)} speech`;
+}
+
+function modelSupportsLanguage(model: ModelStatus, language = spokenLanguage.value): boolean {
+  return model.languages.includes(language);
+}
+
+function modelLanguageSummary(model: ModelStatus): string {
+  const explicit = model.languages.filter((language) => language !== "auto");
+  const labels = explicit.map(languageLabel);
+  if (model.languages.includes("auto")) labels.push("Auto detect");
+  return labels.join(" · ");
+}
+
 function renderStatus(status: CaptureStatus) {
   const stateChanged = currentStatus.state !== status.state;
   currentStatus = status;
@@ -236,7 +270,10 @@ function renderStatus(status: CaptureStatus) {
 function updatePrimaryAvailability() {
   const transitioning = currentStatus.state === "starting" || currentStatus.state === "stopping";
   const running = currentStatus.state === "capturing" || currentStatus.state === "waiting";
-  captureToggle.disabled = transitioning || (!running && selectedModel().phase !== "ready");
+  const model = selectedModel();
+  captureToggle.disabled = transitioning
+    || (!running && (model.phase !== "ready" || !modelSupportsLanguage(model)));
+  spokenLanguage.disabled = transitioning || running;
 }
 
 function formatBytes(bytes: number): string {
@@ -272,15 +309,21 @@ function renderModelStatus(catalog: ModelCatalogStatus) {
   }
   currentModels = catalog;
   const status = selectedModel(catalog);
-  const ready = status.phase === "ready";
+  const compatible = modelSupportsLanguage(status);
+  const ready = status.phase === "ready" && compatible;
   modelSetup.hidden = ready;
-  modelSetupTitle.textContent = `${status.profile} English captions`;
+  modelSetupTitle.textContent = spokenLanguage.value === "auto"
+    ? "Automatic language detection"
+    : `${languageLabel(spokenLanguage.value)} captions`;
   modelProgress.hidden = status.phase !== "downloading";
   modelProgress.max = Math.max(status.totalBytes, 1);
   modelProgress.value = Math.min(status.downloadedBytes, modelProgress.max);
-  modelAction.disabled = status.phase === "downloading";
+  modelAction.disabled = status.phase === "downloading" || !compatible;
 
-  if (status.phase === "downloading") {
+  if (!compatible) {
+    modelAction.textContent = "Choose compatible model";
+    modelMessage.textContent = `${status.displayName} does not support ${languageLabel(spokenLanguage.value)}.`;
+  } else if (status.phase === "downloading") {
     const percent = status.totalBytes > 0
       ? Math.round((status.downloadedBytes / status.totalBytes) * 100)
       : 0;
@@ -294,7 +337,7 @@ function renderModelStatus(catalog: ModelCatalogStatus) {
     modelMessage.textContent = status.message ?? "The model could not be installed.";
   } else {
     modelAction.textContent = `Download · ${formatBytes(status.totalBytes)}`;
-    modelMessage.textContent = `Download ${status.displayName} once, then caption offline.`;
+    modelMessage.textContent = `Download ${status.displayName} once, then ${captionAction(spokenLanguage.value)} offline.`;
   }
   updatePrimaryAvailability();
   if (dialog.open && dialog.dataset.panel === "settings") renderSettingsPanel();
@@ -394,8 +437,8 @@ function renderSettingsPanel() {
   content.innerHTML = `
     <section class="settings-section" aria-labelledby="model-settings-title">
       <span class="model-kicker">Local speech models</span>
-      <h3 id="model-settings-title">English caption quality</h3>
-      <p class="settings-copy">Choose a speed and quality tradeoff. Every option streams locally; selections apply to the next caption session.</p>
+      <h3 id="model-settings-title">Recognition model</h3>
+      <p class="settings-copy">Choose a speed, language, and quality tradeoff. Every option streams locally; selections apply to the next caption session.</p>
       <div id="model-options" class="model-options"></div>
       <p id="settings-action-status" class="settings-action-status" role="status" aria-live="polite"></p>
     </section>
@@ -413,6 +456,7 @@ function renderSettingsPanel() {
 
   for (const model of currentModels.models) {
     const selected = model.modelId === currentModels.selectedModelId;
+    const compatible = modelSupportsLanguage(model);
     const card = document.createElement("article");
     card.className = "model-option";
     card.dataset.selected = String(selected);
@@ -440,7 +484,7 @@ function renderSettingsPanel() {
     description.textContent = model.description;
     const metadata = document.createElement("p");
     metadata.className = "model-option-metadata";
-    metadata.textContent = `${formatBytes(model.totalBytes)} · CPU · Streaming`;
+    metadata.textContent = `${modelLanguageSummary(model)} · ${formatBytes(model.totalBytes)} · CPU`;
     card.append(heading, description, metadata);
 
     if (model.phase === "downloading") {
@@ -465,14 +509,16 @@ function renderSettingsPanel() {
     primary.className = "secondary-button model-option-action";
 
     if (model.phase === "ready") {
-      primary.textContent = selected ? "In use" : "Use model";
-      primary.disabled = selected || modelChangesBlocked;
-      if (!selected) {
+      primary.textContent = selected
+        ? "In use"
+        : compatible ? "Use model" : `${modelLanguageSummary(model)} only`;
+      primary.disabled = selected || modelChangesBlocked || !compatible;
+      if (!selected && compatible) {
         primary.addEventListener("click", async () => {
           primary.disabled = true;
           setSettingsNotice(`Selecting ${model.displayName}…`, "neutral");
           try {
-            await selectEnglishModel(model.modelId);
+            await selectSpeechModel(model.modelId);
             settingsNotice = {
               message: `${model.displayName} will be used for the next caption session.`,
               tone: "success"
@@ -499,7 +545,7 @@ function renderSettingsPanel() {
         primary.disabled = true;
         setSettingsNotice(`Starting ${model.displayName} download…`, "neutral");
         try {
-          await installEnglishModel(model.modelId);
+          await installSpeechModel(model.modelId);
         } catch (error) {
           setSettingsNotice(error instanceof Error ? error.message : String(error), "error");
           primary.disabled = false;
@@ -518,7 +564,7 @@ function renderSettingsPanel() {
         remove.disabled = true;
         setSettingsNotice(`Removing ${model.displayName}…`, "neutral");
         try {
-          await removeEnglishModel(model.modelId);
+          await removeSpeechModel(model.modelId);
           settingsNotice = {
             message: `${model.displayName} was removed from this PC.`,
             tone: "success"
@@ -568,11 +614,42 @@ function setSettingsNotice(message: string, tone: "neutral" | "success" | "error
   renderSettingsNotice();
 }
 
+async function updateSpokenLanguage() {
+  const language = spokenLanguage.value;
+  captureMessage.textContent = "";
+  const current = selectedModel();
+  if (modelSupportsLanguage(current, language)) {
+    acceptedSpokenLanguage = language;
+    renderModelStatus(currentModels);
+    return;
+  }
+
+  const candidates = currentModels.models.filter((model) => modelSupportsLanguage(model, language));
+  const candidate = candidates.find(({ phase }) => phase === "ready") ?? candidates[0];
+  if (!candidate) {
+    spokenLanguage.value = acceptedSpokenLanguage;
+    captureMessage.textContent = `No installed model catalog supports ${languageLabel(language)}.`;
+    renderModelStatus(currentModels);
+    return;
+  }
+
+  try {
+    await selectSpeechModel(candidate.modelId);
+    acceptedSpokenLanguage = language;
+    renderModelStatus(await modelStatus());
+  } catch (error) {
+    spokenLanguage.value = acceptedSpokenLanguage;
+    captureMessage.textContent = error instanceof Error ? error.message : String(error);
+    renderModelStatus(currentModels);
+  }
+}
+
 sourceSelect.addEventListener("change", updateSourceMode);
+spokenLanguage.addEventListener("change", () => void updateSpokenLanguage());
 modelAction.addEventListener("click", async () => {
   captureMessage.textContent = "";
   try {
-    await installEnglishModel(selectedModel().modelId);
+    await installSpeechModel(selectedModel().modelId);
   } catch (error) {
     captureMessage.textContent = error instanceof Error ? error.message : String(error);
   }
@@ -583,8 +660,12 @@ captureToggle.addEventListener("click", async () => {
     if (currentStatus.state === "capturing" || currentStatus.state === "waiting") {
       await stopCapture();
     } else {
-      if (selectedModel().phase !== "ready") throw new Error("Install the selected English model first.");
-      await startCapture(selectedCapture());
+      const model = selectedModel();
+      if (model.phase !== "ready") throw new Error("Install the selected speech model first.");
+      if (!modelSupportsLanguage(model)) {
+        throw new Error(`${model.displayName} does not support ${languageLabel(spokenLanguage.value)}.`);
+      }
+      await startCapture(selectedCapture(), spokenLanguage.value);
     }
   } catch (error) {
     renderStatus({

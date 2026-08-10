@@ -41,6 +41,23 @@ This is an optional user-facing model. It streams through the same local runtime
 
 This is the broadest initial user-facing English option. The broader training data makes it a useful candidate for varied speech, but the product does not claim a universal accent or accuracy improvement without representative benchmark evidence.
 
+## Multilingual Nemotron trial
+
+- Display name: Nemotron 3.5 Streaming 0.6B
+- Architecture: NVIDIA Nemotron 3.5 ASR Streaming 0.6B, 560 ms latency checkpoint, INT8 sherpa-onnx conversion
+- Supported product language settings: English, Spanish, Japanese, and automatic detection
+- Converted upstream model: `csukuangfj2/sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11`
+- Pinned revision: `ab43d895f5985b1bbab8b6eac8607fcdc05343f3`
+- Original model publisher: NVIDIA
+- Weight license: OpenMDW-1.1, as declared by the model records
+- Required download: 682,215,356 bytes across encoder, decoder, joiner, and token files
+- Manifest: `assets/model-manifests/nemotron-3.5-streaming-multilingual.json`
+- Converted model record: <https://huggingface.co/csukuangfj2/sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11/tree/ab43d895f5985b1bbab8b6eac8607fcdc05343f3>
+- Original NVIDIA model card: <https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b>
+- License text and interpretation guide: <https://github.com/OpenMDW/openmdw>
+
+`0.6B` describes approximately 600 million parameters; it is not a download-size label. The pinned INT8 artifacts total 650.6 MiB. This model is an optional pre-release trial, is never bundled or downloaded automatically, and currently runs through the CPU sherpa-onnx path. Its presence in the catalog is not a production-quality claim for every listed language.
+
 ## Runtime
 
 - Runtime: sherpa-onnx 1.13.4
@@ -49,3 +66,5 @@ This is the broadest initial user-facing English option. The broader training da
 - Rust wrapper record: <https://crates.io/crates/sherpa-onnx/1.13.4>
 
 The model and runtime are not included in the repository or the base application package. Release packaging must carry the applicable upstream notices for any runtime binaries it distributes.
+
+The audio pipeline also uses `rubato` 4.0.0 for band-limited PCM resampling under its `MIT OR Apache-2.0` license. It is application code rather than a speech model, but its notice must be included with other distributed third-party dependencies.

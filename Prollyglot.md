@@ -492,6 +492,8 @@ These names describe product profiles and training/resource tradeoffs, not a gua
 
 Fast remains the initial default until representative Windows comparisons justify changing it. Comparisons should cover accented and unaccented conversation, media, and noisy game/call audio, and should include accuracy, partial-caption latency, real-time factor, memory use, and download size. Every model's exact upstream revision, runtime files, sizes, SHA-256 digests, and license must remain recorded in a versioned manifest.
 
+The pre-release catalog also includes an explicit opt-in **Multilingual** trial: the INT8 560 ms conversion of NVIDIA Nemotron 3.5 ASR Streaming 0.6B. Here `0.6B` means approximately 600 million parameters, not a 600 MB file; its verified download is 650.6 MiB. The current integration runs locally on CPU, supports original-language English, Spanish, Japanese, and automatic detection, and uses the same install/select/remove lifecycle as the English choices. It is not the default. Initial development-host evidence is promising for a Spanish publisher fixture but weaker for one English fixture and poor for the available Japanese and unconstrained automatic-detection spot checks, so Japanese and automatic detection remain experimental until representative Windows validation supports stronger claims. The 560 ms checkpoint is intentionally preferred over the 1120 ms variant while caption delay is already a reported concern.
+
 Initial goal:
 
 ```text
@@ -510,7 +512,7 @@ Models remain separate from the application binary. Downloads occur only after a
 
 # 13. Language packs
 
-Prollyglot should support independently downloadable language packs whenever the selected model architecture permits it.
+Prollyglot should support independently downloadable language packs whenever the selected model architecture permits it. A multilingual engine may instead cover several languages in one optional download; the current Nemotron trial follows that architecture and must never be downloaded merely because an English-only user installed the app.
 
 Example:
 
@@ -1176,6 +1178,10 @@ Balanced — English Streaming Standard
 Enhanced — English Streaming Enhanced
 181.4 MiB · Optional
 [ Download ]
+
+Multilingual — Nemotron 3.5 Streaming 0.6B
+650.6 MiB · Optional · English, Spanish, Japanese, automatic detection
+[ Download ]
 ```
 
 The model manager should show:
@@ -1658,8 +1664,7 @@ After the Windows POCs succeed:
 
 ### Strongly desired
 
-- Spanish model,
-- Japanese model,
+- Spanish and Japanese original-language captioning (the optional Nemotron pre-release path exists, but production quality approval remains),
 - `.txt` export,
 - `.srt` export,
 - `.vtt` export,
@@ -1682,8 +1687,8 @@ The first post-MVP platform milestone should bring the shared pipeline to one su
 Once that baseline is reliable, Version 0.2 feature work may include:
 
 - language profiles,
-- automatic language detection,
-- multilingual ASR backend,
+- production approval and allowed-language constraints for automatic detection,
+- additional or improved multilingual ASR backends,
 - translation,
 - dual subtitles,
 - improved model selection,
