@@ -37,7 +37,7 @@ Why this direction:
 | Milestone | Integrated outcome | Status |
 | --- | --- | --- |
 | 1. Windows capture foundation | A real Windows desktop shell can enumerate and capture either a selected output device or selected application | Implementation ready; Windows validation required |
-| 2. Live English captions | Captured audio becomes stable partial and final English captions locally | Pending |
+| 2. Live English captions | Captured audio becomes stable partial and final English captions locally | In progress — shared pipeline, ASR/transcript contracts, and verified model management implemented |
 | 3. Minimal customizable Windows app | The complete daily-use interface, overlay customization, transcript view, and controls work together | Pending |
 | 4. Windows MVP release | A reliable installable Windows build is ready for outside testing | Pending |
 | 5. Ubuntu port | The Windows-proven core runs on one supported Ubuntu LTS release through PipeWire | Pending |

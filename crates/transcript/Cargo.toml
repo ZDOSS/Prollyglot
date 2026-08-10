@@ -1,5 +1,5 @@
 [package]
-name = "prollyglot-audio-pipeline"
+name = "prollyglot-transcript"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -7,5 +7,5 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-prollyglot-core = { path = "../prollyglot-core" }
-thiserror.workspace = true
+prollyglot-asr = { path = "../asr" }
+serde.workspace = true

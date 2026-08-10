@@ -480,7 +480,9 @@ The application should present simple quality choices while retaining advanced e
 
 ## Recommended POC
 
-Start with Moonshine or another lightweight local model for English.
+Start with `sherpa-onnx` behind Prollyglot's replaceable speech-engine contract and a genuinely streaming English model. The first lightweight candidate is the Apache-2.0 20M Zipformer English transducer published for sherpa-onnx. Its exact upstream revision, runtime files, sizes, SHA-256 digests, and license must remain recorded in a versioned model manifest.
+
+The lightweight candidate is not the final default until it has been measured against a standard-size English streaming model on conversational speech, media, and noisy game/call audio. The comparison should include accuracy, partial-caption latency, real-time factor, memory use, and download size.
 
 Initial goal:
 
@@ -493,6 +495,8 @@ live subtitles
 ```
 
 The first successful milestone should not require multilingual support.
+
+Models remain separate from the application binary. Downloads occur only after an explicit user action, incomplete downloads must never appear installed, and every required artifact must pass its manifest size and hash checks before an engine can load it.
 
 ---
 

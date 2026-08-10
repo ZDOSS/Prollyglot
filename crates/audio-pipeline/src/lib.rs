@@ -1,5 +1,17 @@
 //! Native PCM decoding and normalization shared by capture backends.
 
+mod buffer;
+mod pipeline;
+mod resampler;
+mod vad;
+
+pub use buffer::{BoundedSampleBuffer, BufferPushReport, BufferedAudioChunk};
+pub use pipeline::{
+    AudioPipeline, AudioPipelineConfig, AudioPipelineError, PipelinePushReport, ProcessedAudioChunk,
+};
+pub use resampler::{ResamplerError, StreamingResampler};
+pub use vad::{EnergyVoiceDetector, VoiceActivity, VoiceActivityConfig};
+
 use std::time::Duration;
 
 use prollyglot_core::{
