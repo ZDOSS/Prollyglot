@@ -19,6 +19,8 @@ export class TranslationService {
   private readonly mock: boolean;
   private readonly listeners = new Set<CatalogListener>();
   private readonly pending = new Map<number, PendingRequest>();
+  private readonly preparing = new Map<TranslationSourceLanguage, Promise<void>>();
+  private readonly preparedMockLanguages = new Set<TranslationSourceLanguage>();
   private nextRequestId = 1;
   private catalog: TranslationCatalogStatus;
 
@@ -74,6 +76,7 @@ export class TranslationService {
 
   async install(sourceLanguage: TranslationSourceLanguage): Promise<void> {
     if (this.mock) {
+      this.preparedMockLanguages.delete(sourceLanguage);
       await this.mockInstall(sourceLanguage);
       return;
     }
@@ -82,6 +85,7 @@ export class TranslationService {
 
   async remove(sourceLanguage: TranslationSourceLanguage): Promise<void> {
     if (this.mock) {
+      this.preparedMockLanguages.delete(sourceLanguage);
       this.updateMock(sourceLanguage, {
         phase: "notInstalled",
         downloadedBytes: 0,
@@ -92,6 +96,19 @@ export class TranslationService {
     await this.request({ type: "remove", sourceLanguage });
   }
 
+  prepare(sourceLanguage: TranslationSourceLanguage): Promise<void> {
+    const existing = this.preparing.get(sourceLanguage);
+    if (existing) return existing;
+    const operation = Promise.resolve().then(() => this.prepareUncached(sourceLanguage));
+    this.preparing.set(sourceLanguage, operation);
+    void operation.finally(() => {
+      if (this.preparing.get(sourceLanguage) === operation) {
+        this.preparing.delete(sourceLanguage);
+      }
+    }).catch(() => undefined);
+    return operation;
+  }
+
   async translate(sourceLanguage: TranslationSourceLanguage, text: string): Promise<string> {
     if (this.mock) {
       await new Promise((resolve) => window.setTimeout(resolve, 260));
@@ -100,6 +117,25 @@ export class TranslationService {
     const result = await this.request({ type: "translate", sourceLanguage, text });
     if (typeof result !== "string") throw new Error("The local translator returned an invalid result.");
     return result;
+  }
+
+  private async prepareUncached(sourceLanguage: TranslationSourceLanguage): Promise<void> {
+    if (this.mock) {
+      if (this.preparedMockLanguages.has(sourceLanguage)) return;
+      const status = this.requiredMock(sourceLanguage);
+      if (status.phase !== "ready") {
+        throw new Error(`${status.displayName} is not installed and ready.`);
+      }
+      this.updateMock(sourceLanguage, {
+        phase: "loading",
+        message: `Loading ${status.displayName} locally…`
+      });
+      await new Promise((resolve) => window.setTimeout(resolve, 180));
+      this.preparedMockLanguages.add(sourceLanguage);
+      this.updateMock(sourceLanguage, { phase: "ready", message: undefined });
+      return;
+    }
+    await this.request({ type: "prepare", sourceLanguage });
   }
 
   private request(request: TranslationWorkerCommand): Promise<unknown> {

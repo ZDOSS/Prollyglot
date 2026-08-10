@@ -3,5 +3,12 @@
   "identifier": "default",
   "description": "Window and event access for Prollyglot's local desktop UI.",
   "windows": ["main", "appearance", "overlay"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    "core:window:allow-close",
+    "core:window:allow-maximize",
+    "core:window:allow-minimize",
+    "core:window:allow-start-dragging",
+    "core:window:allow-unmaximize"
+  ]
 }

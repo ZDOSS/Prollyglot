@@ -105,6 +105,7 @@ export class CaptionOutputController {
           sourceLanguage: segment.sourceLanguage,
           original: segment.text,
           translation: translation?.phase === "ready" ? translation.text : undefined,
+          translationPending: this.isTranslationPending(segment),
           isFinal: segment.isFinal
         };
       })

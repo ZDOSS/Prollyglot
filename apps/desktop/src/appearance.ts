@@ -2,6 +2,8 @@ import "./styles.css";
 
 import {
   closeAppearance,
+  reportFrontendDiagnostic,
+  startWindowDrag,
   updateOverlaySettings,
   windowAction
 } from "./bridge";
@@ -13,8 +15,8 @@ if (!root) throw new Error("missing appearance root");
 
 root.innerHTML = `
   <section class="app-window appearance-window" aria-label="Caption appearance">
-    <header class="titlebar compact-titlebar" data-tauri-drag-region>
-      <div class="brand compact-brand" data-tauri-drag-region>
+    <header class="titlebar compact-titlebar">
+      <div class="brand compact-brand">
         <img class="brand-mark compact-mark" src="/branding/prollyglot-mark.png" alt="" />
         <span class="brand-name compact-name">Prollyglot</span>
       </div>
@@ -64,7 +66,7 @@ root.innerHTML = `
         </label>
 
         <label class="setting-row">
-          <span>Bilingual layout</span>
+          <span>Original + English layout</span>
           <span class="compact-select-wrap">
             <select id="bilingual-layout">
               <option value="stacked">Stacked</option>
@@ -72,6 +74,7 @@ root.innerHTML = `
             </select>${icons.chevronDown}
           </span>
         </label>
+        <p class="appearance-help">This controls the preview layout only. Turn translation on with <strong>Caption output → Original + English</strong> in the main window.</p>
 
         <label class="range-setting">
           <span class="range-label"><span>Background opacity</span><output id="opacity-output">75%</output></span>
@@ -120,7 +123,7 @@ root.innerHTML = `
         </label>
       </section>
 
-      <section class="preview-canvas" aria-label="Live caption preview">
+      <section class="preview-canvas" aria-label="Original and English caption appearance preview">
         <div class="preview-desktop" id="preview-desktop">
           <div class="preview-caption" id="preview-caption">
             <span class="preview-caption-original" lang="ja">今日は何をする予定ですか？</span>
@@ -226,7 +229,13 @@ async function dismissAppearance() {
     await closeAppearance();
   } catch (error) {
     console.error("Could not hide Appearance; closing the window instead.", error);
-    await windowAction("close");
+    try {
+      await windowAction("close");
+    } catch (closeError) {
+      const message = closeError instanceof Error ? closeError.message : String(closeError);
+      console.error("Could not close Appearance.", closeError);
+      void reportFrontendDiagnostic("window-control", `close appearance: ${message}`);
+    }
   } finally {
     dismissing = false;
     for (const button of dismissButtons) {
@@ -241,10 +250,27 @@ for (const button of document.querySelectorAll<HTMLButtonElement>("[data-window-
     if (action === "close") {
       void dismissAppearance();
     } else if (action === "minimize" || action === "maximize") {
-      void windowAction(action);
+      void windowAction(action).catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Window ${action} failed.`, error);
+        void reportFrontendDiagnostic("window-control", `${action}: ${message}`);
+      });
     }
   });
 }
+
+requireElement<HTMLElement>(".titlebar").addEventListener("mousedown", (event) => {
+  if (event.button !== 0) return;
+  const target = event.target;
+  if (target instanceof Element && target.closest("button, input, select, a")) return;
+  const action = event.detail === 2 ? "maximize" : "drag";
+  const operation = event.detail === 2 ? windowAction("maximize") : startWindowDrag();
+  void operation.catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`Window ${action} failed.`, error);
+    void reportFrontendDiagnostic("window-control", `${action}: ${message}`);
+  });
+});
 
 requireElement<HTMLButtonElement>("#reset-appearance").addEventListener("click", () => writeSettings({ ...DEFAULT_OVERLAY_SETTINGS }));
 requireElement<HTMLButtonElement>("#done-appearance").addEventListener("click", () => void dismissAppearance());

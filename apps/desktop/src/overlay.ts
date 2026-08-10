@@ -27,9 +27,22 @@ function requireElement<T extends Element>(selector: string): T {
 
 const surface = requireElement<HTMLElement>("#caption-surface");
 const captionText = requireElement<HTMLElement>("#caption-text");
+const TRANSLATION_MAX_WAIT_MS = 30_000;
+const TRANSLATION_RESULT_HOLD_MS = 6_000;
 let rawCaption = "";
 let captionActive = false;
 let output: CaptionOutputPayload = { mode: "original", originalCaption: "", entries: [] };
+let deferredClear = false;
+let clearTimer: number | undefined;
+
+declare global {
+  interface Window {
+    __PROLLYGLOT_OVERLAY_PREVIEW__?: {
+      setCaption: (caption: string) => void;
+      setOutput: (payload: CaptionOutputPayload) => void;
+    };
+  }
+}
 
 function fallbackEntries(caption: string): CaptionOutputEntry[] {
   return caption
@@ -76,6 +89,13 @@ function renderCaption(): void {
         "caption-line caption-original caption-fallback",
         entry.sourceLanguage === "auto" ? "" : entry.sourceLanguage
       ));
+      if (entry.translationPending) {
+        group.append(captionLine(
+          "Translating…",
+          "caption-line caption-translation caption-translation-status",
+          "en"
+        ));
+      }
     } else {
       group.append(captionLine(
         entry.original,
@@ -84,14 +104,72 @@ function renderCaption(): void {
       ));
       if (entry.translation) {
         group.append(captionLine(entry.translation, "caption-line caption-translation", "en"));
-      } else {
+      } else if (entry.translationPending) {
         group.classList.add("translation-pending");
+        group.append(captionLine(
+          "Translating…",
+          "caption-line caption-translation caption-translation-status",
+          "en"
+        ));
+      } else {
+        group.classList.add("translation-unavailable");
       }
     }
     return group;
   });
   captionText.replaceChildren(...rendered);
   surface.hidden = !captionActive || rendered.length === 0;
+}
+
+function cancelCaptionClear(): void {
+  if (clearTimer !== undefined) window.clearTimeout(clearTimer);
+  clearTimer = undefined;
+}
+
+function clearCaption(): void {
+  cancelCaptionClear();
+  deferredClear = false;
+  rawCaption = "";
+  captionActive = false;
+  renderCaption();
+}
+
+function matchingTranslationPending(): boolean {
+  return output.originalCaption === rawCaption
+    && output.entries.some((entry) => entry.translationPending);
+}
+
+function handleRawCaption(caption: string): void {
+  if (caption.trim()) {
+    cancelCaptionClear();
+    deferredClear = false;
+    rawCaption = caption;
+    captionActive = true;
+    renderCaption();
+    return;
+  }
+
+  if (captionActive && rawCaption.trim() && matchingTranslationPending()) {
+    deferredClear = true;
+    cancelCaptionClear();
+    clearTimer = window.setTimeout(clearCaption, TRANSLATION_MAX_WAIT_MS);
+    return;
+  }
+  clearCaption();
+}
+
+function handleCaptionOutput(payload: CaptionOutputPayload): void {
+  output = payload;
+  renderCaption();
+  if (!deferredClear) return;
+  if (output.originalCaption !== rawCaption) {
+    clearCaption();
+    return;
+  }
+  if (output.entries.some((entry) => entry.translationPending)) return;
+  deferredClear = false;
+  cancelCaptionClear();
+  clearTimer = window.setTimeout(clearCaption, TRANSLATION_RESULT_HOLD_MS);
 }
 
 function applySettings(settings: OverlaySettings) {
@@ -118,9 +196,8 @@ function storedSettings(): OverlaySettings {
 
 applySettings(storedSettings());
 if (!isTauri()) {
-  rawCaption = "今日は何をする予定ですか？";
-  captionActive = true;
-  output = {
+  handleRawCaption("今日は何をする予定ですか？");
+  handleCaptionOutput({
     mode: "both",
     originalCaption: rawCaption,
     entries: [{
@@ -130,19 +207,21 @@ if (!isTauri()) {
       translation: "What are you planning to do today?",
       isFinal: true
     }]
-  };
-  renderCaption();
+  });
+  if (import.meta.env.DEV) {
+    window.__PROLLYGLOT_OVERLAY_PREVIEW__ = {
+      setCaption: handleRawCaption,
+      setOutput: handleCaptionOutput
+    };
+  }
 }
 
 if (isTauri()) {
   void listen<string>("overlay-caption", ({ payload }) => {
-    rawCaption = payload;
-    captionActive = payload.trim().length > 0;
-    renderCaption();
+    handleRawCaption(payload);
   });
   void listen<CaptionOutputPayload>("caption-output", ({ payload }) => {
-    output = payload;
-    renderCaption();
+    handleCaptionOutput(payload);
   });
   void listen<OverlaySettings>("overlay-settings", ({ payload }) => applySettings(payload));
 }

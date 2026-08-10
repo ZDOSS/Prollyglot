@@ -334,3 +334,8 @@ export async function windowAction(action: "minimize" | "maximize" | "close"): P
   }
   if (action === "close") await current.close();
 }
+
+export async function startWindowDrag(): Promise<void> {
+  if (!isTauri()) return;
+  await getCurrentWindow().startDragging();
+}

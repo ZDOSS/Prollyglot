@@ -80,6 +80,7 @@ export interface CaptionOutputEntry {
   sourceLanguage: string;
   original: string;
   translation?: string;
+  translationPending?: boolean;
   isFinal: boolean;
 }
 

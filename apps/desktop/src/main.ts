@@ -14,6 +14,7 @@ import {
   selectSpeechModel,
   showAppearance,
   sourceSnapshot,
+  startWindowDrag,
   startCapture,
   stopCapture,
   transcriptSnapshot,
@@ -41,8 +42,8 @@ if (!root) throw new Error("missing app root");
 
 root.innerHTML = `
   <section class="app-window main-window" aria-label="Prollyglot controls">
-    <header class="titlebar" data-tauri-drag-region>
-      <div class="brand" data-tauri-drag-region>
+    <header class="titlebar">
+      <div class="brand">
         <img class="brand-mark" src="/branding/prollyglot-mark.png" alt="" />
         <span class="brand-name">Prollyglot</span>
         <span class="status-label" data-state="stopped"><span class="status-dot"></span><span id="status-text">Ready</span></span>
@@ -110,7 +111,7 @@ root.innerHTML = `
         </div>
 
         <div class="field-group">
-          <label class="field-label" for="caption-language">Captions</label>
+          <label class="field-label" for="caption-language">Caption output</label>
           <div class="select-wrap">
             <select id="caption-language" class="select-control" aria-describedby="caption-language-help">
               <option value="original">Original language</option>
@@ -297,8 +298,8 @@ function renderCaptionOutputControl(): void {
   const sourceLanguage = supportedSourceLanguage(spokenLanguage.value);
   const allowedModes: Array<[CaptionOutputMode, string]> = sourceLanguage
     ? [
-        ["original", "Original language"],
-        ["english", "English translation"],
+        ["original", "Original only · translation off"],
+        ["english", "English only · translated"],
         ["both", "Original + English"]
       ]
     : [["original", spokenLanguage.value === "en" ? "English (original)" : "Original language"]];
@@ -318,9 +319,11 @@ function renderCaptionOutputControl(): void {
   } else {
     const model = selectedTranslationModel();
     if (!translationRequested()) {
-      help.textContent = `Show ${languageLabel(spokenLanguage.value)} exactly as recognized.`;
+      help.textContent = model?.phase === "ready"
+        ? "Translation is off. Choose English only or Original + English to use the installed translator."
+        : "Translation is off. Choose English only or Original + English to install and use a translator.";
     } else if (model?.phase === "ready") {
-      help.textContent = "English is generated locally after each original caption is finalized.";
+      help.textContent = "English is on and generated locally after each original caption is finalized.";
     } else if (model?.phase === "loading") {
       help.textContent = "Original captions stay live while the local English translator loads.";
     } else {
@@ -328,6 +331,18 @@ function renderCaptionOutputControl(): void {
     }
   }
   renderTranslationSetup();
+  prepareSelectedTranslator();
+}
+
+function prepareSelectedTranslator(): void {
+  const sourceLanguage = supportedSourceLanguage(spokenLanguage.value);
+  const model = selectedTranslationModel();
+  if (!sourceLanguage || !translationRequested() || model?.phase !== "ready") return;
+  void translationService.prepare(sourceLanguage).catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    captureMessage.textContent = `English translator could not start: ${message}`;
+    void reportFrontendDiagnostic("translation-model", `${languageLabel(sourceLanguage)} preload: ${message}`);
+  });
 }
 
 function renderTranslationSetup(): void {
@@ -388,7 +403,7 @@ function renderTranslationStatus(catalog: TranslationCatalogStatus): void {
   );
   if (completed) {
     settingsNotice = {
-      message: `${completed.displayName} is installed and ready.`,
+      message: `${completed.displayName} is installed. Choose ${languageLabel(completed.sourceLanguage)} and Original + English under Caption output to use it.`,
       tone: "success"
     };
   } else if (failed) {
@@ -725,7 +740,7 @@ function renderSettingsPanel() {
     <section class="settings-section settings-section-divided" aria-labelledby="translation-settings-title">
       <span class="model-kicker">Optional local translation</span>
       <h3 id="translation-settings-title">English translation models</h3>
-      <p class="settings-copy">Install only the languages you need. Original captions appear immediately; English is added after each finalized caption.</p>
+      <p class="settings-copy">Installing stores a translator locally but does not turn it on. In the main window, choose Japanese or Spanish under Spoken language, then choose English only or Original + English under Caption output.</p>
       <div id="translation-model-options" class="model-options"></div>
     </section>
     <section class="settings-section settings-section-divided" aria-labelledby="audio-settings-title">
@@ -1099,10 +1114,26 @@ captureToggle.addEventListener("click", async () => {
 
 requireElement<HTMLButtonElement>("#appearance-action").addEventListener("click", () => void showAppearance());
 
+function reportWindowControlError(action: string, error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error);
+  captureMessage.textContent = `Window ${action} failed: ${message}`;
+  void reportFrontendDiagnostic("window-control", `${action}: ${message}`);
+}
+
+requireElement<HTMLElement>(".titlebar").addEventListener("mousedown", (event) => {
+  if (event.button !== 0) return;
+  const target = event.target;
+  if (target instanceof Element && target.closest("button, input, select, a")) return;
+  const operation = event.detail === 2 ? windowAction("maximize") : startWindowDrag();
+  void operation.catch((error) => reportWindowControlError(event.detail === 2 ? "maximize" : "drag", error));
+});
+
 for (const button of document.querySelectorAll<HTMLButtonElement>("[data-window-action]")) {
   button.addEventListener("click", () => {
     const action = button.dataset.windowAction;
-    if (action === "minimize" || action === "maximize" || action === "close") void windowAction(action);
+    if (action === "minimize" || action === "maximize" || action === "close") {
+      void windowAction(action).catch((error) => reportWindowControlError(action, error));
+    }
   });
 }
 

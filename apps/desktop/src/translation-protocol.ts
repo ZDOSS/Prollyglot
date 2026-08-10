@@ -6,6 +6,7 @@ export type TranslationWorkerRequest =
   | { type: "status"; requestId: number }
   | { type: "install"; requestId: number; sourceLanguage: TranslationSourceLanguage }
   | { type: "remove"; requestId: number; sourceLanguage: TranslationSourceLanguage }
+  | { type: "prepare"; requestId: number; sourceLanguage: TranslationSourceLanguage }
   | {
       type: "translate";
       requestId: number;

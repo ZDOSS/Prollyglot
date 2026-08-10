@@ -385,6 +385,10 @@ async function handleRequest(request: TranslationWorkerRequest): Promise<void> {
     if (request.type === "status") result = await inspectCatalog();
     if (request.type === "install") result = await install(request.sourceLanguage);
     if (request.type === "remove") result = await remove(request.sourceLanguage);
+    if (request.type === "prepare") {
+      await loadTranslator(request.sourceLanguage);
+      result = undefined;
+    }
     if (request.type === "translate") result = await translate(request.sourceLanguage, request.text);
     post({ type: "reply", requestId: request.requestId, ok: true, result });
   } catch (error) {
