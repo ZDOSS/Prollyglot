@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     mem::{ManuallyDrop, size_of},
     path::Path,
     sync::{
@@ -11,7 +11,7 @@ use std::{
 };
 
 use crossbeam_channel::{Sender, TrySendError};
-use prollyglot_audio_pipeline::normalize_interleaved;
+use prollyglot_audio_pipeline::{SignalActivity, normalize_interleaved};
 use prollyglot_core::{
     ApplicationSource, CaptureError, CaptureEvent, CaptureSelection, CaptureSession, CaptureState,
     NativeAudioFormat, PlaybackDevice, SampleFormat, SourceId, SourceSnapshot,
@@ -47,9 +47,13 @@ use windows::{
                     PropVariantClear, PropVariantToString,
                 },
             },
+            Diagnostics::ToolHelp::{
+                CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
+                TH32CS_SNAPPROCESS,
+            },
             Threading::{
                 CreateEventW, OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
-                QueryFullProcessImageNameW, WaitForSingleObject,
+                PROCESS_SYNCHRONIZE, QueryFullProcessImageNameW, WaitForSingleObject,
             },
             Variant::VT_BLOB,
         },
@@ -66,6 +70,9 @@ const KSDATAFORMAT_SUBTYPE_IEEE_FLOAT: GUID =
 const CAPTURE_READY_TIMEOUT: Duration = Duration::from_secs(10);
 const PROCESS_ACTIVATION_TIMEOUT: Duration = Duration::from_secs(5);
 const CAPTURE_WAIT_MILLIS: u32 = 250;
+const SILENCE_TIMEOUT: Duration = Duration::from_secs(2);
+const SIGNAL_THRESHOLD: f32 = 0.000_1;
+const DROP_REPORT_INTERVAL: Duration = Duration::from_secs(1);
 
 struct ComApartment {
     uninitialize: bool,
@@ -109,6 +116,83 @@ struct TaskAllocatedWaveFormat(*mut WAVEFORMATEX);
 impl Drop for TaskAllocatedWaveFormat {
     fn drop(&mut self) {
         unsafe { CoTaskMemFree(Some(self.0.cast())) };
+    }
+}
+
+#[derive(Clone)]
+struct ProcessEntry {
+    parent_id: u32,
+    executable: String,
+}
+
+#[derive(Default)]
+struct ProcessIndex {
+    entries: HashMap<u32, ProcessEntry>,
+}
+
+impl ProcessIndex {
+    fn snapshot() -> Self {
+        let Ok(handle) = (unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) }) else {
+            return Self::default();
+        };
+        let snapshot = OwnedHandle(handle);
+        let mut native_entry = PROCESSENTRY32W {
+            dwSize: size_of::<PROCESSENTRY32W>() as u32,
+            ..Default::default()
+        };
+        if unsafe { Process32FirstW(snapshot.0, &mut native_entry) }.is_err() {
+            return Self::default();
+        }
+
+        let mut entries = HashMap::new();
+        loop {
+            entries.insert(
+                native_entry.th32ProcessID,
+                ProcessEntry {
+                    parent_id: native_entry.th32ParentProcessID,
+                    executable: wide_buffer(&native_entry.szExeFile),
+                },
+            );
+            if unsafe { Process32NextW(snapshot.0, &mut native_entry) }.is_err() {
+                break;
+            }
+        }
+        Self { entries }
+    }
+
+    /// Audio sessions often belong to a Chromium/Firefox/Electron child. Walk
+    /// through same-executable parents so process loopback targets the actual
+    /// application root and includes its descendants.
+    fn capture_root(&self, process_id: u32) -> u32 {
+        let Some(origin) = self.entries.get(&process_id) else {
+            return process_id;
+        };
+        let executable = &origin.executable;
+        let mut current = process_id;
+        let mut visited = HashSet::new();
+        while visited.insert(current) {
+            let Some(entry) = self.entries.get(&current) else {
+                break;
+            };
+            if entry.parent_id == 0 || entry.parent_id == current {
+                break;
+            }
+            let Some(parent) = self.entries.get(&entry.parent_id) else {
+                break;
+            };
+            if !parent.executable.eq_ignore_ascii_case(executable) {
+                break;
+            }
+            current = entry.parent_id;
+        }
+        current
+    }
+
+    fn executable_name(&self, process_id: u32) -> Option<String> {
+        let executable = &self.entries.get(&process_id)?.executable;
+        Path::new(executable)
+            .file_stem()
+            .map(|name| name.to_string_lossy().into_owned())
     }
 }
 
@@ -162,6 +246,7 @@ unsafe fn enumerate_sources() -> windows::core::Result<SourceSnapshot> {
     };
     let collection = unsafe { enumerator.EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE)? };
     let device_count = unsafe { collection.GetCount()? };
+    let processes = ProcessIndex::snapshot();
 
     let mut playback_devices = Vec::with_capacity(device_count as usize);
     let mut applications = HashMap::<u32, ApplicationSource>::new();
@@ -213,19 +298,22 @@ unsafe fn enumerate_sources() -> windows::core::Result<SourceSnapshot> {
                 continue;
             }
 
+            let capture_process_id = processes.capture_root(process_id);
             let session_name = unsafe { session_display_name(&control) }.unwrap_or_default();
-            let name = process_name(process_id)
+            let name = process_name(capture_process_id)
+                .or_else(|| processes.executable_name(capture_process_id))
                 .filter(|value| !value.is_empty())
                 .or_else(|| (!session_name.is_empty()).then_some(session_name))
-                .unwrap_or_else(|| format!("Application {process_id}"));
-            let entry = applications
-                .entry(process_id)
-                .or_insert_with(|| ApplicationSource {
-                    id: SourceId::new(format!("process:{process_id}")),
-                    name,
-                    process_id,
-                    device_ids: Vec::new(),
-                });
+                .unwrap_or_else(|| format!("Application {capture_process_id}"));
+            let entry =
+                applications
+                    .entry(capture_process_id)
+                    .or_insert_with(|| ApplicationSource {
+                        id: SourceId::new(format!("process:{capture_process_id}")),
+                        name,
+                        process_id: capture_process_id,
+                        device_ids: Vec::new(),
+                    });
             let device_id = SourceId::new(id.clone());
             if !entry.device_ids.contains(&device_id) {
                 entry.device_ids.push(device_id);
@@ -240,6 +328,22 @@ unsafe fn enumerate_sources() -> windows::core::Result<SourceSnapshot> {
             .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
     });
     let mut applications = applications.into_values().collect::<Vec<_>>();
+    let mut application_name_counts = HashMap::<String, usize>::new();
+    for application in &applications {
+        *application_name_counts
+            .entry(application.name.to_lowercase())
+            .or_default() += 1;
+    }
+    for application in &mut applications {
+        if application_name_counts
+            .get(&application.name.to_lowercase())
+            .copied()
+            .unwrap_or_default()
+            > 1
+        {
+            application.name = format!("{} ({})", application.name, application.process_id);
+        }
+    }
     applications.sort_by(|left, right| {
         left.name
             .to_lowercase()
@@ -441,10 +545,19 @@ fn capture_worker(
 
     match (capture_result, stop_result) {
         (Err(error), _) => {
-            let _ = events.try_send(CaptureEvent::State(CaptureState::Failed));
+            let _ = events.send_timeout(
+                CaptureEvent::Error(error.to_string()),
+                Duration::from_millis(500),
+            );
             Err(error)
         }
-        (Ok(()), Err(error)) => Err(error),
+        (Ok(()), Err(error)) => {
+            let _ = events.send_timeout(
+                CaptureEvent::Error(error.to_string()),
+                Duration::from_millis(500),
+            );
+            Err(error)
+        }
         (Ok(()), Ok(())) => {
             let _ = events.try_send(CaptureEvent::State(CaptureState::Stopped));
             Ok(())
@@ -550,6 +663,7 @@ struct WasapiCaptureStream {
     sample_format: NativeAudioFormat,
     block_align: usize,
     audio_event: OwnedHandle,
+    process_handle: Option<OwnedHandle>,
 }
 
 impl WasapiCaptureStream {
@@ -599,11 +713,15 @@ impl WasapiCaptureStream {
                 block_align,
                 AUDCLNT_STREAMFLAGS_LOOPBACK | AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
                 "initialize WASAPI endpoint loopback",
+                None,
             )
         }
     }
 
     unsafe fn open_process(process_id: u32) -> Result<Self, CaptureError> {
+        let process_handle = unsafe { OpenProcess(PROCESS_SYNCHRONIZE, false, process_id) }
+            .ok()
+            .map(OwnedHandle);
         let audio_client = unsafe { activate_process_audio_client(process_id)? };
         let sample_format = NativeAudioFormat {
             sample_rate: 48_000,
@@ -632,6 +750,7 @@ impl WasapiCaptureStream {
                     | AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM
                     | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY,
                 "initialize WASAPI process loopback",
+                process_handle,
             )
         }
     }
@@ -643,6 +762,7 @@ impl WasapiCaptureStream {
         block_align: usize,
         stream_flags: u32,
         context: &str,
+        process_handle: Option<OwnedHandle>,
     ) -> Result<Self, CaptureError> {
         unsafe {
             audio_client.Initialize(
@@ -671,6 +791,7 @@ impl WasapiCaptureStream {
             sample_format,
             block_align,
             audio_event,
+            process_handle,
         })
     }
 
@@ -683,8 +804,32 @@ impl WasapiCaptureStream {
         let started_at = Instant::now();
         let mut sequence = 0_u64;
         let mut silence_buffer = Vec::<u8>::new();
+        let mut activity = SignalActivity::new(SILENCE_TIMEOUT, SIGNAL_THRESHOLD);
+        let mut pending_state = None;
+        let mut dropped_frames = 0_u64;
+        let mut reported_dropped_frames = 0_u64;
+        let mut last_drop_report = Duration::ZERO;
 
         while !stop_requested.load(Ordering::Acquire) {
+            if unsafe { self.process_exited()? } {
+                return Err(CaptureError::SourceUnavailable(format!(
+                    "selected application {source_id} has exited"
+                )));
+            }
+
+            let elapsed = started_at.elapsed();
+            if let Some(state) = activity.tick(elapsed) {
+                pending_state = Some(state);
+            }
+            flush_pending_state(events, &mut pending_state)?;
+            report_dropped_frames(
+                events,
+                dropped_frames,
+                &mut reported_dropped_frames,
+                elapsed,
+                &mut last_drop_report,
+            )?;
+
             let wait = unsafe { WaitForSingleObject(self.audio_event.0, CAPTURE_WAIT_MILLIS) };
             if wait == WAIT_TIMEOUT {
                 continue;
@@ -725,6 +870,7 @@ impl WasapiCaptureStream {
                     });
                 let silent = flags & (AUDCLNT_BUFFERFLAGS_SILENT.0 as u32) != 0;
                 let discontinuity = flags & (AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY.0 as u32) != 0;
+                let elapsed = started_at.elapsed();
                 let frame_result = bytes_len.and_then(|bytes_len| {
                     let bytes = if silent {
                         silence_buffer.resize(bytes_len, 0);
@@ -739,7 +885,7 @@ impl WasapiCaptureStream {
                     normalize_interleaved(
                         sequence,
                         source_id.clone(),
-                        started_at.elapsed().as_micros() as u64,
+                        elapsed.as_micros().min(u128::from(u64::MAX)) as u64,
                         self.sample_format,
                         bytes,
                         silent,
@@ -753,12 +899,48 @@ impl WasapiCaptureStream {
                     (Err(error), _) | (_, Err(error)) => return Err(error),
                 };
 
+                if let Some(state) = activity.observe(elapsed, frame.peak) {
+                    pending_state = Some(state);
+                }
+                flush_pending_state(events, &mut pending_state)?;
+                report_dropped_frames(
+                    events,
+                    dropped_frames,
+                    &mut reported_dropped_frames,
+                    elapsed,
+                    &mut last_drop_report,
+                )?;
+
                 sequence = sequence.wrapping_add(1);
-                publish_event(events, CaptureEvent::Frame(frame))?;
+                if publish_event(events, CaptureEvent::Frame(frame))? == PublishOutcome::Dropped {
+                    dropped_frames = dropped_frames.saturating_add(1);
+                }
             }
         }
 
         Ok(())
+    }
+
+    unsafe fn process_exited(&self) -> Result<bool, CaptureError> {
+        let Some(process_handle) = &self.process_handle else {
+            return Ok(false);
+        };
+        let wait = unsafe { WaitForSingleObject(process_handle.0, 0) };
+        if wait == WAIT_OBJECT_0 {
+            Ok(true)
+        } else if wait == WAIT_TIMEOUT {
+            Ok(false)
+        } else if wait == WAIT_FAILED {
+            Err(windows_error(
+                "check selected application state",
+                windows::core::Error::from_thread(),
+            ))
+        } else {
+            Err(CaptureError::Worker(format!(
+                "unexpected process wait result {}",
+                wait.0
+            )))
+        }
     }
 }
 
@@ -820,13 +1002,53 @@ fn integer_sample_format(bits_per_sample: u16) -> Result<SampleFormat, CaptureEr
     }
 }
 
-fn publish_event(events: &Sender<CaptureEvent>, event: CaptureEvent) -> Result<(), CaptureError> {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PublishOutcome {
+    Published,
+    Dropped,
+}
+
+fn publish_event(
+    events: &Sender<CaptureEvent>,
+    event: CaptureEvent,
+) -> Result<PublishOutcome, CaptureError> {
     match events.try_send(event) {
-        Ok(()) | Err(TrySendError::Full(_)) => Ok(()),
+        Ok(()) => Ok(PublishOutcome::Published),
+        Err(TrySendError::Full(_)) => Ok(PublishOutcome::Dropped),
         Err(TrySendError::Disconnected(_)) => Err(CaptureError::Worker(
             "capture event consumer disconnected".into(),
         )),
     }
+}
+
+fn flush_pending_state(
+    events: &Sender<CaptureEvent>,
+    pending_state: &mut Option<CaptureState>,
+) -> Result<(), CaptureError> {
+    let Some(state) = *pending_state else {
+        return Ok(());
+    };
+    if publish_event(events, CaptureEvent::State(state))? == PublishOutcome::Published {
+        *pending_state = None;
+    }
+    Ok(())
+}
+
+fn report_dropped_frames(
+    events: &Sender<CaptureEvent>,
+    total: u64,
+    reported: &mut u64,
+    elapsed: Duration,
+    last_report: &mut Duration,
+) -> Result<(), CaptureError> {
+    if total == *reported || elapsed.saturating_sub(*last_report) < DROP_REPORT_INTERVAL {
+        return Ok(());
+    }
+    *last_report = elapsed;
+    if publish_event(events, CaptureEvent::FramesDropped { total })? == PublishOutcome::Published {
+        *reported = total;
+    }
+    Ok(())
 }
 
 fn panic_message(panic: Box<dyn std::any::Any + Send>) -> String {

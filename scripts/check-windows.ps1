@@ -6,9 +6,8 @@ Push-Location $ProjectRoot
 try {
     cargo fmt --all -- --check
     cargo test --locked -p prollyglot-core -p prollyglot-audio-pipeline
-    cargo check --locked -p prollyglot-audio-windows
     pnpm --dir apps/desktop build
-    cargo check --locked -p prollyglot-desktop
+    cargo clippy --locked --workspace --all-targets -- -D warnings
 }
 finally {
     Pop-Location

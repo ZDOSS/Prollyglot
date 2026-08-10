@@ -33,6 +33,7 @@ export type CaptureState =
 export interface CaptureStatus {
   state: CaptureState;
   peak: number;
+  droppedFrames: number;
   sourceLabel?: string;
   message?: string;
 }

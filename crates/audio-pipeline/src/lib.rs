@@ -1,6 +1,59 @@
 //! Native PCM decoding and normalization shared by capture backends.
 
-use prollyglot_core::{AudioFrame, CaptureError, NativeAudioFormat, SampleFormat, SourceId};
+use std::time::Duration;
+
+use prollyglot_core::{
+    AudioFrame, CaptureError, CaptureState, NativeAudioFormat, SampleFormat, SourceId,
+};
+
+/// Converts signal activity into stable capture-state transitions without
+/// treating an ordinary pause in playback as a capture failure.
+pub struct SignalActivity {
+    silence_timeout: Duration,
+    signal_threshold: f32,
+    last_signal_at: Duration,
+    waiting: bool,
+}
+
+impl SignalActivity {
+    pub fn new(silence_timeout: Duration, signal_threshold: f32) -> Self {
+        Self {
+            silence_timeout,
+            signal_threshold: signal_threshold.max(0.0),
+            last_signal_at: Duration::ZERO,
+            waiting: false,
+        }
+    }
+
+    pub fn observe(&mut self, elapsed: Duration, peak: f32) -> Option<CaptureState> {
+        if peak > self.signal_threshold {
+            self.last_signal_at = elapsed;
+            if self.waiting {
+                self.waiting = false;
+                return Some(CaptureState::Capturing);
+            }
+            return None;
+        }
+        self.check_for_silence(elapsed)
+    }
+
+    pub fn tick(&mut self, elapsed: Duration) -> Option<CaptureState> {
+        self.check_for_silence(elapsed)
+    }
+
+    pub const fn is_waiting(&self) -> bool {
+        self.waiting
+    }
+
+    fn check_for_silence(&mut self, elapsed: Duration) -> Option<CaptureState> {
+        if !self.waiting && elapsed.saturating_sub(self.last_signal_at) >= self.silence_timeout {
+            self.waiting = true;
+            Some(CaptureState::Waiting)
+        } else {
+            None
+        }
+    }
+}
 
 pub fn normalize_interleaved(
     sequence: u64,
@@ -161,5 +214,36 @@ mod tests {
         .expect_err("partial frame should fail");
 
         assert!(matches!(error, CaptureError::InvalidFormat(_)));
+    }
+
+    #[test]
+    fn signal_activity_waits_once_after_sustained_silence() {
+        let mut activity = SignalActivity::new(Duration::from_secs(2), 0.000_1);
+
+        assert_eq!(activity.tick(Duration::from_millis(1_999)), None);
+        assert_eq!(
+            activity.tick(Duration::from_secs(2)),
+            Some(CaptureState::Waiting)
+        );
+        assert_eq!(activity.tick(Duration::from_secs(3)), None);
+        assert!(activity.is_waiting());
+    }
+
+    #[test]
+    fn signal_activity_resumes_and_restarts_silence_window() {
+        let mut activity = SignalActivity::new(Duration::from_secs(2), 0.000_1);
+        assert_eq!(
+            activity.tick(Duration::from_secs(2)),
+            Some(CaptureState::Waiting)
+        );
+        assert_eq!(
+            activity.observe(Duration::from_secs(3), 0.25),
+            Some(CaptureState::Capturing)
+        );
+        assert_eq!(activity.tick(Duration::from_millis(4_999)), None);
+        assert_eq!(
+            activity.tick(Duration::from_secs(5)),
+            Some(CaptureState::Waiting)
+        );
     }
 }

@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use parking_lot::Mutex;
 use prollyglot_core::{
@@ -12,6 +15,7 @@ use tauri::{Emitter, Manager, PhysicalPosition, State};
 struct CaptureStatus {
     state: CaptureState,
     peak: f32,
+    dropped_frames: u64,
     source_label: Option<String>,
     message: Option<String>,
 }
@@ -21,6 +25,7 @@ impl Default for CaptureStatus {
         Self {
             state: CaptureState::Stopped,
             peak: 0.0,
+            dropped_frames: 0,
             source_label: None,
             message: None,
         }
@@ -66,6 +71,7 @@ impl Default for OverlaySettings {
 
 #[derive(Default)]
 struct RuntimeState {
+    control: Mutex<()>,
     session: Mutex<Option<Box<dyn CaptureSession>>>,
     status: Arc<Mutex<CaptureStatus>>,
     overlay_settings: Mutex<OverlaySettings>,
@@ -94,6 +100,13 @@ fn start_capture(
     state: State<'_, RuntimeState>,
     selection: CaptureSelection,
 ) -> Result<(), String> {
+    let _control = state.control.lock();
+    if matches!(
+        state.status.lock().state,
+        CaptureState::Failed | CaptureState::Stopped
+    ) {
+        drop(state.session.lock().take());
+    }
     if state.session.lock().is_some() {
         return Err("A capture session is already running.".into());
     }
@@ -105,6 +118,7 @@ fn start_capture(
         CaptureStatus {
             state: CaptureState::Starting,
             peak: 0.0,
+            dropped_frames: 0,
             source_label: source_label.clone(),
             message: None,
         },
@@ -120,6 +134,7 @@ fn start_capture(
                 CaptureStatus {
                     state: CaptureState::Failed,
                     peak: 0.0,
+                    dropped_frames: 0,
                     source_label,
                     message: Some(error.to_string()),
                 },
@@ -135,6 +150,7 @@ fn start_capture(
         CaptureStatus {
             state: CaptureState::Capturing,
             peak: 0.0,
+            dropped_frames: 0,
             source_label: source_label.clone(),
             message: None,
         },
@@ -142,43 +158,93 @@ fn start_capture(
 
     let app_for_events = app.clone();
     let status_for_events = Arc::clone(&state.status);
-    std::thread::Builder::new()
+    let forwarder = std::thread::Builder::new()
         .name("capture-event-forwarder".into())
         .spawn(move || {
+            let mut last_peak_publish = None::<Instant>;
             while let Ok(event) = event_receiver.recv() {
+                if matches!(&event, CaptureEvent::Frame(_))
+                    && last_peak_publish
+                        .is_some_and(|last| last.elapsed() < Duration::from_millis(50))
+                {
+                    continue;
+                }
+                if matches!(&event, CaptureEvent::Frame(_)) {
+                    last_peak_publish = Some(Instant::now());
+                }
                 let previous = status_for_events.lock().clone();
                 let next = match event {
                     CaptureEvent::State(capture_state) => CaptureStatus {
                         state: capture_state,
-                        peak: previous.peak,
-                        source_label: previous.source_label,
-                        message: None,
+                        ..previous
                     },
                     CaptureEvent::Frame(frame) => CaptureStatus {
-                        state: CaptureState::Capturing,
+                        state: if previous.state == CaptureState::Waiting {
+                            CaptureState::Waiting
+                        } else {
+                            CaptureState::Capturing
+                        },
                         peak: frame.peak,
-                        source_label: previous.source_label,
-                        message: None,
+                        ..previous
                     },
                     CaptureEvent::Warning(message) => CaptureStatus {
                         state: CaptureState::Waiting,
-                        peak: previous.peak,
-                        source_label: previous.source_label,
                         message: Some(message),
+                        ..previous
+                    },
+                    CaptureEvent::FramesDropped { total } => {
+                        tracing::warn!(total, "audio frames dropped because the pipeline was full");
+                        CaptureStatus {
+                            dropped_frames: total,
+                            message: Some(format!(
+                                "Audio processing fell behind; {total} packets were dropped."
+                            )),
+                            ..previous
+                        }
+                    }
+                    CaptureEvent::Error(message) => CaptureStatus {
+                        state: CaptureState::Failed,
+                        peak: 0.0,
+                        message: Some(message),
+                        ..previous
                     },
                 };
                 publish_status(&app_for_events, &status_for_events, next);
             }
+
+            let runtime = app_for_events.state::<RuntimeState>();
+            let _control = runtime.control.lock();
+            if matches!(
+                runtime.status.lock().state,
+                CaptureState::Failed | CaptureState::Stopped
+            ) {
+                drop(runtime.session.lock().take());
+            }
         })
-        .map_err(|error| format!("Could not start the capture event forwarder: {error}"))?;
+        .map_err(|error| format!("Could not start the capture event forwarder: {error}"));
+    if let Err(error) = forwarder {
+        if let Some(mut session) = state.session.lock().take() {
+            let _ = session.stop();
+        }
+        publish_status(
+            &app,
+            &state.status,
+            CaptureStatus {
+                state: CaptureState::Failed,
+                message: Some(error.clone()),
+                ..CaptureStatus::default()
+            },
+        );
+        return Err(error);
+    }
 
     Ok(())
 }
 
 #[tauri::command]
 fn stop_capture(app: tauri::AppHandle, state: State<'_, RuntimeState>) -> Result<(), String> {
-    let mut session_slot = state.session.lock();
-    let Some(mut session) = session_slot.take() else {
+    let _control = state.control.lock();
+    let Some(mut session) = state.session.lock().take() else {
         return Err("No capture session is running.".into());
     };
 

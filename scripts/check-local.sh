@@ -6,6 +6,7 @@ cd "$project_root"
 
 cargo fmt --all -- --check
 cargo test --locked -p prollyglot-core -p prollyglot-audio-pipeline
+cargo clippy --locked -p prollyglot-core -p prollyglot-audio-pipeline --all-targets -- -D warnings
 cargo check --locked -p prollyglot-audio-windows
-cargo check --locked -p prollyglot-audio-windows --target x86_64-pc-windows-msvc
+cargo clippy --locked -p prollyglot-audio-windows --target x86_64-pc-windows-msvc -- -D warnings
 pnpm --dir apps/desktop build

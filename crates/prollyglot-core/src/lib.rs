@@ -149,6 +149,8 @@ pub enum CaptureEvent {
     State(CaptureState),
     Frame(AudioFrame),
     Warning(String),
+    FramesDropped { total: u64 },
+    Error(String),
 }
 
 #[derive(Debug, Error)]

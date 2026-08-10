@@ -27,7 +27,7 @@ const mockSnapshot: SourceSnapshot = {
   ]
 };
 
-let mockStatus: CaptureStatus = { state: "stopped", peak: 0 };
+let mockStatus: CaptureStatus = { state: "stopped", peak: 0, droppedFrames: 0 };
 const mockStatusListeners = new Set<(status: CaptureStatus) => void>();
 let mockTimer: number | undefined;
 
@@ -46,10 +46,10 @@ export async function startCapture(selection: CaptureSelection): Promise<void> {
     return;
   }
 
-  mockStatus = { state: "starting", peak: 0 };
+  mockStatus = { state: "starting", peak: 0, droppedFrames: 0 };
   publishMockStatus();
   window.setTimeout(() => {
-    mockStatus = { state: "capturing", peak: 0.18 };
+    mockStatus = { state: "capturing", peak: 0.18, droppedFrames: 0 };
     publishMockStatus();
     mockTimer = window.setInterval(() => {
       mockStatus = { ...mockStatus, peak: 0.08 + Math.random() * 0.72 };
@@ -66,7 +66,7 @@ export async function stopCapture(): Promise<void> {
 
   if (mockTimer !== undefined) window.clearInterval(mockTimer);
   mockTimer = undefined;
-  mockStatus = { state: "stopped", peak: 0 };
+  mockStatus = { state: "stopped", peak: 0, droppedFrames: 0 };
   publishMockStatus();
 }
 

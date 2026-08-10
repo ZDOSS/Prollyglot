@@ -103,7 +103,7 @@ const statusText = requireElement<HTMLElement>("#status-text");
 const dialog = requireElement<HTMLDialogElement>("#utility-dialog");
 
 let snapshot: SourceSnapshot = { playbackDevices: [], applications: [] };
-let currentStatus: CaptureStatus = { state: "stopped", peak: 0 };
+let currentStatus: CaptureStatus = { state: "stopped", peak: 0, droppedFrames: 0 };
 
 function requireElement<T extends Element>(selector: string): T {
   const element = document.querySelector<T>(selector);
@@ -194,7 +194,12 @@ captureToggle.addEventListener("click", async () => {
       await startCapture(selectedCapture());
     }
   } catch (error) {
-    renderStatus({ state: "failed", peak: 0, message: error instanceof Error ? error.message : String(error) });
+    renderStatus({
+      state: "failed",
+      peak: 0,
+      droppedFrames: currentStatus.droppedFrames,
+      message: error instanceof Error ? error.message : String(error)
+    });
   }
 });
 
