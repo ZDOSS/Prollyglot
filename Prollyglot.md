@@ -429,6 +429,8 @@ VAD can:
 
 VAD should be modular rather than tightly coupled to one ASR backend.
 
+For desktop playback, the initial gate should favor speech recall over aggressive silence suppression. It should retain a short pre-roll so quiet phrase openings are not discarded, allow enough trailing context for the recognizer to finish short remarks, and avoid splitting on every tiny pause.
+
 ---
 
 # 10. Speech recognition architecture
@@ -683,6 +685,8 @@ Provisional:
 The UI should avoid repeatedly rewriting already-finalized sentences.
 
 This is essential for captions that feel stable.
+
+The live overlay should retain a bounded amount of recent finalized context while the next provisional utterance develops. Finalized utterances should begin on separate visual lines, with the newest line visually strongest, so quick conversational turns remain readable instead of replacing one another immediately.
 
 ---
 
@@ -1036,6 +1040,8 @@ Okay.
 ```
 
 Actual human names should not be inferred unless Prollyglot has reliable external information.
+
+Before full diarization exists, the overlay should use reliable ASR/VAD utterance boundaries as a modest readability cue: each finalized utterance starts a new line and a few recent lines remain visible. This is pause-based turn formatting, not a claim that Prollyglot knows when the speaker changed. Simultaneous voices or changes without a usable pause may remain in one utterance.
 
 ---
 

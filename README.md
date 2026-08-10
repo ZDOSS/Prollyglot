@@ -29,14 +29,15 @@ The repository currently contains:
 - Windows application/process-tree capture through the documented process-loopback API;
 - follow-default-device behavior, endpoint reconnection, bounded capture queues, and local diagnostic logging;
 - mono PCM normalization, streaming resampling to model rate, bounded low-latency buffering, energy VAD, and phrase boundaries;
+- short-utterance-friendly speech gating with quiet-speech recall, pre-roll, and trailing decoder context;
 - backend-neutral streaming ASR and stable provisional/final transcript contracts;
 - an explicit first-run model flow with atomic downloads, safe path validation, size/SHA-256 verification, removal, and a pinned Apache-2.0 English streaming-model candidate;
 - a sherpa-onnx adapter that loads the pinned model, preserves phrase openings with internal stream pre-roll, and exposes incremental and finalized English hypotheses;
 - a reproducible small-versus-standard model comparison harness with a separately pinned benchmark candidate;
 - a bounded capture-to-inference bridge with visible backpressure and recovery behavior; and
-- live provisional/final transcript updates wired to the transcript view and customizable always-on-top overlay.
+- live provisional/final transcript updates wired to the transcript view and a customizable always-on-top overlay that retains bounded, line-separated conversational context.
 
-The first real-Windows smoke exposed startup-preview, changing-caption layout, and Settings-feedback defects; those paths have been corrected and are ready for a short re-smoke. The remaining Milestone 2 gates include application capture, lifecycle and overlay validation, partial-caption latency measurement, and representative model evidence. See [BUILD_PLAN.md](BUILD_PLAN.md) for milestone status and use the [Windows development smoke test](docs/testing/WINDOWS_SMOKE_TEST.md) for ordinary pre-release checks.
+The first real-Windows smokes confirmed selected-device capture and exposed startup-preview, overlay painting, Appearance dismissal, short-utterance, context-retention, and Settings-feedback defects. Those paths have been corrected and are ready for a focused re-smoke. The remaining Milestone 2 gates include application capture, lifecycle and overlay validation, partial-caption latency measurement, and representative conversational model evidence. See [BUILD_PLAN.md](BUILD_PLAN.md) for milestone status and use the [Windows development smoke test](docs/testing/WINDOWS_SMOKE_TEST.md) for ordinary pre-release checks.
 
 The benchmark tooling and initial clean-reference result are documented in [docs/benchmarks/ENGLISH_MODELS.md](docs/benchmarks/ENGLISH_MODELS.md). That smoke result validates both runtimes but intentionally does not choose a default without conversational and noisy Windows evidence.
 

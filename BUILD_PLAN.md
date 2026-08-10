@@ -37,7 +37,7 @@ Why this direction:
 | Milestone | Integrated outcome | Status |
 | --- | --- | --- |
 | 1. Windows capture foundation | A real Windows desktop shell can enumerate and capture either a selected output device or selected application | Selected-device Windows smoke passed; application and lifecycle validation remain |
-| 2. Live English captions | Captured audio becomes stable partial and final English captions locally | Device-to-caption smoke passed; UI fixes await re-smoke and representative model evidence remains |
+| 2. Live English captions | Captured audio becomes stable partial and final English captions locally | Device-to-caption smoke passed; short-utterance/context fixes await re-smoke and representative model evidence remains |
 | 3. Minimal customizable Windows app | The complete daily-use interface, overlay customization, transcript view, and controls work together | Pending |
 | 4. Windows MVP release | A reliable installable Windows build is ready for outside testing | Pending |
 | 5. Ubuntu port | The Windows-proven core runs on one supported Ubuntu LTS release through PipeWire | Pending |
@@ -46,6 +46,8 @@ Why this direction:
 ### Windows smoke checkpoint — 2026-08-10
 
 The repository owner's first native-Windows run confirmed that **Everything I hear** receives audible audio from the selected playback device and produces local captions. It also exposed an unsolicited startup preview, unstable painting while partial captions changed, and Settings actions with no visible result. Those UI paths were corrected in the next integration point and require a focused re-smoke.
+
+A follow-up run exposed an Appearance window trapped behind its always-on-top preview and captions that discarded quiet lead-in audio, finalized too aggressively around short pauses, replaced conversational context immediately, and held the last result too briefly. The next integration hides the real overlay while Appearance is open, restores it when live captions continue, retains speech pre-roll and trailing context, and displays recent pause-bounded utterances on separate lines. This does not claim speaker identification; conversational model accuracy remains an explicit evidence gap.
 
 Routine development now uses [`docs/testing/WINDOWS_SMOKE_TEST.md`](docs/testing/WINDOWS_SMOKE_TEST.md). Interrupted-download recovery, formal latency measurement, screenshots, OBS parity, and sustained-resource evidence are intentionally deferred to milestone hardening or release boundaries rather than imposed on every pre-release build.
 

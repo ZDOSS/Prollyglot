@@ -53,3 +53,9 @@ The lightweight transcript ended with “BROFFEL” and the standard transcript 
 - This clean audiobook sentence showed no WER advantage for standard.
 
 This is runtime and harness validation, not a default-model decision. It does not represent ordinary conversation, accents, browser media, overlapping voices, or noisy game/call audio. Milestone 2 still requires the Windows procedure's broader sample set and measurements on the reference Windows machine.
+
+## Decoder check — 2026-08-10
+
+After the first native-Windows quality report, both candidates were rerun on the same pinned reference with four-path `modified_beam_search` instead of greedy decoding. The transcripts and 5.6% WER were unchanged, and inference remained effectively the same (small: 0.191 s, 0.029 RTF; standard: 0.377 s, 0.057 RTF). Prollyglot therefore retains the simpler greedy decoder rather than claiming an unsupported quality improvement.
+
+This result does not clear the reported conversational-quality concern. The confirmed short-utterance gating losses are corrected first; if ordinary dialogue remains mangled, the next model decision must use representative conversational Windows audio rather than another clean audiobook sentence.

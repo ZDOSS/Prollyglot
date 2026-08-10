@@ -16,7 +16,9 @@ pnpm --dir apps/desktop tauri dev
 
 Run `pnpm --dir apps/desktop install --frozen-lockfile` first only when dependencies have changed or pnpm says packages are missing.
 
-The app should open without a UAC prompt or blank window. No subtitle preview should appear merely because the app launched. Opening **Appearance** may intentionally show a sample caption; closing Appearance should hide it.
+The app should open without a UAC prompt or blank window. No subtitle preview should appear merely because the app launched.
+
+Open **Appearance** once. Its sample stays inside the Appearance window rather than opening a second always-on-top preview over the controls. Confirm both **Done** and the title-bar **Close** return to the main window; no screenshot is required.
 
 If the English model is missing, download it normally and wait for it to finish. Interrupted-download recovery is deferred to a later hardening pass and is not part of this smoke test.
 
@@ -26,7 +28,8 @@ If the English model is missing, download it normally and wait for it to finish.
 2. Start captions and play any ordinary English speech through that device.
 3. Confirm the state becomes **Live** while audio is audible and the overlay shows changing captions.
 4. Watch a few changing partial captions. Text should occupy one readable surface; words and lines must not stack or paint over one another.
-5. Pause the speech briefly, resume it, then stop captions. The app should remain responsive and the overlay should clear.
+5. Play a short exchange with a few brief remarks. Finalized utterances should remain as separate recent lines while the newest line updates. Older context may be dimmer; it must not be presented as identified speakers.
+6. Pause the speech briefly, resume it, then stop captions. The app should remain responsive, retain the final context for several seconds, and then clear the overlay.
 
 Recognizing the audible selected-device output is enough to pass this pre-release capture smoke. Exact wording and punctuation do not need to match perfectly.
 
