@@ -13,7 +13,7 @@ pub fn normalize_interleaved(
 ) -> Result<AudioFrame, CaptureError> {
     let format = format.validate()?;
     let bytes_per_frame = format.bytes_per_frame();
-    if bytes.len() % bytes_per_frame != 0 {
+    if !bytes.len().is_multiple_of(bytes_per_frame) {
         return Err(CaptureError::InvalidFormat(format!(
             "{} bytes is not a whole number of {}-byte frames",
             bytes.len(),
