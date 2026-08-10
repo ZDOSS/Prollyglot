@@ -36,12 +36,18 @@ Why this direction:
 
 | Milestone | Integrated outcome | Status |
 | --- | --- | --- |
-| 1. Windows capture foundation | A real Windows desktop shell can enumerate and capture either a selected output device or selected application | Implementation ready; Windows validation required |
-| 2. Live English captions | Captured audio becomes stable partial and final English captions locally | End-to-end implementation and benchmark harness ready; Windows validation and representative model evidence required |
+| 1. Windows capture foundation | A real Windows desktop shell can enumerate and capture either a selected output device or selected application | Selected-device Windows smoke passed; application and lifecycle validation remain |
+| 2. Live English captions | Captured audio becomes stable partial and final English captions locally | Device-to-caption smoke passed; UI fixes await re-smoke and representative model evidence remains |
 | 3. Minimal customizable Windows app | The complete daily-use interface, overlay customization, transcript view, and controls work together | Pending |
 | 4. Windows MVP release | A reliable installable Windows build is ready for outside testing | Pending |
 | 5. Ubuntu port | The Windows-proven core runs on one supported Ubuntu LTS release through PipeWire | Pending |
 | 6. Multilingual captions and translation | Downloadable language support, local translation, and dual captions are production-ready | Pending |
+
+### Windows smoke checkpoint — 2026-08-10
+
+The repository owner's first native-Windows run confirmed that **Everything I hear** receives audible audio from the selected playback device and produces local captions. It also exposed an unsolicited startup preview, unstable painting while partial captions changed, and Settings actions with no visible result. Those UI paths were corrected in the next integration point and require a focused re-smoke.
+
+Routine development now uses [`docs/testing/WINDOWS_SMOKE_TEST.md`](docs/testing/WINDOWS_SMOKE_TEST.md). Interrupted-download recovery, formal latency measurement, screenshots, OBS parity, and sustained-resource evidence are intentionally deferred to milestone hardening or release boundaries rather than imposed on every pre-release build.
 
 ## Milestone 1 — Windows capture foundation
 

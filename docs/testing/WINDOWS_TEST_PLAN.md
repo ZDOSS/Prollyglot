@@ -1,6 +1,9 @@
-# Prollyglot Windows 11 test plan
+# Prollyglot Windows 11 release and hardening plan
 
-This is the single, step-by-step validation runbook for the current Prollyglot Windows build. It combines the Milestone 1 capture checks and the Milestone 2 live-caption checks so a tester can work straight through one document and return comparable evidence.
+This is the exhaustive validation runbook for formal milestone acceptance, hardening passes, and release candidates. It combines the Milestone 1 capture checks and the Milestone 2 live-caption checks so a planned validation session can produce comparable evidence.
+
+> [!IMPORTANT]
+> Do not use this document for ordinary pre-release checks. Use the five-minute [Windows development smoke test](WINDOWS_SMOKE_TEST.md), which does not require screenshots, recordings, fixtures, or an evidence bundle for passing behavior. Run this longer plan only when the project is deliberately closing a milestone or validating a release candidate.
 
 Run it on native Windows 11, from an ordinary non-administrator account. Do not run the application from WSL. Installing prerequisites may require administrator approval, but Prollyglot itself must launch and caption without elevation, a virtual audio device, an account, or a cloud transcription service.
 
@@ -208,18 +211,18 @@ Expected: exit code 0 and no lockfile rewrite.
 ### 4.3 Run the local validation loop
 
 ```powershell
-.\scripts\check-windows.ps1 *>&1 |
-  Tee-Object -FilePath (Join-Path $EvidenceRoot "check-windows.txt")
+.\scripts\check-windows.ps1
 ```
 
 If PowerShell blocks the script because of local execution policy, do not change the machine-wide policy. Run this one process instead:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\check-windows.ps1 *>&1 |
-  Tee-Object -FilePath (Join-Path $EvidenceRoot "check-windows.txt")
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\check-windows.ps1
 ```
 
-Expected: formatting, Rust tests, the frontend TypeScript/Vite build, and Clippy all finish successfully. Record **WIN-BUILD-01 = PASS** only when the complete script exits successfully. If it fails, save `check-windows.txt` and stop the runtime run; manual behavior from a failing build is not milestone evidence.
+Do not merge all output streams into `Tee-Object` around this script. Cargo writes ordinary progress messages such as `Updating crates.io index` to stderr; under the script's strict PowerShell error handling, stream merging can incorrectly surface that progress as a `NativeCommandError` even though Cargo has not failed.
+
+Expected: formatting, Rust tests, the frontend TypeScript/Vite build, and Clippy all finish successfully. Record **WIN-BUILD-01 = PASS** only when the complete script exits successfully. If it fails, copy the actual failing command and error output for troubleshooting; manual behavior from a genuinely failing build is not milestone evidence.
 
 This check is local and consumes no GitHub Actions minutes.
 

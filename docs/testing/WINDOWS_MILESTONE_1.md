@@ -3,7 +3,7 @@
 This is the manual acceptance run for Prollyglot's Windows capture foundation. It is intentionally run on a real Windows 11 desktop because WSL and hosted CI cannot prove physical audio routing, process isolation, focus behavior, or multi-monitor overlay placement.
 
 > [!NOTE]
-> Use the [complete Windows 11 test plan](WINDOWS_TEST_PLAN.md) for literal setup commands, generated routing fixtures, expected results, evidence tables, OBS parity steps, and the final report template. This file remains the shorter Milestone 1 acceptance summary.
+> This is a formal Milestone 1 acceptance summary, not the routine development loop. Use the [Windows development smoke test](WINDOWS_SMOKE_TEST.md) for ordinary builds. The [release and hardening plan](WINDOWS_TEST_PLAN.md) contains the exhaustive evidence procedure when the milestone is deliberately being closed.
 
 ## Prepare and launch
 

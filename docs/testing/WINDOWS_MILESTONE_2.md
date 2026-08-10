@@ -3,7 +3,7 @@
 This is the manual acceptance run for Prollyglot's first complete English-caption vertical slice. It must run on a real Windows 11 machine: cross-compilation proves the code shape, but cannot prove physical audio routing, caption latency, overlay behavior, or sustained CPU and memory use.
 
 > [!NOTE]
-> Use the [complete Windows 11 test plan](WINDOWS_TEST_PLAN.md) for literal setup commands, generated routing fixtures, expected results, evidence tables, OBS parity steps, and the final report template. This file remains the shorter Milestone 2 acceptance summary.
+> This is a formal Milestone 2 acceptance summary, not the routine development loop. Use the [Windows development smoke test](WINDOWS_SMOKE_TEST.md) for ordinary builds. The [release and hardening plan](WINDOWS_TEST_PLAN.md) contains the exhaustive evidence procedure when the milestone is deliberately being closed.
 
 This is a substantial milestone gate, not a per-commit CI workflow.
 

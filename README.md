@@ -9,7 +9,7 @@
 Prollyglot is a free and open-source desktop utility that captures audio from a selected playback device or application and turns it into live subtitles locally. It is designed for games, calls, browsers, media players, and other software that has missing, limited, or inaccessible captions.
 
 > [!IMPORTANT]
-> Prollyglot is in active pre-release development. There is not yet a supported binary release. Windows 11 is the primary target; the first end-to-end English caption implementation is in the repository but still needs validation on real Windows hardware.
+> Prollyglot is in active pre-release development. There is not yet a supported binary release. Windows 11 is the primary target; the first Windows owner smoke confirmed that **Everything I hear** captions audible output from the selected playback device, while broader application, lifecycle, and release validation remains in progress.
 
 ## What it is building toward
 
@@ -36,7 +36,7 @@ The repository currently contains:
 - a bounded capture-to-inference bridge with visible backpressure and recovery behavior; and
 - live provisional/final transcript updates wired to the transcript view and customizable always-on-top overlay.
 
-The remaining Milestone 2 gates are real Windows audio/overlay validation, partial-caption latency measurement, and the small-versus-standard model benchmark. See [BUILD_PLAN.md](BUILD_PLAN.md) for milestone status and follow the [complete step-by-step Windows 11 test plan](docs/testing/WINDOWS_TEST_PLAN.md) for the validation run.
+The first real-Windows smoke exposed startup-preview, changing-caption layout, and Settings-feedback defects; those paths have been corrected and are ready for a short re-smoke. The remaining Milestone 2 gates include application capture, lifecycle and overlay validation, partial-caption latency measurement, and representative model evidence. See [BUILD_PLAN.md](BUILD_PLAN.md) for milestone status and use the [Windows development smoke test](docs/testing/WINDOWS_SMOKE_TEST.md) for ordinary pre-release checks.
 
 The benchmark tooling and initial clean-reference result are documented in [docs/benchmarks/ENGLISH_MODELS.md](docs/benchmarks/ENGLISH_MODELS.md). That smoke result validates both runtimes but intentionally does not choose a default without conversational and noisy Windows evidence.
 
@@ -65,13 +65,13 @@ pnpm --dir apps/desktop install
 pnpm --dir apps/desktop tauri dev
 ```
 
-Run the Windows validation loop from PowerShell:
+Run the local Windows code checks from PowerShell when validating a change:
 
 ```powershell
 ./scripts/check-windows.ps1
 ```
 
-For the literal native-Windows setup, test fixtures, expected results, OBS parity matrix, latency measurements, soak test, privacy checks, and report template, follow the [Windows 11 test plan](docs/testing/WINDOWS_TEST_PLAN.md) from top to bottom.
+For an ordinary native-Windows run, follow the five-minute [Windows development smoke test](docs/testing/WINDOWS_SMOKE_TEST.md). It requires no screenshots, recordings, generated fixtures, or evidence bundle for passing behavior. The exhaustive [Windows release and hardening plan](docs/testing/WINDOWS_TEST_PLAN.md) is reserved for formal milestone and release-candidate validation.
 
 On a non-Windows development host, the shared core, frontend, and Windows cross-checks used by the project can be run with:
 
@@ -79,7 +79,7 @@ On a non-Windows development host, the shared core, frontend, and Windows cross-
 ./scripts/check-local.sh
 ```
 
-Physical WASAPI routing, process isolation, device switching, overlay layering, and end-to-end caption latency still require a real Windows machine. The shorter [Milestone 1](docs/testing/WINDOWS_MILESTONE_1.md) and [Milestone 2](docs/testing/WINDOWS_MILESTONE_2.md) checklists remain useful as acceptance summaries; the unified test plan is the tester-facing runbook.
+Physical WASAPI routing, process isolation, device switching, overlay layering, and end-to-end caption latency still require a real Windows machine. The [Milestone 1](docs/testing/WINDOWS_MILESTONE_1.md) and [Milestone 2](docs/testing/WINDOWS_MILESTONE_2.md) checklists summarize formal acceptance boundaries; they are not the routine tester loop.
 
 ## Repository map
 
