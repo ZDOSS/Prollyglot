@@ -50,6 +50,7 @@ export class CaptionOutputController {
   private readonly pending = new Set<string>();
   private queue: QueuedSegment[] = [];
   private pumping = false;
+  private translationActive = true;
   private skippedStaleSegments = 0;
   private lastDiagnosticAtMs = 0;
   private reportedFirstTranslation = false;
@@ -92,6 +93,21 @@ export class CaptionOutputController {
 
   translationTarget(): TranslationLanguage {
     return this.targetLanguage;
+  }
+
+  setTranslationActive(active: boolean): void {
+    if (this.translationActive === active) return;
+    this.translationActive = active;
+    if (!active) {
+      this.queue = [];
+      this.queued.clear();
+      this.pending.clear();
+      this.clearLiveScheduling();
+      this.liveRequest = undefined;
+    } else {
+      this.scheduleTranslations();
+    }
+    this.publish();
   }
 
   setOutputMode(mode: CaptionOutputMode): void {
@@ -187,6 +203,7 @@ export class CaptionOutputController {
   }
 
   isTranslationPending(segment: TranscriptSegment): boolean {
+    if (!this.translationActive) return false;
     const key = segmentKey(segment);
     if (segment.isFinal) return this.pending.has(key) || this.queued.has(key);
     return this.liveRequest?.utteranceKey === utteranceKey(segment)
@@ -215,7 +232,7 @@ export class CaptionOutputController {
   }
 
   private scheduleTranslations(): void {
-    if (this.mode === "original") return;
+    if (!this.translationEnabled()) return;
     const candidates = this.transcript.committed.slice(-MAX_TRANSLATION_QUEUE);
     for (const segment of candidates) {
       const sourceLanguage = supportedSourceLanguage(segment.sourceLanguage);
@@ -249,7 +266,7 @@ export class CaptionOutputController {
   }
 
   private translationEnabled(): boolean {
-    return this.mode !== "original";
+    return this.translationActive && this.mode !== "original";
   }
 
   private async pump(): Promise<void> {
@@ -295,12 +312,16 @@ export class CaptionOutputController {
         targetLanguage,
         next.segment.text
       );
-      if (this.targetLanguage === targetLanguage && this.hasCommittedSegment(next.key)) {
+      if (this.translationEnabled()
+        && this.targetLanguage === targetLanguage
+        && this.hasCommittedSegment(next.key)) {
         this.translations.set(next.key, { phase: "ready", text });
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      if (this.targetLanguage === targetLanguage && this.hasCommittedSegment(next.key)) {
+      if (this.translationEnabled()
+        && this.targetLanguage === targetLanguage
+        && this.hasCommittedSegment(next.key)) {
         this.translations.set(next.key, { phase: "failed", message });
         this.reportError(`Translation stopped: ${message}`);
       }
@@ -346,6 +367,8 @@ export class CaptionOutputController {
       );
       const current = this.transcript.provisional;
       if (
+        this.translationEnabled()
+        &&
         current
         && this.targetLanguage === targetLanguage
         && utteranceKey(current) === requestUtteranceKey

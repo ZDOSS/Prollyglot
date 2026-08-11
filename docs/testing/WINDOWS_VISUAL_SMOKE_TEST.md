@@ -44,8 +44,16 @@ installing the OCR pack does not install every translator.
    region selector is only a live crop, not a screenshot. Leave **Detection** on
    **Prominent text** for the first pass. Confirm **Scanning for text…** appears
    promptly, then a high-confidence first OCR pass can translate near the
-   original text without waiting for a second full inference. Stacked title or
-   sign lines should become one phrase rather than overlapping word fragments.
+   original text without waiting for a second full inference. The translator
+   loads before capture begins, so **Starting…** may last longer on the first
+   route load, but model loading should not cover the source with pending
+   labels. Once capture is active, a compact Japanese/Spanish-to-English result
+   should normally begin appearing within two seconds. Dense **All detected
+   text** sources fill progressively and only the one region actually being
+   processed should say **Translating…**. A compact inference still running at
+   five seconds is removed while the local worker recovers; it must not leave
+   every later label pending for minutes. Stacked title or sign lines should
+   become one phrase rather than overlapping word fragments.
    The overlay should not repeatedly recognize its own labels or fill the screen
    with unrelated interface text. The active card separates **OCR regions** from
    **Overlay labels**: once text is visible, both should be nonzero. OCR regions

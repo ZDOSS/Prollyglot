@@ -1179,12 +1179,29 @@ confidence, size, area, and proximity to the source center, and keeps at most si
 current regions. This removes the previous requirement to wait for a second
 expensive inference before showing a useful result. **All detected text** keeps
 two-pass stabilization and the lower size/confidence thresholds because its
-purpose is deliberately broader. An unchanged confirmation pass is still
-allowed before static content goes idle. The translation controller preloads
-the selected local route during OCR startup and replaces pending work with the
-newest visible snapshot instead of draining a stale per-fragment backlog. These
-defaults should be tuned from native Windows latency, CPU, and recall evidence
-rather than exposed as premature performance controls.
+purpose is deliberately broader, with a twelve-region live-output budget so a
+dense desktop cannot create an unbounded translation or overlay surface. An
+unchanged confirmation pass is still allowed before static content goes idle.
+The selected translator finishes loading before capture begins, audio-caption
+translation is suspended while visual mode owns the shared worker, and pending
+work is continuously rebuilt from the highest-value current snapshot instead
+of draining stale fragments. Short, prominent labels receive priority over long
+paragraphs. Only the request actively running displays **Translating…**; queued
+regions appear progressively when their translations complete rather than
+covering the source with placeholders that imply parallel work. These defaults
+should be tuned from native Windows latency, CPU, and recall evidence rather
+than exposed as premature performance controls.
+
+Translation generation is bounded in proportion to recognized input length so
+a short OCR label that misses an end token cannot consume the full 192-token
+ceiling. Once a route is loaded, a compact visual inference that has not
+returned after five seconds is abandoned and the local worker is recreated;
+the optional universal model receives twelve seconds because its performance
+profile is materially heavier. This is a liveness ceiling, not the ordinary
+latency target: a stable compact-route region should normally reach the overlay
+within two seconds. One timed-out region must not strand later regions, and the
+privacy-safe diagnostic log records route, queue wait, inference time, remaining
+region count, and recovery without source or translated text.
 
 The translated visual layer is separate from the bottom audio-caption surface.
 Each result retains a capture-space bounding box mapped through crop and current

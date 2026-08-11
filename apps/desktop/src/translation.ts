@@ -30,12 +30,13 @@ export function translationStatusForRoute(
 }
 
 export class TranslationService {
-  private readonly worker?: Worker;
+  private worker?: Worker;
   private readonly mock: boolean;
   private readonly listeners = new Set<CatalogListener>();
   private readonly pending = new Map<number, PendingRequest>();
   private readonly preparing = new Map<string, Promise<void>>();
   private readonly preparedMockModels = new Set<string>();
+  private restarting?: Promise<void>;
   private nextRequestId = 1;
   private catalog: TranslationCatalogStatus;
 
@@ -55,25 +56,7 @@ export class TranslationService {
         message: mock ? undefined : "Checking local model files…"
       }))
     };
-    if (!mock) {
-      this.worker = new Worker(new URL("./translation.worker.ts", import.meta.url), { type: "module" });
-      this.worker.addEventListener("message", ({ data }: MessageEvent<TranslationWorkerResponse>) => {
-        this.handleWorkerMessage(data);
-      });
-      this.worker.addEventListener("error", (event) => {
-        const error = new Error(event.message || "The local translation worker stopped unexpectedly.");
-        for (const request of this.pending.values()) request.reject(error);
-        this.pending.clear();
-        this.catalog = {
-          models: this.catalog.models.map((model) => ({
-            ...model,
-            phase: "failed",
-            message: error.message
-          }))
-        };
-        this.publish();
-      });
-    }
+    if (!mock) this.startWorker();
   }
 
   snapshot(): TranslationCatalogStatus {
@@ -156,6 +139,28 @@ export class TranslationService {
     return result;
   }
 
+  restart(reason = "The local translator was restarted after it stopped responding."): Promise<void> {
+    if (this.mock) return Promise.resolve();
+    if (this.restarting) return this.restarting;
+    const operation = Promise.resolve().then(async () => {
+      this.stopWorker(new Error(reason));
+      this.startWorker();
+      await this.requestNow({ type: "status" });
+    });
+    this.restarting = operation;
+    void operation.finally(() => {
+      if (this.restarting === operation) this.restarting = undefined;
+    }).catch(() => undefined);
+    return operation;
+  }
+
+  restartIfBusy(reason: string): Promise<void> {
+    if (this.mock || (this.pending.size === 0 && this.preparing.size === 0)) {
+      return Promise.resolve();
+    }
+    return this.restart(reason);
+  }
+
   private async prepareUncached(
     sourceLanguage: TranslationLanguage,
     targetLanguage: TranslationLanguage
@@ -178,13 +183,48 @@ export class TranslationService {
     await this.request({ type: "prepare", sourceLanguage, targetLanguage });
   }
 
-  private request(request: TranslationWorkerCommand): Promise<unknown> {
+  private async request(request: TranslationWorkerCommand): Promise<unknown> {
+    if (this.restarting) await this.restarting;
+    return this.requestNow(request);
+  }
+
+  private requestNow(request: TranslationWorkerCommand): Promise<unknown> {
     if (!this.worker) return Promise.reject(new Error("The local translation worker is unavailable."));
     const requestId = this.nextRequestId++;
     return new Promise((resolve, reject) => {
       this.pending.set(requestId, { resolve, reject });
       this.worker?.postMessage({ ...request, requestId } as TranslationWorkerRequest);
     });
+  }
+
+  private startWorker(): void {
+    const worker = new Worker(new URL("./translation.worker.ts", import.meta.url), { type: "module" });
+    this.worker = worker;
+    worker.addEventListener("message", ({ data }: MessageEvent<TranslationWorkerResponse>) => {
+      if (this.worker === worker) this.handleWorkerMessage(data);
+    });
+    worker.addEventListener("error", (event) => {
+      if (this.worker !== worker) return;
+      const error = new Error(event.message || "The local translation worker stopped unexpectedly.");
+      this.stopWorker(error);
+      this.catalog = {
+        models: this.catalog.models.map((model) => ({
+          ...model,
+          phase: "failed",
+          message: error.message
+        }))
+      };
+      this.publish();
+    });
+  }
+
+  private stopWorker(error: Error): void {
+    const worker = this.worker;
+    this.worker = undefined;
+    worker?.terminate();
+    for (const request of this.pending.values()) request.reject(error);
+    this.pending.clear();
+    this.preparing.clear();
   }
 
   private handleWorkerMessage(message: TranslationWorkerResponse): void {

@@ -5,6 +5,27 @@ Versioning while it is in the `0.x` pre-release line.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-08-11
+
+### Fixed
+
+- Bound visual translation to the current highest-value OCR regions and show a
+  pending label only for the region actually being translated instead of
+  covering a dense source with indefinite `Translating…` placeholders.
+- Preload the selected translator before visual capture starts, suspend stale
+  audio-caption translation work while screen translation owns the worker, and
+  prioritize shorter live labels so dense pages make visible progress.
+- Restart a stalled local translator after a five-second compact-route
+  inference deadline (twelve seconds for the optional universal model) so one
+  problematic OCR region cannot freeze every later translation.
+- Scale the translation generation budget to input length, preventing a short
+  OCR label with a missed end token from consuming the full 192-token ceiling.
+
+### Added
+
+- Privacy-safe visual translation timing, queue-wait, remaining-work, and
+  timeout diagnostics without logging recognized or translated text.
+
 ## [0.1.1] - 2026-08-11
 
 ### Fixed

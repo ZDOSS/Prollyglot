@@ -2891,7 +2891,7 @@ dependencies = [
 
 [[package]]
 name = "prollyglot-asr"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -2900,7 +2900,7 @@ dependencies = [
 
 [[package]]
 name = "prollyglot-asr-sherpa"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "prollyglot-asr",
  "prollyglot-audio-pipeline",
@@ -2911,7 +2911,7 @@ dependencies = [
 
 [[package]]
 name = "prollyglot-audio-pipeline"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "prollyglot-core",
  "rubato",
@@ -2920,7 +2920,7 @@ dependencies = [
 
 [[package]]
 name = "prollyglot-audio-windows"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "crossbeam-channel",
  "prollyglot-audio-pipeline",
@@ -2931,7 +2931,7 @@ dependencies = [
 
 [[package]]
 name = "prollyglot-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -2940,7 +2940,7 @@ dependencies = [
 
 [[package]]
 name = "prollyglot-desktop"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "crossbeam-channel",
  "parking_lot",
@@ -2964,7 +2964,7 @@ dependencies = [
 
 [[package]]
 name = "prollyglot-model-manager"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "prollyglot-asr",
  "serde",
@@ -2977,7 +2977,7 @@ dependencies = [
 
 [[package]]
 name = "prollyglot-transcript"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "prollyglot-asr",
  "serde",
@@ -2985,7 +2985,7 @@ dependencies = [
 
 [[package]]
 name = "prollyglot-visual-ocr-rapid"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "image",
  "prollyglot-visual-pipeline",
@@ -2994,7 +2994,7 @@ dependencies = [
 
 [[package]]
 name = "prollyglot-visual-pipeline"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "crossbeam-channel",
  "serde",
@@ -3003,7 +3003,7 @@ dependencies = [
 
 [[package]]
 name = "prollyglot-visual-windows"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "crossbeam-channel",
  "prollyglot-visual-pipeline",

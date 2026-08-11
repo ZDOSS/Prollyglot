@@ -338,6 +338,9 @@ const visualTranslation = new VisualTranslationController(
   updateVisualOutput,
   (message) => {
     void reportFrontendDiagnostic("visual-translation", message);
+  },
+  (message) => {
+    void reportFrontendDiagnostic("visual-translation-performance", message, "info");
   }
 );
 
@@ -1151,14 +1154,17 @@ function renderVisualPanel(): void {
       if (!supportedSource || !supportedTarget) {
         throw new Error("Visual translation requires a supported source and target language.");
       }
+      captionOutput.setTranslationActive(false);
       visualTranslation.begin(sourceLanguage, targetLanguage, detectionMode);
       try {
-        await Promise.all([
-          translationService.prepare(supportedSource, supportedTarget),
-          startVisualTranslation(selection, sourceLanguage, targetLanguage, detectionMode)
-        ]);
+        await translationService.restartIfBusy(
+          "The local translator switched from audio captions to screen translation."
+        );
+        await translationService.prepare(supportedSource, supportedTarget);
+        await startVisualTranslation(selection, sourceLanguage, targetLanguage, detectionMode);
       } catch (error) {
         visualTranslation.clear();
+        captionOutput.setTranslationActive(true);
         void stopVisualTranslation().catch(() => undefined);
         throw error;
       }
@@ -1277,6 +1283,7 @@ captureToggle.addEventListener("click", async () => {
       await stopCapture();
     } else {
       if (visualEngaged()) throw new Error("Stop screen translation before starting audio captions.");
+      captionOutput.setTranslationActive(true);
       const model = selectedModel();
       if (model.phase !== "ready") throw new Error("Install the selected speech model first.");
       if (!modelSupportsLanguage(model)) {

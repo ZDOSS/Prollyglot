@@ -155,6 +155,23 @@ controller exclusively owns clear/rescan state, and status separates OCR
 regions from overlay labels. This correction is published as pre-release
 `0.1.1`; the same Japanese video and NHK page are the native acceptance cases.
 
+The next NHK-page run confirmed that OCR regions now reach the overlay, then
+exposed a separate translation-liveness failure: every visible region rendered
+an immediate `Translating…` placeholder even though the local worker processes
+one request at a time, and one non-returning inference left the entire snapshot
+pending for minutes. Pre-release `0.1.2` ranks and caps the current regions,
+shows pending state only for the active request, preloads translation before
+capture, and suspends audio-caption translation while visual mode owns the
+worker. Compact visual inference has a five-second watchdog and the optional
+universal model a twelve-second watchdog; expiry restarts the worker and lets
+later regions continue. Output generation is also scaled to source length, and
+privacy-safe diagnostics distinguish queue wait, inference duration, remaining
+regions, and timeout recovery. Rendered eight-region and forced-stall tests
+pass. The real compact Japanese-to-English route loaded in 956 ms and then
+translated eight NHK-like labels in 3.1 seconds on the development host, with
+the slowest individual label at 605 ms. The Japanese NHK page remains the
+native Windows acceptance case.
+
 The first native-Windows start attempt exposed one shared interop defect rather
 than three source-specific failures: the TypeScript selection union sent
 `sourceId` and `displayId`, while the Rust tagged enum still required snake-case

@@ -398,13 +398,26 @@ async function translate(
       }
     : {};
   const output = await translator(trimmed, {
-    max_new_tokens: 192,
+    // OCR frequently produces very short labels. A fixed 192-token ceiling
+    // lets a bad end-of-sequence prediction spend seconds generating nonsense
+    // while every other live label waits behind it. Keep enough expansion room
+    // for real translation while bounding work to the size of this input.
+    max_new_tokens: maximumTranslationTokens(trimmed),
     num_beams: 1,
     ...routeOptions
   });
   const translated = output[0]?.translation_text?.trim();
   if (!translated) throw new Error("The local translator returned no text.");
   return translated;
+}
+
+function maximumTranslationTokens(text: string): number {
+  const compactScript = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/u.test(text);
+  const characters = [...text].filter((character) => !/\s/u.test(character)).length;
+  const approximateSourceTokens = compactScript
+    ? characters
+    : Math.ceil(characters / 3);
+  return Math.max(24, Math.min(192, approximateSourceTokens * 3 + 12));
 }
 
 function errorMessage(error: unknown): string {
