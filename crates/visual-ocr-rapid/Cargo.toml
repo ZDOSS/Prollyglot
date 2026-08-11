@@ -1,0 +1,13 @@
+[package]
+name = "prollyglot-visual-ocr-rapid"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+image.workspace = true
+prollyglot-visual-pipeline = { path = "../visual-pipeline" }
+rapidocr-core.workspace = true
+

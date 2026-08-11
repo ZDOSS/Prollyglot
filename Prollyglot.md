@@ -1044,18 +1044,18 @@ This is not required for MVP.
 
 # 28.1 Visual text translation
 
-Visual text translation is a viable future extension of Prollyglot when it is
-kept focused on the same media-accessibility job: recognize text already shown
-by another application, translate it locally, and place the result near that
-text. It is not a mandate to become a general screen recorder, OBS replacement,
-or open-ended visual assistant.
+Visual text translation is an experimental Windows-first extension of
+Prollyglot, kept focused on the same media-accessibility job: recognize text
+already shown by another application, translate it locally, and place the
+result near that text. It is not a mandate to become a general screen recorder,
+OBS replacement, or open-ended visual assistant.
 
 This specifically includes text rendered into video subtitles, signs visible
 inside a video, menus, title cards, and text drawn into a game or application's
 HUD. It does not require a general vision model to describe non-text objects or
 events in the scene.
 
-The first Windows experiment should be a separate mode with its own action:
+The first Windows slice is a separate mode with its own action:
 
 ```text
 [ Start Audio Captions ]
@@ -1073,16 +1073,19 @@ Visual sources:
 - one selected application window; or
 - one selected display.
 
-Windows capture should use the documented `Windows.Graphics.Capture` path for
-selected application windows and displays. A region is a crop of a captured
-display rather than a separate injection or application hook. The system picker
-is the ordinary consent path, while Win32 interop can create capture items for a
-known `HWND` or `HMONITOR` on supported Windows versions.
+The current Windows slice uses the documented `Windows.Graphics.Capture` path
+for selected top-level application windows and displays. A region is a crop of
+a captured display rather than a separate injection or application hook. The
+desktop app enumerates eligible `HWND` and `HMONITOR` sources and requires an
+explicit choice before Win32 interop creates a capture item. The Windows system
+picker remains a compatibility and accessibility follow-up because its
+ownership and UI-thread lifecycle have not yet been integrated safely into the
+Tauri command path.
 
-Selected-display capture is a first-class compatibility path. The Windows
-experiment must also compare a documented DXGI Desktop Duplication display
-backend because an application's window surface and the composed monitor can
-behave differently, and OBS Display Capture is the practical parity baseline.
+Selected-display capture is a first-class compatibility path. A documented
+DXGI Desktop Duplication display backend still needs to be compared because an
+application's window surface and the composed monitor can behave differently,
+and OBS Display Capture is the practical parity baseline.
 If window capture is blank while one of the display paths returns useful pixels,
 Prollyglot should offer **Switch to Monitor capture** and crop the requested
 region from that display. If equivalent OBS Display Capture succeeds while both
@@ -1096,7 +1099,7 @@ the documented API exposes, accept a black or excluded frame as an unavailable
 capture condition, do not classify a source as DRM from blank pixels alone, and
 do not add process injection, capture hooks, or a protection bypass.
 
-The initial pipeline should be specialized OCR rather than a general-purpose
+The initial pipeline uses specialized OCR rather than a general-purpose
 vision-language model:
 
 ```text
@@ -1113,15 +1116,22 @@ existing local translation service
 translated label anchored above or beside the source text
 ```
 
-`PP-OCRv6_small` is the leading experiment candidate. Its published small
-detection and recognition models total about 30 MB, the unified recognizer
-covers 50 languages including Japanese, and PaddleOCR documents Windows and
-ONNX Runtime deployment under an Apache-2.0 project license. Exact model-weight
-provenance, revisions, artifact hashes, and redistribution terms still need to
-be pinned before distribution. Windows' built-in `Windows.Media.Ocr` is useful
-as a zero-download baseline because it returns word positions, but its language
-availability depends on recognizers installed on the user's machine and it does
-not provide the later Linux path.
+The current optional OCR pack is pinned PP-OCRv6 Small: detection,
+classification, unified recognition, and dictionary artifacts total 31,824,456
+bytes (30.4 MiB). The manifest exposes the same 29 language choices currently
+available to the translation UI and records source provenance, byte size, and
+SHA-256 for every artifact (the dictionary's mutable upstream URL is pinned by
+content hash). The pack is never bundled or downloaded without an explicit user
+action. Its `rapidocr-core` runtime is vendored at the exact
+0.2.2 source release with packaging-only dependency changes documented beside
+the source.
+
+Windows' built-in `Windows.Media.Ocr` remains a potentially useful
+zero-download comparison because it returns word positions and uses installed
+recognizers. Microsoft documents that desktop use requires package identity,
+however, so the current unpackaged development and MSI/NSIS paths cannot assume
+it is available. It is an optional packaged-build experiment rather than the
+baseline, and it would not provide the later Linux path.
 
 Relevant primary references:
 
@@ -1134,22 +1144,29 @@ Relevant primary references:
 - <https://www.paddleocr.ai/latest/en/version3.x/algorithm/PP-OCRv6/PP-OCRv6.html>
 - <https://obsproject.com/kb/display-capture-sources>
 
-Continuous OCR must not mean running inference on every captured video frame.
-The visual worker should use a latest-frame-wins bounded queue, sample at a low
-rate, skip unchanged regions, and retranslate only normalized text that has
-changed. This keeps a static subtitle or menu from consuming resources 60 times
-per second and prevents an OCR backlog from showing translations for scenes
-that are no longer visible.
+Visual translation continuously watches the selected live source; the region
+selector chooses a crop to monitor, not a still image. Windows capture samples
+at up to 12 FPS by default so movement and short-lived text remain current.
+Expensive OCR is independently capped at four changed-frame opportunities per
+second, and a capacity-one latest-frame queue replaces stale work if inference
+is slower. A 64 × 36 luminance fingerprint detects both broad scene movement
+and small localized text-like changes. The first detection receives one
+unchanged confirmation pass so static menus and signs can satisfy two-frame
+stabilization, after which unchanged content goes idle. The stabilizer retains
+region identity, tolerates a one-frame OCR miss, and retranslates only normalized
+text that changed. These defaults should be tuned from native Windows latency,
+CPU, and recall evidence rather than exposed as premature performance controls.
 
 The translated visual layer is separate from the bottom audio-caption surface.
-Each result retains a capture-space bounding box mapped through DPI, crop, and
-window movement into screen coordinates. Translation appears just above the
+Each result retains a capture-space bounding box mapped through crop and current
+source geometry into screen coordinates. Translation appears just above the
 source box when space permits, moves below it when required, and clamps to the
-captured bounds. Prollyglot's own control and overlay windows should use
-`WDA_EXCLUDEFROMCAPTURE` where supported, with explicit masking as a fallback,
-so monitor capture does not repeatedly OCR its own translations.
+captured bounds. Prollyglot's control, audio overlay, visual overlay, and region
+selector request `WDA_EXCLUDEFROMCAPTURE` where supported so display capture does
+not repeatedly OCR its own translations. Explicit masking remains a fallback if
+native Windows validation exposes systems where affinity is unavailable.
 
-The first experiment is successful only if representative Japanese and Spanish
+The integrated slice is accepted only if representative Japanese and Spanish
 video subtitles, game UI, and signs remain positionally stable and useful on a
 midrange Windows machine. Measure capture-to-OCR latency, translation latency,
 text accuracy, box jitter, CPU/GPU load, and memory. A context-aware visual model
@@ -1157,8 +1174,12 @@ may later help ambiguous text or non-text scene understanding, but it is a
 separate heavy option; the first useful version should not pay that cost merely
 to read visible words.
 
-Frames remain transient and are not saved by default. Visual text and its
-translation follow the same transcript/privacy rules as audio captions.
+Frames remain transient, bounded, absent from diagnostic logs, and are not saved
+by default. Visual text and its translation follow the same transcript/privacy
+rules as audio captions. Current local validation covers the platform-neutral
+pipeline, rendered WebView workflows, and real OCR model initialization; native
+Windows capture, DPI and multi-monitor mapping, protected/blank surfaces,
+quality, latency, and resource use remain required evidence.
 
 ---
 

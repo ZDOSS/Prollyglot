@@ -23,8 +23,17 @@ prollyglot-audio-windows = { path = "../../../crates/audio-windows" }
 prollyglot-core = { path = "../../../crates/prollyglot-core" }
 prollyglot-model-manager = { path = "../../../crates/model-manager" }
 prollyglot-transcript = { path = "../../../crates/transcript" }
+prollyglot-visual-ocr-rapid = { path = "../../../crates/visual-ocr-rapid" }
+prollyglot-visual-pipeline = { path = "../../../crates/visual-pipeline" }
+prollyglot-visual-windows = { path = "../../../crates/visual-windows" }
 serde.workspace = true
 tauri.workspace = true
 tracing.workspace = true
 tracing-appender.workspace = true
 tracing-subscriber.workspace = true
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+] }

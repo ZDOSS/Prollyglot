@@ -23,6 +23,7 @@ pub const DEFAULT_ENGLISH_MODEL_ID: &str = "sherpa-zipformer-en-20m-2023-02-17";
 pub const DEFAULT_SPEECH_MODEL_ID: &str = DEFAULT_ENGLISH_MODEL_ID;
 pub const NEMOTRON_MULTILINGUAL_MODEL_ID: &str =
     "nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11";
+pub const DEFAULT_VISUAL_OCR_MODEL_ID: &str = "ppocrv6-small-multilingual";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -514,6 +515,26 @@ pub fn speech_manifest(model_id: &str) -> Result<ModelManifest, ModelManagerErro
                 "unknown built-in speech model {model_id:?}"
             ))
         })
+}
+
+/// Multilingual visual-text detector and recognizer used by the first Windows
+/// visual translation experiment. The model remains an explicit download and
+/// is never bundled or fetched during ordinary startup.
+pub fn visual_ocr_manifest() -> Result<ModelManifest, ModelManagerError> {
+    ModelManifest::from_json(include_str!(
+        "../../../assets/model-manifests/visual-ocr-ppocrv6-small.json"
+    ))
+}
+
+pub fn visual_ocr_manifest_by_id(model_id: &str) -> Result<ModelManifest, ModelManagerError> {
+    let manifest = visual_ocr_manifest()?;
+    if manifest.id == model_id {
+        Ok(manifest)
+    } else {
+        Err(ModelManagerError::InvalidManifest(format!(
+            "unknown built-in visual OCR model {model_id:?}"
+        )))
+    }
 }
 
 fn manifest_digest(manifest: &ModelManifest) -> Result<String, ModelManagerError> {

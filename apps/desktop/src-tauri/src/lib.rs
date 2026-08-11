@@ -1,5 +1,6 @@
 mod models;
 mod transcription;
+mod visual;
 
 use std::{
     fs,
@@ -167,6 +168,7 @@ struct RuntimeState {
     transcript: Arc<Mutex<TranscriptStore>>,
     model: models::ModelRuntime,
     overlay_settings: Mutex<OverlaySettings>,
+    visual: visual::VisualRuntime,
 }
 
 struct LoggingGuard {
@@ -225,6 +227,17 @@ fn publish_capture_failure(
     message
 }
 
+fn audio_session_active(state: &RuntimeState) -> bool {
+    state.session.lock().is_some()
+        || matches!(
+            state.status.lock().state,
+            CaptureState::Starting
+                | CaptureState::Capturing
+                | CaptureState::Waiting
+                | CaptureState::Stopping
+        )
+}
+
 #[tauri::command]
 fn source_snapshot() -> Result<SourceSnapshot, String> {
     prollyglot_audio_windows::source_snapshot().map_err(|error| {
@@ -256,6 +269,9 @@ async fn start_capture(
                 | CaptureState::Stopping
         ) {
             return Err("A caption session is already starting or running.".into());
+        }
+        if visual::is_active(&state.visual) {
+            return Err("Stop visual translation before starting audio captions.".into());
         }
         let stale_session = state.session.lock().take();
         publish_status(
@@ -893,6 +909,18 @@ pub fn run() {
             initialize_logging(app)?;
             let runtime = app.state::<RuntimeState>();
             models::initialize(app.handle(), &runtime.model);
+            visual::initialize(app.handle(), &runtime.visual);
+            for label in [
+                "main",
+                "appearance",
+                "overlay",
+                "visual-overlay",
+                "region-selector",
+            ] {
+                if let Some(window) = app.get_webview_window(label) {
+                    visual::exclude_window_from_capture(&window);
+                }
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -910,6 +938,17 @@ pub fn run() {
             close_appearance_window,
             update_overlay_settings,
             report_frontend_diagnostic,
+            visual::visual_capabilities,
+            visual::visual_source_snapshot,
+            visual::visual_status,
+            visual::visual_model_status,
+            visual::show_visual_region_selector,
+            visual::complete_visual_region_selection,
+            visual::cancel_visual_region_selection,
+            visual::install_visual_model,
+            visual::remove_visual_model,
+            visual::start_visual_translation,
+            visual::stop_visual_translation,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Prollyglot");

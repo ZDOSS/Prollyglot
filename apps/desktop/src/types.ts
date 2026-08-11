@@ -58,6 +58,115 @@ export interface ModelCatalogStatus {
   models: ModelStatus[];
 }
 
+export interface VisualModelCatalogStatus {
+  models: ModelStatus[];
+}
+
+export interface VisualCaptureCapabilities {
+  windowsGraphicsCapture: boolean;
+  systemPicker: boolean;
+  desktopDuplicationExperiment: boolean;
+  message?: string;
+}
+
+export type VisualSourceKind = "applicationWindow" | "display";
+
+export interface VisualSource {
+  id: string;
+  kind: VisualSourceKind;
+  label: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface VisualSourceSnapshot {
+  windows: VisualSource[];
+  displays: VisualSource[];
+}
+
+export interface VisualCaptureGeometry {
+  label: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface PixelRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export type VisualCaptureSelection =
+  | { kind: "applicationWindow"; sourceId: string }
+  | { kind: "display"; sourceId: string }
+  | { kind: "region"; displayId: string; region: PixelRect };
+
+export type VisualState =
+  | "starting"
+  | "capturing"
+  | "waiting"
+  | "stopping"
+  | "stopped"
+  | "failed";
+
+export interface VisualStatus {
+  active: boolean;
+  state: VisualState;
+  sourceLabel?: string;
+  framesReceived: number;
+  framesAnalyzed: number;
+  framesUnchanged: number;
+  replacedFrames: number;
+  visibleRegions: number;
+  message?: string;
+}
+
+export interface VisualRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface StableVisualTextRegion {
+  trackId: number;
+  textRevision: number;
+  text: string;
+  confidence: number;
+  language?: string;
+  script?: string;
+  bounds: VisualRect;
+}
+
+export interface VisualTextUpdate {
+  source: VisualCaptureGeometry;
+  visible: StableVisualTextRegion[];
+  translationRequests: StableVisualTextRegion[];
+  removedTrackIds: number[];
+}
+
+export interface VisualOutputRegion {
+  trackId: number;
+  textRevision: number;
+  original: string;
+  translation?: string;
+  translationPending: boolean;
+  bounds: VisualRect;
+}
+
+export interface VisualOutputPayload {
+  sourceWidth: number;
+  sourceHeight: number;
+  sourceLanguage: string;
+  targetLanguage: string;
+  regions: VisualOutputRegion[];
+}
+
 export interface TranscriptSegment {
   utteranceId: number;
   startMicros: number;

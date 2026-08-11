@@ -9,8 +9,16 @@ import type {
   CaptureStatus,
   ModelCatalogStatus,
   OverlaySettings,
+  PixelRect,
   SourceSnapshot,
-  TranscriptSnapshot
+  TranscriptSnapshot,
+  VisualCaptureCapabilities,
+  VisualCaptureSelection,
+  VisualModelCatalogStatus,
+  VisualOutputPayload,
+  VisualSourceSnapshot,
+  VisualStatus,
+  VisualTextUpdate
 } from "./types";
 
 declare global {
@@ -18,6 +26,7 @@ declare global {
     __TAURI_INTERNALS__?: unknown;
     __PROLLYGLOT_PREVIEW__?: {
       setTranscript: (snapshot: TranscriptSnapshot) => void;
+      visualOutput?: VisualOutputPayload;
     };
   }
 }
@@ -128,6 +137,72 @@ let mockModelCatalog: ModelCatalogStatus = {
   ]
 };
 const mockModelListeners = new Set<(status: ModelCatalogStatus) => void>();
+const mockVisualCapabilities: VisualCaptureCapabilities = {
+  windowsGraphicsCapture: true,
+  systemPicker: false,
+  desktopDuplicationExperiment: false
+};
+const mockVisualSources: VisualSourceSnapshot = {
+  windows: [
+    {
+      id: "window:firefox",
+      kind: "applicationWindow",
+      label: "Japanese News — Firefox",
+      x: 80,
+      y: 60,
+      width: 1280,
+      height: 720
+    },
+    {
+      id: "window:game",
+      kind: "applicationWindow",
+      label: "Sample game",
+      x: 180,
+      y: 100,
+      width: 1440,
+      height: 900
+    }
+  ],
+  displays: [
+    {
+      id: "display:primary",
+      kind: "display",
+      label: "Display 1 · Primary",
+      x: 0,
+      y: 0,
+      width: 1920,
+      height: 1080
+    }
+  ]
+};
+let mockVisualModelCatalog: VisualModelCatalogStatus = {
+  models: [
+    {
+      phase: "notInstalled",
+      modelId: "ppocrv6-small-multilingual",
+      displayName: "PP-OCRv6 Small · Multilingual",
+      profile: "Visual OCR · Balanced",
+      description: "Detects and recognizes text already visible in applications, video, games, and display regions.",
+      languages: SPOKEN_LANGUAGES.map(({ code }) => code),
+      downloadedBytes: 0,
+      totalBytes: 31_824_456
+    }
+  ]
+};
+const mockVisualModelListeners = new Set<(status: VisualModelCatalogStatus) => void>();
+let mockVisualStatus: VisualStatus = {
+  active: false,
+  state: "stopped",
+  framesReceived: 0,
+  framesAnalyzed: 0,
+  framesUnchanged: 0,
+  replacedFrames: 0,
+  visibleRegions: 0
+};
+const mockVisualStatusListeners = new Set<(status: VisualStatus) => void>();
+const mockVisualTextListeners = new Set<(update: VisualTextUpdate) => void>();
+const mockVisualClearListeners = new Set<() => void>();
+let mockVisualTimers: number[] = [];
 let mockTranscript: TranscriptSnapshot = { revision: 0, committed: [] };
 const mockTranscriptListeners = new Set<(snapshot: TranscriptSnapshot) => void>();
 
@@ -137,6 +212,20 @@ const publishMockStatus = () => {
 
 const publishMockModel = () => {
   for (const listener of mockModelListeners) listener(structuredClone(mockModelCatalog));
+};
+
+const publishMockVisualModel = () => {
+  for (const listener of mockVisualModelListeners) {
+    listener(structuredClone(mockVisualModelCatalog));
+  }
+};
+
+const publishMockVisualStatus = () => {
+  for (const listener of mockVisualStatusListeners) listener(structuredClone(mockVisualStatus));
+};
+
+const publishMockVisualText = (update: VisualTextUpdate) => {
+  for (const listener of mockVisualTextListeners) listener(structuredClone(update));
 };
 
 const mockModel = (modelId: string) => {
@@ -294,6 +383,242 @@ export async function onModelStatus(
   if (isTauri()) return listen<ModelCatalogStatus>("model-status", ({ payload }) => callback(payload));
   mockModelListeners.add(callback);
   return () => mockModelListeners.delete(callback);
+}
+
+export async function visualCapabilities(): Promise<VisualCaptureCapabilities> {
+  if (!isTauri()) return structuredClone(mockVisualCapabilities);
+  return invoke<VisualCaptureCapabilities>("visual_capabilities");
+}
+
+export async function visualSourceSnapshot(): Promise<VisualSourceSnapshot> {
+  if (!isTauri()) return structuredClone(mockVisualSources);
+  return invoke<VisualSourceSnapshot>("visual_source_snapshot");
+}
+
+export async function pickVisualRegion(displayId: string): Promise<PixelRect | undefined> {
+  if (!isTauri()) {
+    const display = mockVisualSources.displays.find(({ id }) => id === displayId);
+    if (!display) throw new Error("The selected display is unavailable.");
+    return {
+      x: Math.round(display.width * 0.12),
+      y: Math.round(display.height * 0.18),
+      width: Math.round(display.width * 0.72),
+      height: Math.round(display.height * 0.64)
+    };
+  }
+
+  return new Promise<PixelRect | undefined>((resolve, reject) => {
+    let settled = false;
+    const unlisten: UnlistenFn[] = [];
+    const finish = (region?: PixelRect, error?: unknown) => {
+      if (settled) return;
+      settled = true;
+      for (const stopListening of unlisten) stopListening();
+      if (error) reject(error);
+      else resolve(region);
+    };
+
+    void Promise.all([
+      listen<{ displayId: string; region: PixelRect }>("visual-region-selected", ({ payload }) => {
+        if (payload.displayId === displayId) finish(payload.region);
+      }),
+      listen("visual-region-selection-cancelled", () => finish())
+    ]).then(async (listeners) => {
+      unlisten.push(...listeners);
+      const request = await invoke<{ displayId: string; width: number; height: number }>(
+        "show_visual_region_selector",
+        { displayId }
+      );
+      await emit("visual-region-selector-request", request);
+    }).catch((error) => finish(undefined, error));
+  });
+}
+
+export async function visualModelStatus(): Promise<VisualModelCatalogStatus> {
+  if (!isTauri()) return structuredClone(mockVisualModelCatalog);
+  return invoke<VisualModelCatalogStatus>("visual_model_status");
+}
+
+export async function installVisualModel(modelId: string): Promise<void> {
+  if (isTauri()) {
+    await invoke("install_visual_model", { modelId });
+    return;
+  }
+  const model = mockVisualModelCatalog.models.find((candidate) => candidate.modelId === modelId);
+  if (!model) throw new Error("The selected visual recognition model is unavailable.");
+  model.phase = "downloading";
+  model.downloadedBytes = 0;
+  model.message = "Downloading visual text detector…";
+  publishMockVisualModel();
+  window.setTimeout(() => {
+    model.downloadedBytes = Math.round(model.totalBytes * 0.55);
+    model.message = "Downloading multilingual text recognizer…";
+    publishMockVisualModel();
+  }, 320);
+  window.setTimeout(() => {
+    model.phase = "ready";
+    model.downloadedBytes = model.totalBytes;
+    model.message = undefined;
+    publishMockVisualModel();
+  }, 760);
+}
+
+export async function removeVisualModel(modelId: string): Promise<void> {
+  if (isTauri()) {
+    await invoke("remove_visual_model", { modelId });
+    return;
+  }
+  const model = mockVisualModelCatalog.models.find((candidate) => candidate.modelId === modelId);
+  if (!model) throw new Error("The selected visual recognition model is unavailable.");
+  model.phase = "notInstalled";
+  model.downloadedBytes = 0;
+  model.message = undefined;
+  publishMockVisualModel();
+}
+
+export async function onVisualModelStatus(
+  callback: (status: VisualModelCatalogStatus) => void
+): Promise<UnlistenFn> {
+  if (isTauri()) {
+    return listen<VisualModelCatalogStatus>("visual-model-status", ({ payload }) => callback(payload));
+  }
+  mockVisualModelListeners.add(callback);
+  return () => mockVisualModelListeners.delete(callback);
+}
+
+export async function visualStatus(): Promise<VisualStatus> {
+  if (!isTauri()) return structuredClone(mockVisualStatus);
+  return invoke<VisualStatus>("visual_status");
+}
+
+export async function startVisualTranslation(
+  selection: VisualCaptureSelection,
+  sourceLanguage: string,
+  targetLanguage: string
+): Promise<void> {
+  if (isTauri()) {
+    await invoke("start_visual_translation", { selection, sourceLanguage, targetLanguage });
+    return;
+  }
+  const model = mockVisualModelCatalog.models[0];
+  if (!model || model.phase !== "ready") {
+    throw new Error("Install PP-OCRv6 Small in Settings before starting visual translation.");
+  }
+  const selectedSource = selection.kind === "applicationWindow"
+    ? mockVisualSources.windows.find(({ id }) => id === selection.sourceId)
+    : mockVisualSources.displays.find(({ id }) =>
+      id === (selection.kind === "display" ? selection.sourceId : selection.displayId));
+  if (!selectedSource) throw new Error("The selected visual source is unavailable.");
+  const geometry = selection.kind === "region"
+    ? {
+        label: `${selectedSource.label} · Region`,
+        x: selectedSource.x + selection.region.x,
+        y: selectedSource.y + selection.region.y,
+        width: selection.region.width,
+        height: selection.region.height
+      }
+    : {
+        label: selectedSource.label,
+        x: selectedSource.x,
+        y: selectedSource.y,
+        width: selectedSource.width,
+        height: selectedSource.height
+      };
+  mockVisualStatus = {
+    active: true,
+    state: "starting",
+    sourceLabel: geometry.label,
+    framesReceived: 0,
+    framesAnalyzed: 0,
+    framesUnchanged: 0,
+    replacedFrames: 0,
+    visibleRegions: 0,
+    message: "Loading local visual text recognition…"
+  };
+  publishMockVisualStatus();
+  mockVisualTimers = [
+    window.setTimeout(() => {
+      mockVisualStatus = {
+        ...mockVisualStatus,
+        state: "capturing",
+        message: `Watching the live source, recognizing ${sourceLanguage} text, and translating to ${targetLanguage}.`
+      };
+      publishMockVisualStatus();
+    }, 300),
+    window.setTimeout(() => {
+      const region = {
+        trackId: 1,
+        textRevision: 1,
+        text: "今朝、新しい計画が発表されました。",
+        confidence: 0.94,
+        language: sourceLanguage,
+        bounds: { x: 210, y: 520, width: 680, height: 58 }
+      };
+      mockVisualStatus = {
+        ...mockVisualStatus,
+        framesReceived: 4,
+        framesAnalyzed: 2,
+        framesUnchanged: 1,
+        visibleRegions: 1
+      };
+      publishMockVisualStatus();
+      publishMockVisualText({
+        source: geometry,
+        visible: [region],
+        translationRequests: [region],
+        removedTrackIds: []
+      });
+    }, 900)
+  ];
+}
+
+export async function stopVisualTranslation(): Promise<void> {
+  if (isTauri()) {
+    await invoke("stop_visual_translation");
+    return;
+  }
+  for (const timer of mockVisualTimers) window.clearTimeout(timer);
+  mockVisualTimers = [];
+  mockVisualStatus = {
+    active: false,
+    state: "stopped",
+    framesReceived: 0,
+    framesAnalyzed: 0,
+    framesUnchanged: 0,
+    replacedFrames: 0,
+    visibleRegions: 0
+  };
+  publishMockVisualStatus();
+  for (const listener of mockVisualClearListeners) listener();
+}
+
+export async function onVisualStatus(
+  callback: (status: VisualStatus) => void
+): Promise<UnlistenFn> {
+  if (isTauri()) return listen<VisualStatus>("visual-status", ({ payload }) => callback(payload));
+  mockVisualStatusListeners.add(callback);
+  return () => mockVisualStatusListeners.delete(callback);
+}
+
+export async function onVisualTextUpdate(
+  callback: (update: VisualTextUpdate) => void
+): Promise<UnlistenFn> {
+  if (isTauri()) return listen<VisualTextUpdate>("visual-text-update", ({ payload }) => callback(payload));
+  mockVisualTextListeners.add(callback);
+  return () => mockVisualTextListeners.delete(callback);
+}
+
+export async function onVisualTextClear(callback: () => void): Promise<UnlistenFn> {
+  if (isTauri()) return listen("visual-text-clear", callback);
+  mockVisualClearListeners.add(callback);
+  return () => mockVisualClearListeners.delete(callback);
+}
+
+export async function updateVisualOutput(output: VisualOutputPayload): Promise<void> {
+  if (window.__PROLLYGLOT_PREVIEW__) {
+    window.__PROLLYGLOT_PREVIEW__.visualOutput = structuredClone(output);
+  }
+  if (isTauri()) await emit("visual-overlay-output", output);
 }
 
 export async function transcriptSnapshot(): Promise<TranscriptSnapshot> {

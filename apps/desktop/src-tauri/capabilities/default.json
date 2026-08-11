@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Window and event access for Prollyglot's local desktop UI.",
-  "windows": ["main", "appearance", "overlay"],
+  "windows": ["main", "appearance", "overlay", "visual-overlay", "region-selector"],
   "permissions": [
     "core:default",
     "core:window:allow-close",

@@ -52,6 +52,34 @@
         "shadow": false,
         "focus": false,
         "visible": false
+      },
+      {
+        "label": "visual-overlay",
+        "title": "Prollyglot visual translation",
+        "url": "visual-overlay.html",
+        "width": 800,
+        "height": 600,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": false,
+        "focus": false,
+        "visible": false
+      },
+      {
+        "label": "region-selector",
+        "title": "Select a region — Prollyglot",
+        "url": "region-selector.html",
+        "width": 800,
+        "height": 600,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": false,
+        "resizable": false,
+        "visible": false
       }
     ]
   },

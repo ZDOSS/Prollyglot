@@ -38,7 +38,7 @@ draw between us.
 - **Local by default:** no account, telemetry requirement, cloud transcription, audio upload, or transcript upload.
 - **Minimal and customizable:** one focused Start/Stop path plus an independent always-on-top overlay with readable appearance controls.
 - **Selectable local speech models:** three English choices; smaller dedicated streaming models for Chinese, French, Korean, and Bengali; and an optional higher-resource Nemotron model covering 28 languages plus automatic detection.
-- **Future visual text translation:** a scoped Windows experiment will translate text already visible in a selected region, application, or display—such as video subtitles, signs, menus, or Japanese text in a game HUD—through documented screen capture and local OCR, independently from audio captions at first.
+- **Experimental visual text translation:** a separate Windows mode translates text already visible in a selected region, application window, or display—such as video subtitles, signs, menus, or Japanese text in a game HUD—through documented screen capture and local OCR.
 - **Ubuntu after Windows:** one Ubuntu LTS release using PipeWire and a native `.deb`, once the Windows MVP is reliable.
 
 ## Current status
@@ -56,7 +56,8 @@ The repository currently contains:
 - a sherpa-onnx adapter that loads Zipformer or Nemotron streaming models, preserves phrase openings and decoder context, and exposes incremental and finalized hypotheses;
 - original-language controls for 29 selectable spoken languages plus mixed-language automatic detection, with clear forced-language guidance and unsupported model/language combinations prevented before capture starts;
 - optional pinned local translators for compact Japanese/Spanish-to-English, compact multilingual-to-English, and direct translation among the 29 selectable languages;
-- a searchable Settings model library with grouped expandable rows, per-model download/remove actions, installed counts, route-aware status, and keyboard/screen-reader disclosure semantics;
+- a searchable Settings model library for speech, visual OCR, and translation packs, with grouped expandable rows, per-model download/use/remove actions, installed counts, route-aware status, and keyboard/screen-reader disclosure semantics;
+- an experimental Windows visual-translation slice with explicit window, display, and drawn-region selection; change-gated local OCR; bounded latest-frame processing; and translated labels positioned near their recognized source text;
 - Original, Translation, and Original + Translation output modes, with stable stacked or side-by-side pairs, independent colors, wrapped text, and zero to three fading prior caption rows;
 - reproducible English and multilingual comparison tooling covering the same model choices exposed by the app;
 - a bounded capture-to-inference bridge with visible backpressure and recovery behavior; and
@@ -68,7 +69,7 @@ Translation has its own **Translate to** control. Japanese-to-English (109.4 MiB
 
 Translated output is enabled explicitly under **Caption output**; downloading a translator only makes a route available offline. Translation begins from a coalesced live partial after about 420 ms and is throttled to at most one new request every 900 ms, so changing words update the pending text without postponing translation until silence. Each finalized caption is translated again for stability, and Nemotron now forces a boundary after four seconds of continuous pause-light speech as a fallback. The bounded final queue prioritizes the newest caption and skips stale backlog. Side-by-side source/translation columns wrap instead of ellipsizing, and **Appearance → Caption history** can retain zero to three complete, smaller, fading prior pairs without clipping either language independently. Appearance also controls how long a final caption remains after speech and how gently it fades; a late translation receives a fresh reading interval.
 
-Visual text translation is viable as a later separate mode, but it is not implemented yet. It means recognizing and translating text that is already rendered on screen: video subtitles, a sign inside a video, application menus, or text drawn into a game's HUD. The planned Windows slice uses `Windows.Graphics.Capture`, change-gated local OCR, the existing translator, and position-aware labels near detected screen text. PP-OCRv6 Small is the leading benchmark candidate because its published detector and recognizer total roughly 30 MB and cover Japanese plus 49 other languages. Audio and visual modes will be mutually exclusive initially; simultaneous use remains an explicit performance gate rather than an assumption.
+Visual text translation now exists as an experimental, separately enabled Windows slice. **Translate Screen…** continuously watches one explicitly selected top-level window, display, or drawn live display region through `Windows.Graphics.Capture`; feeds transient frames through a latest-frame queue, change gate, PP-OCRv6 Small, and two-frame text stabilizer; and places original and locally translated text near the recognized screen region. The optional OCR pack is a 30.4 MiB explicit download, and translation reuses the selected local language pack. Nothing is downloaded automatically. Audio and visual sessions are mutually exclusive for now. The WebView workflow and actual OCR model initialization pass on the development host, but native Windows capture, DPI/multi-monitor positioning, performance, and representative media quality still require owner testing.
 
 Installed recognition models are no longer all hashed before the app window appears. Model inspection runs in the background and records a small verification marker after a successful full SHA-256 pass; later launches use file size, modification metadata, and the pinned manifest to avoid re-hashing unchanged model files. Existing installations perform one background full check after this update. Only the selected recognition model is loaded when captions start, so the larger Nemotron choice can still take noticeably longer than an English model at that point; only the translator requested by the current source/output choice is loaded. Startup and translation timing are written to the privacy-safe diagnostic log without caption text. The custom Windows title bar also has the explicit Tauri permissions required for dragging and its minimize, maximize, and close controls; native Windows remains the final check for those operating-system interactions.
 
@@ -80,15 +81,17 @@ Prollyglot uses documented operating-system capture paths. It does not classify 
 
 The project does not strip DRM, weaken protected-media controls, or promise that Windows will expose audio from every source. Current OBS device/application capture is the practical compatibility baseline: if OBS receives meaningful audio through an equivalent documented path and Prollyglot does not, that is a Prollyglot defect to investigate. A virtual audio device is not required for normal operation, though an already-installed virtual endpoint can be selected like any other playback device.
 
-For visual text translation, **Monitor** is a first-class source rather than a
-last-minute workaround. The Windows experiment will compare application-window
-and display capture through `Windows.Graphics.Capture` with a documented DXGI
-Desktop Duplication display path, then crop a selected region from the display
-frame. Equivalent OBS **Display Capture** is the compatibility baseline (see the
+For visual text translation, **Whole display** is a first-class source rather
+than a last-minute workaround. The current experimental slice captures selected
+application windows and displays through `Windows.Graphics.Capture`, then crops
+a selected region from the display frame. A documented DXGI Desktop Duplication
+backend remains a planned comparison and fallback. Equivalent OBS **Display Capture**
+is the compatibility baseline (see the
 [OBS source documentation](https://obsproject.com/kb/display-capture-sources)).
 If OBS can see useful pixels from the same display while Prollyglot cannot, that
-is a compatibility defect; Prollyglot should offer the other documented display
-path and record privacy-safe frame diagnostics.
+is a compatibility defect to investigate; the planned second display path and
+privacy-safe frame diagnostics must distinguish an app defect from pixels the
+operating system does not expose.
 
 Monitor capture is not guaranteed to expose every protected surface. Windows
 [documents protected-video handling in Desktop Duplication](https://learn.microsoft.com/en-us/windows-hardware/drivers/display/desktop-duplication-api)
@@ -122,7 +125,7 @@ Run the local Windows code checks from PowerShell when validating a change:
 ./scripts/check-windows.ps1
 ```
 
-For an ordinary native-Windows run, follow the five-minute [Windows development smoke test](docs/testing/WINDOWS_SMOKE_TEST.md). It requires no screenshots, recordings, generated fixtures, or evidence bundle for passing behavior. The exhaustive [Windows release and hardening plan](docs/testing/WINDOWS_TEST_PLAN.md) is reserved for formal milestone and release-candidate validation.
+For an ordinary native-Windows run, follow the five-minute [Windows development smoke test](docs/testing/WINDOWS_SMOKE_TEST.md). The separate [experimental visual-translation smoke](docs/testing/WINDOWS_VISUAL_SMOKE_TEST.md) is only needed when checking that feature. Neither requires screenshots, recordings, generated fixtures, or an evidence bundle for passing behavior. The exhaustive [Windows release and hardening plan](docs/testing/WINDOWS_TEST_PLAN.md) is reserved for formal milestone and release-candidate validation.
 
 On a non-Windows development host, the shared core, frontend, and Windows cross-checks used by the project can be run with:
 
@@ -130,7 +133,7 @@ On a non-Windows development host, the shared core, frontend, and Windows cross-
 ./scripts/check-local.sh
 ```
 
-Physical WASAPI routing, process isolation, device switching, overlay layering, and end-to-end caption latency still require a real Windows machine. The [Milestone 1](docs/testing/WINDOWS_MILESTONE_1.md) and [Milestone 2](docs/testing/WINDOWS_MILESTONE_2.md) checklists summarize formal acceptance boundaries; they are not the routine tester loop.
+Physical WASAPI routing, process isolation, device switching, screen capture, DPI/multi-monitor mapping, overlay layering, and end-to-end latency still require a real Windows machine. The [Milestone 1](docs/testing/WINDOWS_MILESTONE_1.md) and [Milestone 2](docs/testing/WINDOWS_MILESTONE_2.md) checklists summarize formal acceptance boundaries; they are not the routine tester loop.
 
 ### Windows diagnostic log
 
@@ -156,6 +159,9 @@ crates/asr/            Backend-neutral streaming speech contracts
 crates/asr-sherpa/     sherpa-onnx streaming runtime adapter
 crates/model-manager/  Explicit model installation and integrity checks
 crates/transcript/     Provisional and committed transcript state
+crates/visual-pipeline/ Frame gating, OCR contracts, and text stabilization
+crates/visual-windows/ Windows window/display/region capture adapter
+crates/visual-ocr-rapid/ Local PP-OCRv6 adapter
 assets/                Branding and pinned model manifests
 docs/                  Design, licenses/provenance, and manual test procedures
 ```
@@ -164,8 +170,8 @@ The full product definition is in [Prollyglot.md](Prollyglot.md). Product decisi
 
 ## Privacy
 
-Captured audio remains in bounded memory long enough to process it and is not recorded by default. Transcripts are not automatically persisted or uploaded. Network access is reserved for explicit actions such as downloading a selected model or, later, checking for application updates.
+Captured audio and screen pixels remain in bounded memory only long enough to process them and are not recorded by default. Transcripts and recognized visual text are not automatically persisted or uploaded. Network access is reserved for explicit actions such as downloading a selected model or, later, checking for application updates.
 
 ## License
 
-Prollyglot source code is available under the [MIT License](LICENSE). Speech and translation runtimes and model weights retain their own licenses; pinned provenance and redistribution notes are recorded in [docs/licenses/ASR_MODELS.md](docs/licenses/ASR_MODELS.md) and [docs/licenses/TRANSLATION_MODELS.md](docs/licenses/TRANSLATION_MODELS.md).
+Prollyglot source code is available under the [MIT License](LICENSE). Speech, OCR, and translation runtimes and model weights retain their own licenses; pinned provenance and redistribution notes are recorded in [docs/licenses/ASR_MODELS.md](docs/licenses/ASR_MODELS.md), [docs/licenses/VISUAL_OCR_MODELS.md](docs/licenses/VISUAL_OCR_MODELS.md), and [docs/licenses/TRANSLATION_MODELS.md](docs/licenses/TRANSLATION_MODELS.md).

@@ -4,7 +4,8 @@ import type {
   ModelCatalogStatus,
   ModelStatus,
   TranslationCatalogStatus,
-  TranslationModelStatus
+  TranslationModelStatus,
+  VisualModelCatalogStatus
 } from "./types";
 
 export type SettingsNoticeTone = "neutral" | "success" | "error";
@@ -17,10 +18,12 @@ export interface SettingsNotice {
 export interface SettingsPanelState {
   speechCatalog: ModelCatalogStatus;
   translationCatalog: TranslationCatalogStatus;
+  visualCatalog: VisualModelCatalogStatus;
   spokenLanguage: string;
   modelChangesBlocked: boolean;
   translationRequested: boolean;
   activeTranslationModelId?: string;
+  visualRequested: boolean;
 }
 
 export interface SettingsPanelActions {
@@ -30,6 +33,8 @@ export interface SettingsPanelActions {
   removeSpeech: (modelId: string) => Promise<void>;
   installTranslation: (modelId: string) => Promise<void>;
   removeTranslation: (modelId: string) => Promise<void>;
+  installVisual: (modelId: string) => Promise<void>;
+  removeVisual: (modelId: string) => Promise<void>;
   refreshSources: () => Promise<{ playbackDevices: number; applications: number }>;
 }
 
@@ -87,6 +92,10 @@ function installedSpeechModels(catalog: ModelCatalogStatus): number {
 
 function installedTranslationModels(catalog: TranslationCatalogStatus): number {
   return catalog.models.filter(({ phase }) => phase === "ready" || phase === "loading").length;
+}
+
+function installedVisualModels(catalog: VisualModelCatalogStatus): number {
+  return catalog.models.filter(({ phase }) => phase === "ready").length;
 }
 
 function speechGroups(models: ModelStatus[]): ModelGroup<ModelStatus>[] {
@@ -178,12 +187,16 @@ export class SettingsPanel {
     if (state.translationRequested && state.activeTranslationModelId) {
       this.openInitialRow(`translation:${state.activeTranslationModelId}`);
     }
+    if (state.visualRequested && state.visualCatalog.models[0]) {
+      this.openInitialRow(`visual:${state.visualCatalog.models[0].modelId}`);
+    }
 
     content.replaceChildren();
     content.className = "settings-content";
     content.append(this.createOverview(state));
     content.append(this.createEmptySearchState());
     content.append(this.createSpeechSection(state, actions));
+    content.append(this.createVisualSection(state, actions));
     content.append(this.createTranslationSection(state, actions));
     content.append(this.createAudioSection(actions));
 
@@ -217,7 +230,8 @@ export class SettingsPanel {
     const summary = element("p", "model-library-summary");
     const speechInstalled = installedSpeechModels(state.speechCatalog);
     const translationInstalled = installedTranslationModels(state.translationCatalog);
-    summary.textContent = `${speechInstalled} of ${state.speechCatalog.models.length} speech · ${translationInstalled} of ${state.translationCatalog.models.length} translation installed`;
+    const visualInstalled = installedVisualModels(state.visualCatalog);
+    summary.textContent = `${speechInstalled} of ${state.speechCatalog.models.length} speech · ${visualInstalled} of ${state.visualCatalog.models.length} visual · ${translationInstalled} of ${state.translationCatalog.models.length} translation installed`;
 
     const label = element("label", "sr-only");
     label.htmlFor = "model-search";
@@ -297,6 +311,34 @@ export class SettingsPanel {
       groupElement.append(list);
       section.append(groupElement);
     }
+    return section;
+  }
+
+  private createVisualSection(state: SettingsPanelState, actions: SettingsPanelActions): HTMLElement {
+    const section = element("section", "settings-section settings-section-divided model-library-section");
+    section.setAttribute("aria-labelledby", "visual-models-title");
+    section.dataset.modelSection = "visual";
+    section.append(this.createSectionHeading(
+      "visual-models-title",
+      "Visual text recognition",
+      `${installedVisualModels(state.visualCatalog)} installed`
+    ));
+    const copy = element("p", "settings-copy");
+    copy.textContent = "This optional OCR pack reads text already visible on a selected window, display, or region. It is independent from speech recognition.";
+    section.append(copy);
+
+    const list = element("div", "model-disclosure-list");
+    const anotherDownloadRunning = state.visualCatalog.models.some(({ phase }) => phase === "downloading");
+    for (const [modelIndex, model] of state.visualCatalog.models.entries()) {
+      list.append(this.createVisualRow(
+        model,
+        `visual-${modelIndex}`,
+        state,
+        actions,
+        anotherDownloadRunning
+      ));
+    }
+    section.append(list);
     return section;
   }
 
@@ -528,6 +570,97 @@ export class SettingsPanel {
     return row;
   }
 
+  private createVisualRow(
+    model: ModelStatus,
+    domId: string,
+    state: SettingsPanelState,
+    actions: SettingsPanelActions,
+    anotherDownloadRunning: boolean
+  ): HTMLElement {
+    const key = `visual:${model.modelId}`;
+    const active = state.visualRequested;
+    const row = this.createDisclosureShell(
+      key,
+      domId,
+      model.profile,
+      model.displayName,
+      `${speechLanguageSummary(model)} · ${formatBytes(model.totalBytes)}`,
+      this.visualStateLabel(model, active),
+      model.phase,
+      active
+    );
+    row.dataset.modelSearch = [
+      "visual screen OCR text recognition",
+      model.profile,
+      model.displayName,
+      model.description,
+      model.modelId,
+      ...model.languages.map(languageLabel)
+    ].join(" ").toLocaleLowerCase();
+
+    const panel = row.querySelector<HTMLElement>(".model-disclosure-panel");
+    if (!panel) return row;
+    const description = element("p", "model-option-description");
+    description.textContent = model.description;
+    panel.append(description);
+
+    const facts = element("dl", "model-facts");
+    appendFact(facts, "Coverage", speechLanguageSummary(model));
+    appendFact(facts, "Runtime", "PP-OCRv6 · local CPU");
+    appendFact(facts, "Download", formatBytes(model.totalBytes));
+    panel.append(facts);
+    this.appendCoverage(panel, model.languages);
+    this.appendProgressAndMessage(panel, model);
+
+    const actionsRow = element("div", "model-option-actions");
+    if (model.phase === "ready") {
+      const stateCopy = element("span", "model-action-state");
+      stateCopy.textContent = active
+        ? "In use by visual translation"
+        : "Installed and available for Translate Screen";
+      actionsRow.append(stateCopy);
+      const remove = this.textActionButton("Remove", `${key}:remove`, key);
+      remove.classList.add("danger-text");
+      remove.disabled = state.modelChangesBlocked || anotherDownloadRunning;
+      remove.setAttribute("aria-label", `Remove ${model.displayName}`);
+      remove.addEventListener("click", () => {
+        void this.runAction(
+          remove,
+          actions,
+          `Removing ${model.displayName}…`,
+          async () => {
+            await actions.removeVisual(model.modelId);
+            actions.announce(`${model.displayName} was removed from this PC.`, "success");
+          }
+        );
+      });
+      actionsRow.append(remove);
+    } else {
+      const download = this.actionButton(this.speechActionLabel(model), `${key}:install`, key);
+      download.disabled = model.phase === "checking"
+        || model.phase === "downloading"
+        || state.modelChangesBlocked
+        || anotherDownloadRunning;
+      download.dataset.busy = String(model.phase === "checking" || model.phase === "downloading");
+      download.setAttribute("aria-label", `${this.speechActionLabel(model)} ${model.displayName}`);
+      if (model.phase !== "checking" && model.phase !== "downloading") {
+        download.addEventListener("click", () => {
+          this.expanded.add(key);
+          void this.runAction(
+            download,
+            actions,
+            `Starting ${model.displayName} download…`,
+            () => actions.installVisual(model.modelId)
+          );
+        });
+      }
+      actionsRow.append(download);
+    }
+    panel.append(actionsRow);
+    this.appendBlockedReason(panel, state.modelChangesBlocked, anotherDownloadRunning, model.phase);
+    return row;
+  }
+
   private createDisclosureShell(
     key: string,
     domId: string,
@@ -643,7 +776,7 @@ export class SettingsPanel {
     if (!modelChangesBlocked && (!anotherDownloadRunning || phase === "downloading")) return;
     const note = element("p", "model-option-message");
     note.textContent = modelChangesBlocked
-      ? "Stop captions before installing, selecting, or removing models."
+      ? "Stop captions or screen translation before installing, selecting, or removing models."
       : "Another model in this section is downloading.";
     panel.append(note);
   }
@@ -665,6 +798,15 @@ export class SettingsPanel {
     if (model.phase === "failed") return "Download failed";
     if (activeRoute) return model.phase === "ready" ? "Current route" : "Needed now";
     return model.phase === "ready" ? "Installed" : "Available";
+  }
+
+  private visualStateLabel(model: ModelStatus, active: boolean): string {
+    if (model.phase === "checking") return "Checking";
+    if (model.phase === "downloading") return `${percentage(model.downloadedBytes, model.totalBytes)}%`;
+    if (model.phase === "corrupt") return "Needs repair";
+    if (model.phase === "failed") return "Download failed";
+    if (model.phase === "ready") return active ? "In use" : "Installed";
+    return "Available";
   }
 
   private speechActionLabel(model: ModelStatus): string {
@@ -757,7 +899,7 @@ export class SettingsPanel {
   private createEmptySearchState(): HTMLElement {
     const empty = element("p", "model-search-empty");
     empty.hidden = true;
-    empty.textContent = "No speech or translation models match that search.";
+    empty.textContent = "No speech, visual, or translation models match that search.";
     return empty;
   }
 

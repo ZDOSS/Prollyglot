@@ -5,21 +5,35 @@ import {
   clearTranscript,
   isTauri,
   installSpeechModel,
+  installVisualModel,
   modelStatus,
   onCaptureStatus,
   onModelStatus,
   onTranscriptUpdate,
+  onVisualModelStatus,
+  onVisualStatus,
+  onVisualTextClear,
+  onVisualTextUpdate,
+  pickVisualRegion,
   reportFrontendDiagnostic,
   removeSpeechModel,
+  removeVisualModel,
   selectSpeechModel,
   showAppearance,
   sourceSnapshot,
   startWindowDrag,
   startCapture,
+  startVisualTranslation,
   stopCapture,
+  stopVisualTranslation,
   transcriptSnapshot,
   updateCaptionOutput,
   updateOverlaySettings,
+  updateVisualOutput,
+  visualCapabilities,
+  visualModelStatus,
+  visualSourceSnapshot,
+  visualStatus,
   windowAction
 } from "./bridge";
 import { CaptionOutputController, supportedSourceLanguage } from "./caption-output";
@@ -31,6 +45,8 @@ import {
 } from "./language-catalog";
 import { SettingsPanel, type SettingsNotice, type SettingsNoticeTone } from "./settings";
 import { TranslationService, translationStatusForRoute } from "./translation";
+import { VisualPanel } from "./visual-panel";
+import { VisualTranslationController } from "./visual-translation";
 import type {
   CaptionOutputMode,
   CaptureSelection,
@@ -41,7 +57,11 @@ import type {
   TranscriptSegment,
   TranscriptSnapshot,
   TranslationCatalogStatus,
-  TranslationModelStatus
+  TranslationModelStatus,
+  VisualCaptureCapabilities,
+  VisualModelCatalogStatus,
+  VisualSourceSnapshot,
+  VisualStatus
 } from "./types";
 import { DEFAULT_OVERLAY_SETTINGS, type OverlaySettings } from "./types";
 
@@ -136,7 +156,10 @@ root.innerHTML = `
 
       <p id="capture-message" class="capture-message" role="status" aria-live="polite"></p>
 
-      <button id="capture-toggle" class="primary-button" type="button">Start Captions</button>
+      <div class="capture-actions">
+        <button id="capture-toggle" class="primary-button" type="button">Start Captions</button>
+        <button id="visual-toggle" class="secondary-button screen-translation-button" type="button">Translate Screen…</button>
+      </div>
     </div>
 
     <nav class="utility-nav" aria-label="Application views">
@@ -163,6 +186,7 @@ const spokenLanguage = requireElement<HTMLSelectElement>("#spoken-language");
 const translationTarget = requireElement<HTMLSelectElement>("#translation-target");
 const captionLanguage = requireElement<HTMLSelectElement>("#caption-language");
 const captureToggle = requireElement<HTMLButtonElement>("#capture-toggle");
+const visualToggle = requireElement<HTMLButtonElement>("#visual-toggle");
 const captureMessage = requireElement<HTMLElement>("#capture-message");
 const statusLabel = requireElement<HTMLElement>(".status-label");
 const statusText = requireElement<HTMLElement>("#status-text");
@@ -197,6 +221,23 @@ let currentModels: ModelCatalogStatus = {
   selectedModelId: FALLBACK_MODEL.modelId,
   models: [FALLBACK_MODEL]
 };
+let currentVisualCapabilities: VisualCaptureCapabilities = {
+  windowsGraphicsCapture: false,
+  systemPicker: false,
+  desktopDuplicationExperiment: false,
+  message: "Checking Windows screen capture…"
+};
+let currentVisualSources: VisualSourceSnapshot = { windows: [], displays: [] };
+let currentVisualModels: VisualModelCatalogStatus = { models: [] };
+let currentVisualStatus: VisualStatus = {
+  active: false,
+  state: "stopped",
+  framesReceived: 0,
+  framesAnalyzed: 0,
+  framesUnchanged: 0,
+  replacedFrames: 0,
+  visibleRegions: 0
+};
 const useMockTranslation = !isTauri()
   && !new URLSearchParams(window.location.search).has("realTranslation");
 const translationService = new TranslationService(useMockTranslation);
@@ -210,6 +251,7 @@ let transcriptFollowLatest = true;
 const FOLLOW_SYSTEM_DEFAULT = "__follow-system-default__";
 const TRANSCRIPT_BOTTOM_THRESHOLD = 48;
 const settingsPanel = new SettingsPanel();
+const visualPanel = new VisualPanel();
 const captionOutput = new CaptionOutputController(
   translationService,
   (payload) => {
@@ -222,6 +264,13 @@ const captionOutput = new CaptionOutputController(
   },
   (message) => {
     void reportFrontendDiagnostic("translation-performance", message, "info");
+  }
+);
+const visualTranslation = new VisualTranslationController(
+  translationService,
+  updateVisualOutput,
+  (message) => {
+    void reportFrontendDiagnostic("visual-translation", message);
   }
 );
 
@@ -432,7 +481,7 @@ function renderTranslationSetup(): void {
   translationProgress.hidden = model.phase !== "downloading";
   translationProgress.max = Math.max(model.totalBytes, 1);
   translationProgress.value = Math.min(model.downloadedBytes, translationProgress.max);
-  const modelChangesBlocked = currentStatus.state !== "stopped" && currentStatus.state !== "failed";
+  const modelChangesBlocked = audioActive() || visualEngaged();
   translationAction.disabled = model.phase === "checking"
     || model.phase === "downloading"
     || model.phase === "loading"
@@ -457,7 +506,7 @@ function renderTranslationSetup(): void {
     const baseMessage = model.message
       ?? `Download ${model.displayName} once. Captions and translation then stay on this PC.`;
     translationMessage.textContent = modelChangesBlocked
-      ? `${baseMessage} Stop captions before changing translation models.`
+      ? `${baseMessage} Stop captions or screen translation before changing translation models.`
       : baseMessage;
   }
 }
@@ -496,6 +545,7 @@ function renderTranslationStatus(catalog: TranslationCatalogStatus): void {
   currentTranslations = catalog;
   renderCaptionOutputControl();
   if (dialog.open && dialog.dataset.panel === "settings") renderSettingsPanel();
+  if (dialog.open && dialog.dataset.panel === "visual") renderVisualPanel();
 }
 
 function renderLanguageGuidance() {
@@ -521,16 +571,7 @@ function modelSupportsLanguage(model: ModelStatus, language = spokenLanguage.val
 function renderStatus(status: CaptureStatus) {
   const stateChanged = currentStatus.state !== status.state;
   currentStatus = status;
-  statusLabel.dataset.state = status.state;
-  const labels: Record<CaptureStatus["state"], string> = {
-    starting: "Starting",
-    capturing: "Live",
-    waiting: "Waiting",
-    stopping: "Stopping",
-    stopped: "Ready",
-    failed: "Error"
-  };
-  statusText.textContent = labels[status.state];
+  renderHeaderStatus();
   captureMessage.textContent = status.message ?? "";
   captureToggle.textContent = status.state === "capturing" || status.state === "waiting" ? "Stop Captions" : "Start Captions";
   captureToggle.classList.toggle("stop", status.state === "capturing" || status.state === "waiting");
@@ -538,15 +579,79 @@ function renderStatus(status: CaptureStatus) {
   renderTranslationSetup();
   document.documentElement.style.setProperty("--audio-peak", String(status.peak));
   if (stateChanged && dialog.open && dialog.dataset.panel === "settings") renderSettingsPanel();
+  if (dialog.open && dialog.dataset.panel === "visual") renderVisualPanel();
+}
+
+function audioActive(): boolean {
+  return currentStatus.state === "starting"
+    || currentStatus.state === "capturing"
+    || currentStatus.state === "waiting"
+    || currentStatus.state === "stopping";
+}
+
+function visualEngaged(): boolean {
+  return currentVisualStatus.active
+    || currentVisualStatus.state === "starting"
+    || currentVisualStatus.state === "stopping";
+}
+
+function renderHeaderStatus(): void {
+  const visualState = currentVisualStatus.state;
+  const state = visualEngaged() || (visualState === "failed" && !audioActive())
+    ? visualState
+    : currentStatus.state;
+  const labels: Record<CaptureStatus["state"], string> = {
+    starting: "Starting",
+    capturing: visualEngaged() ? "Screen" : "Live",
+    waiting: "Waiting",
+    stopping: "Stopping",
+    stopped: "Ready",
+    failed: "Error"
+  };
+  statusLabel.dataset.state = state;
+  statusText.textContent = labels[state];
+}
+
+function renderVisualStatus(status: VisualStatus): void {
+  const changed = currentVisualStatus.state !== status.state
+    || currentVisualStatus.active !== status.active;
+  currentVisualStatus = status;
+  visualToggle.textContent = status.active ? "View Screen Translation" : "Translate Screen…";
+  visualToggle.dataset.active = String(status.active);
+  visualToggle.disabled = status.state === "starting" || status.state === "stopping";
+  renderHeaderStatus();
+  updatePrimaryAvailability();
+  if (changed && dialog.open && dialog.dataset.panel === "settings") renderSettingsPanel();
+  if (dialog.open && dialog.dataset.panel === "visual") renderVisualPanel();
+}
+
+function renderVisualModelStatus(catalog: VisualModelCatalogStatus): void {
+  const completed = catalog.models.find((model) =>
+    model.phase === "ready"
+    && currentVisualModels.models.find(({ modelId }) => modelId === model.modelId)?.phase === "downloading"
+  );
+  const failed = catalog.models.find((model) =>
+    model.phase === "failed"
+    && currentVisualModels.models.find(({ modelId }) => modelId === model.modelId)?.phase === "downloading"
+  );
+  if (completed) {
+    settingsNotice = { message: `${completed.displayName} is installed and ready.`, tone: "success" };
+  } else if (failed) {
+    settingsNotice = { message: failed.message ?? `${failed.displayName} could not be installed.`, tone: "error" };
+  }
+  currentVisualModels = catalog;
+  if (dialog.open && dialog.dataset.panel === "settings") renderSettingsPanel();
+  if (dialog.open && dialog.dataset.panel === "visual") renderVisualPanel();
 }
 
 function updatePrimaryAvailability() {
   const transitioning = currentStatus.state === "starting" || currentStatus.state === "stopping";
   const running = currentStatus.state === "capturing" || currentStatus.state === "waiting";
+  const blockedByVisual = visualEngaged();
   const model = selectedModel();
-  captureToggle.disabled = transitioning
+  captureToggle.disabled = transitioning || blockedByVisual
     || (!running && (model.phase !== "ready" || !modelSupportsLanguage(model)));
-  spokenLanguage.disabled = transitioning || running;
+  spokenLanguage.disabled = transitioning || running || blockedByVisual;
 }
 
 function formatBytes(bytes: number): string {
@@ -591,7 +696,10 @@ function renderModelStatus(catalog: ModelCatalogStatus) {
   modelProgress.hidden = status.phase !== "downloading";
   modelProgress.max = Math.max(status.totalBytes, 1);
   modelProgress.value = Math.min(status.downloadedBytes, modelProgress.max);
-  modelAction.disabled = status.phase === "checking" || status.phase === "downloading" || !compatible;
+  modelAction.disabled = status.phase === "checking"
+    || status.phase === "downloading"
+    || !compatible
+    || visualEngaged();
 
   if (!compatible) {
     modelAction.textContent = "Choose compatible model";
@@ -640,6 +748,13 @@ async function refreshSources(): Promise<SourceRefreshResult> {
     captureMessage.textContent = message;
     return { ok: false, message };
   }
+}
+
+async function refreshVisualSources(): Promise<VisualSourceSnapshot> {
+  const next = await visualSourceSnapshot();
+  currentVisualSources = next;
+  if (dialog.open && dialog.dataset.panel === "visual") renderVisualPanel();
+  return next;
 }
 
 function dialogContent(): HTMLElement {
@@ -803,10 +918,12 @@ function renderSettingsPanel() {
   settingsPanel.render(content, {
     speechCatalog: currentModels,
     translationCatalog: currentTranslations,
+    visualCatalog: currentVisualModels,
     spokenLanguage: spokenLanguage.value,
-    modelChangesBlocked: currentStatus.state !== "stopped" && currentStatus.state !== "failed",
+    modelChangesBlocked: audioActive() || visualEngaged(),
     translationRequested: translationRequested(),
-    activeTranslationModelId: activeTranslationModel?.modelId
+    activeTranslationModelId: activeTranslationModel?.modelId,
+    visualRequested: currentVisualStatus.active
   }, {
     announce: setSettingsNotice,
     installSpeech: installSpeechModel,
@@ -820,6 +937,8 @@ function renderSettingsPanel() {
     },
     installTranslation: (modelId) => translationService.install(modelId),
     removeTranslation: (modelId) => translationService.remove(modelId),
+    installVisual: installVisualModel,
+    removeVisual: removeVisualModel,
     refreshSources: async () => {
       const result = await refreshSources();
       if (!result.ok) throw new Error(result.message);
@@ -830,6 +949,40 @@ function renderSettingsPanel() {
     }
   });
   renderSettingsNotice();
+}
+
+function renderVisualPanel(): void {
+  visualPanel.render(dialogContent(), {
+    capabilities: currentVisualCapabilities,
+    sources: currentVisualSources,
+    models: currentVisualModels,
+    translations: currentTranslations,
+    status: currentVisualStatus,
+    audioActive: audioActive()
+  }, {
+    refreshSources: refreshVisualSources,
+    pickRegion: pickVisualRegion,
+    installVisualModel,
+    installTranslationModel: (modelId) => translationService.install(modelId),
+    start: async (selection, sourceLanguage, targetLanguage) => {
+      visualTranslation.begin(sourceLanguage, targetLanguage);
+      try {
+        await startVisualTranslation(selection, sourceLanguage, targetLanguage);
+      } catch (error) {
+        visualTranslation.clear();
+        throw error;
+      }
+    },
+    stop: async () => {
+      await stopVisualTranslation();
+      visualTranslation.clear();
+    },
+    stopAudio: stopCapture,
+    openSettings: () => openDialogPanel("settings"),
+    report: (message) => {
+      void reportFrontendDiagnostic("visual-translation", message);
+    }
+  });
 }
 
 function renderSettingsNotice() {
@@ -929,6 +1082,7 @@ captureToggle.addEventListener("click", async () => {
     if (currentStatus.state === "capturing" || currentStatus.state === "waiting") {
       await stopCapture();
     } else {
+      if (visualEngaged()) throw new Error("Stop screen translation before starting audio captions.");
       const model = selectedModel();
       if (model.phase !== "ready") throw new Error("Install the selected speech model first.");
       if (!modelSupportsLanguage(model)) {
@@ -945,6 +1099,8 @@ captureToggle.addEventListener("click", async () => {
     });
   }
 });
+
+visualToggle.addEventListener("click", () => openDialogPanel("visual"));
 
 requireElement<HTMLButtonElement>("#appearance-action").addEventListener("click", () => void showAppearance());
 
@@ -971,22 +1127,28 @@ for (const button of document.querySelectorAll<HTMLButtonElement>("[data-window-
   });
 }
 
+type DialogPanel = "transcript" | "settings" | "visual";
+
+function openDialogPanel(panel: DialogPanel): void {
+  const titles: Record<DialogPanel, string> = {
+    transcript: "Transcript",
+    settings: "Models & settings",
+    visual: "Translate screen"
+  };
+  dialog.dataset.panel = panel;
+  requireElement<HTMLElement>("#dialog-title").textContent = titles[panel];
+  settingsNotice = undefined;
+  if (panel === "settings") settingsPanel.resetView();
+  else renderSettingsNotice();
+  if (!dialog.open) dialog.showModal();
+  if (panel === "settings") renderSettingsPanel();
+  else if (panel === "visual") renderVisualPanel();
+  else renderTranscriptPanel(true);
+}
+
 for (const button of document.querySelectorAll<HTMLButtonElement>("[data-panel]")) {
   button.addEventListener("click", () => {
-    const panel = button.dataset.panel === "transcript" ? "transcript" : "settings";
-    const title = panel === "transcript" ? "Transcript" : "Settings";
-    dialog.dataset.panel = panel;
-    requireElement<HTMLElement>("#dialog-title").textContent = title;
-    if (panel === "settings") {
-      settingsNotice = undefined;
-      settingsPanel.resetView();
-    } else {
-      settingsNotice = undefined;
-      renderSettingsNotice();
-    }
-    dialog.showModal();
-    if (panel === "settings") renderSettingsPanel();
-    else renderTranscriptPanel(true);
+    openDialogPanel(button.dataset.panel === "transcript" ? "transcript" : "settings");
   });
 }
 
@@ -1006,8 +1168,20 @@ void Promise.all([
     void reportFrontendDiagnostic("overlay-settings", `startup restore: ${message}`);
   }),
   refreshSources(),
+  visualCapabilities().then((capabilities) => {
+    currentVisualCapabilities = capabilities;
+    if (dialog.open && dialog.dataset.panel === "visual") renderVisualPanel();
+  }),
+  refreshVisualSources().catch((error) => {
+    currentVisualCapabilities = {
+      ...currentVisualCapabilities,
+      message: error instanceof Error ? error.message : String(error)
+    };
+  }),
   captureStatus().then(renderStatus),
   modelStatus().then(renderModelStatus),
+  visualModelStatus().then(renderVisualModelStatus),
+  visualStatus().then(renderVisualStatus),
   translationService.initialize().then(renderTranslationStatus).catch((error) => {
     const message = error instanceof Error ? error.message : String(error);
     captureMessage.textContent = message;
@@ -1016,5 +1190,9 @@ void Promise.all([
   transcriptSnapshot().then(renderTranscript),
   onCaptureStatus(renderStatus),
   onModelStatus(renderModelStatus),
-  onTranscriptUpdate(renderTranscript)
+  onTranscriptUpdate(renderTranscript),
+  onVisualModelStatus(renderVisualModelStatus),
+  onVisualStatus(renderVisualStatus),
+  onVisualTextUpdate((update) => visualTranslation.update(update)),
+  onVisualTextClear(() => visualTranslation.clear())
 ]);

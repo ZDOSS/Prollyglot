@@ -42,7 +42,7 @@ Why this direction:
 | 4. Windows MVP release | A reliable installable Windows build is ready for outside testing | Pending |
 | 5. Ubuntu port | The Windows-proven core runs on one supported Ubuntu LTS release through PipeWire | Pending |
 | 6. Multilingual captions and translation | Downloadable language support, local translation, and dual captions are production-ready | 29 forced spoken languages, four compact language models, compact-to-English and 29-language many-to-many routes integrated; Windows quality, latency, and automatic-language constraints remain pending |
-| 7. Visual text translation | A selected region, application, or display becomes locally translated positioned text | Architecture is viable and scoped; Windows capture/OCR benchmark and implementation are pending |
+| 7. Visual text translation | A selected region, application window, or display becomes locally translated positioned text | Experimental WGC/OCR/positioned-overlay slice integrated; native Windows media, DPI, performance, and OBS/DXGI parity remain pending |
 
 ### Windows smoke checkpoint — 2026-08-10
 
@@ -83,6 +83,23 @@ overlay now retains the last complete bilingual frame across that gap. Appearanc
 also offers 6, 10, 15, or 30 seconds of post-speech reading time plus four fade
 speeds; the default is 15 seconds and an 800ms fade, and a delayed translation
 restarts the reading interval. Native Windows timing remains the owner check.
+
+The first Milestone 7 vertical slice is now integrated behind a separate
+**Translate Screen…** action. It enumerates explicit top-level windows and
+displays, supports a full-display crop selected with a drag surface, captures
+through Windows Graphics Capture, and sends transient BGRA frames through a
+capacity-one latest-frame queue. The live source is sampled at up to 12 FPS,
+while localized frame-change detection caps expensive OCR opportunities at four
+per second and confirms static detections once before going idle. PP-OCRv6 Small
+and two-frame text stabilization feed positioned original/translated labels
+that reuse the local translation worker, and Prollyglot windows request
+exclusion from capture.
+
+The 30.4 MiB OCR pack is optional, explicitly downloaded, and fully verified;
+actual model initialization and platform-neutral pipeline tests pass on the
+development host. Native Windows capture, OCR usefulness on real media,
+multi-monitor/DPI movement, resource use, blank-frame recovery, DXGI comparison,
+and OBS display parity remain Milestone 7 gates.
 
 Routine development now uses [`docs/testing/WINDOWS_SMOKE_TEST.md`](docs/testing/WINDOWS_SMOKE_TEST.md). Interrupted-download recovery, formal latency measurement, screenshots, OBS parity, and sustained-resource evidence are intentionally deferred to milestone hardening or release boundaries rather than imposed on every pre-release build.
 
@@ -244,36 +261,39 @@ Prollyglot into a screen recorder or general visual assistant. The first slice
 does not run simultaneously with audio captions; the contracts and resource
 ownership must leave that end state possible.
 
-The feasibility direction is concrete enough for an experiment:
+The experimental direction is now represented by an integrated first slice:
 
-- capture one user-selected display or application through
+- capture one explicitly selected top-level window or display through
   `Windows.Graphics.Capture`, cropping a user-drawn region after display capture;
-- compare a documented DXGI Desktop Duplication backend for selected-display
-  capture and keep equivalent OBS Display Capture as the compatibility baseline;
-- compare Windows' installed-language `Windows.Media.Ocr` baseline with pinned
-  PP-OCRv6 Small detection and recognition models;
-- run OCR on a bounded latest-frame queue with change detection instead of on
-  every video frame;
+- run pinned PP-OCRv6 Small through a bounded latest-frame queue and change gate
+  instead of recognizing every video frame;
 - stabilize identical text across frames, track its bounding box, and route new
   text through the existing local translation service;
-- render translated labels just above or beside their source regions in a
-  separate click-through overlay; and
-- exclude or mask Prollyglot's own windows from monitor capture to prevent an
-  OCR feedback loop.
+- render original and translated labels above or below their source regions in
+  a separate click-through overlay; and
+- request capture exclusion for Prollyglot's own windows to prevent an OCR
+  feedback loop.
+
+The documented DXGI Desktop Duplication backend and equivalent OBS Display
+Capture remain compatibility comparisons, not implemented claims. A
+`Windows.Media.Ocr` comparison also remains optional: ordinary unpackaged
+development and MSI/NSIS installs cannot assume the package identity required
+by that API, while PP-OCR provides one shared Windows/Linux direction.
 
 ### Included outcome
 
 - A separate **Translate Screen…** action and mutually exclusive audio/visual
   session state.
 - Region, selected-application-window, and selected-display visual sources.
-- A visible **Switch to Monitor capture** recovery when window capture is blank,
-  without claiming that blank pixels prove DRM or that monitor capture will
-  expose every protected surface.
+- A visible **Switch to Monitor capture** recovery when window capture is blank
+  remains pending; blank pixels must not be presented as proof of DRM, and
+  monitor capture must not be promised to expose every protected surface.
 - Transient GPU/CPU frame handling with no screenshots persisted by default.
 - A replaceable OCR contract that returns text, confidence, language/script,
   and capture-space polygons without leaking Windows objects downstream.
-- Pinned model provenance, explicit downloads, integrity checking, and a
-  zero-download Windows OCR comparison path.
+- Pinned model provenance, explicit downloads, integrity checking, and no
+  automatic OCR or translation download. A packaged `Windows.Media.Ocr`
+  comparison remains a follow-up rather than a baseline dependency.
 - Position-stable translated overlays that follow crop, DPI, monitor, and
   selected-window geometry changes.
 - Privacy-safe timing and backlog diagnostics without captured pixels or OCR

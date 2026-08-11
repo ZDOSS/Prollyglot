@@ -98,6 +98,23 @@ App chrome uses the Windows system UI font. Caption font is user-selectable late
 - No window chrome, status decoration, source label, waveform, or animation that competes with reading.
 - Click-through must not take focus. Unlocking position temporarily restores interaction and exposes a clear drag affordance.
 
+### Translate Screen surface
+
+- Opens from a separate secondary action; it does not add capture/OCR controls to the audio Start/Stop path.
+- Uses the same open field flow as the main window: source type, explicit source, text language, target language, required local models, then one Start/Stop action.
+- Required OCR and translation packs appear as compact readiness rows with one explicit Download/Repair action each. The full catalog remains in Settings.
+- Application window, whole display, and selected region are mutually exclusive source choices. Region selection uses a full-screen dimmed drag surface with visible dimensions, Escape, and Cancel.
+- Active state replaces setup with the selected source, privacy-safe frame/label counters, recovery text, and one Stop action.
+- Audio captions and screen translation cannot be active simultaneously in the experimental slice; the switching action names both effects before it runs.
+
+### Visual translation overlay
+
+- Independent, borderless, transparent, always-on-top, and click-through.
+- Each recognized source region owns one stable original/translation pair; partial updates must not displace another region's translation.
+- Original text is smaller and neutral; translated text uses the configured translation color and appears above the source when possible, otherwise below it.
+- Labels wrap and clamp to the captured bounds. They must not use ellipses that hide either language.
+- Prollyglot windows request exclusion from display capture to prevent an OCR feedback loop.
+
 ## Component families
 
 - `SelectField`: label, full-width value surface, custom chevron, hover/focus/disabled states.
@@ -110,6 +127,8 @@ App chrome uses the Windows system UI font. Caption font is user-selectable late
   facts plus model-specific actions. It is a disclosure list, not a card grid.
 - `Toggle`: compact track and thumb with a visible focus ring.
 - `CaptionSurface`: provisional/final text treatment inside the overlay.
+- `VisualReadinessRow`: model name, installed/download size state, and one route-specific action without exposing the entire catalog.
+- `VisualLabel`: positioned original/translation pair anchored to one recognized screen region.
 
 ## Icon inventory
 
@@ -179,6 +198,10 @@ Runtime source names and status/error messages may replace sample values. Do not
 - All icons have text labels or accessible names; the brand mark is decorative beside the visible product name.
 - Model disclosure buttons expose expanded state and panel ownership; progress
   updates retain the open rows, scroll position, and a usable focus target.
+- Search filters every model family by model name, language, route, and state;
+  an empty result explains how to clear or broaden the query.
+- A visual source-language choice describes translation routing accurately; it
+  must not claim to tune OCR unless the selected OCR backend actually uses it.
 - Motion only clarifies state and respects `prefers-reduced-motion`.
 - Error states use text plus color. Ready/Live state must not rely on a green dot alone.
 

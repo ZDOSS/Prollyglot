@@ -348,8 +348,9 @@ fn require_stopped(state: &RuntimeState) -> Result<(), String> {
             | CaptureState::Waiting
             | CaptureState::Stopping
     ) || state.session.lock().is_some()
+        || crate::visual::is_active(&state.visual)
     {
-        Err("Stop captions before changing local speech models.".into())
+        Err("Stop captions and visual translation before changing local speech models.".into())
     } else {
         Ok(())
     }

@@ -13,7 +13,9 @@ export default defineConfig({
       input: {
         main: resolve(desktopRoot, "index.html"),
         appearance: resolve(desktopRoot, "appearance.html"),
-        overlay: resolve(desktopRoot, "overlay.html")
+        overlay: resolve(desktopRoot, "overlay.html"),
+        visualOverlay: resolve(desktopRoot, "visual-overlay.html"),
+        regionSelector: resolve(desktopRoot, "region-selector.html")
       }
     }
   },
