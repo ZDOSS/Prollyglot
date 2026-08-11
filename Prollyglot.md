@@ -999,7 +999,7 @@ characters, translation can begin from the newest coalesced partial after about
 deadline; further live requests are throttled to no more than one every 900 ms
 so translation cannot build a per-word backlog. Finalized source text has
 priority and is translated again unless an exact live result can be reused. For
-Nemotron, a continuous pause-light utterance has a four-second finalization
+Nemotron, the adapter enforces a four-second continuous pause-light finalization
 safety boundary, but live translation no longer depends on reaching it.
 
 The translation queue is bounded and prioritizes the newest finalized caption.
@@ -1161,10 +1161,12 @@ The translated visual layer is separate from the bottom audio-caption surface.
 Each result retains a capture-space bounding box mapped through crop and current
 source geometry into screen coordinates. Translation appears just above the
 source box when space permits, moves below it when required, and clamps to the
-captured bounds. Prollyglot's control, audio overlay, visual overlay, and region
-selector request `WDA_EXCLUDEFROMCAPTURE` where supported so display capture does
-not repeatedly OCR its own translations. Explicit masking remains a fallback if
-native Windows validation exposes systems where affinity is unavailable.
+captured bounds. Prollyglot's audio and visual overlay surfaces request
+`WDA_EXCLUDEFROMCAPTURE` where supported so display capture does not repeatedly
+OCR its own translations. The control, appearance, and translucent region
+selector remain visible to ordinary screenshots so users can report problems.
+Explicit masking remains a fallback if native Windows validation exposes systems
+where overlay affinity is unavailable.
 
 The integrated slice is accepted only if representative Japanese and Spanish
 video subtitles, game UI, and signs remain positionally stable and useful on a

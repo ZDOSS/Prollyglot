@@ -92,14 +92,30 @@ capacity-one latest-frame queue. The live source is sampled at up to 12 FPS,
 while localized frame-change detection caps expensive OCR opportunities at four
 per second and confirms static detections once before going idle. PP-OCRv6 Small
 and two-frame text stabilization feed positioned original/translated labels
-that reuse the local translation worker, and Prollyglot windows request
-exclusion from capture.
+that reuse the local translation worker. Only the audio and visual overlay
+surfaces request exclusion from capture; controls and the region selector remain
+available to screenshots used for ordinary troubleshooting.
 
 The 30.4 MiB OCR pack is optional, explicitly downloaded, and fully verified;
 actual model initialization and platform-neutral pipeline tests pass on the
 development host. Native Windows capture, OCR usefulness on real media,
 multi-monitor/DPI movement, resource use, blank-frame recovery, DXGI comparison,
 and OBS display parity remain Milestone 7 gates.
+
+The first native-Windows start attempt exposed one shared interop defect rather
+than three source-specific failures: the TypeScript selection union sent
+`sourceId` and `displayId`, while the Rust tagged enum still required snake-case
+field names. The native contract now explicitly serializes camel-case fields and
+has regression coverage for application, display, and region payloads. The
+region document is transparent with a light scrim so its target remains visible,
+and control/appearance/selector windows are no longer deliberately hidden from
+screenshots. The same owner run found Nemotron-to-English updates appearing to
+stall for roughly its old 20-second continuous endpoint. The web translation
+scheduler remains latest-text responsive under slow-request simulation; the ASR
+adapter now independently enforces the documented four-second Nemotron boundary
+and records live-request timing without caption text. A 20.4-second installed-
+model Spanish probe completed at 0.26 real-time factor with 30 partial updates;
+German media and simultaneous ASR/translator contention remain native checks.
 
 Routine development now uses [`docs/testing/WINDOWS_SMOKE_TEST.md`](docs/testing/WINDOWS_SMOKE_TEST.md). Interrupted-download recovery, formal latency measurement, screenshots, OBS parity, and sustained-resource evidence are intentionally deferred to milestone hardening or release boundaries rather than imposed on every pre-release build.
 
@@ -271,8 +287,8 @@ The experimental direction is now represented by an integrated first slice:
   text through the existing local translation service;
 - render original and translated labels above or below their source regions in
   a separate click-through overlay; and
-- request capture exclusion for Prollyglot's own windows to prevent an OCR
-  feedback loop.
+- request capture exclusion for the audio and visual overlays to prevent an OCR
+  feedback loop while keeping controls and the selector screenshotable.
 
 The documented DXGI Desktop Duplication backend and equivalent OBS Display
 Capture remain compatibility comparisons, not implemented claims. A

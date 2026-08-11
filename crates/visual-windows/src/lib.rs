@@ -50,12 +50,15 @@ pub struct VisualSourceSnapshot {
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum VisualCaptureSelection {
     ApplicationWindow {
+        #[serde(rename = "sourceId")]
         source_id: String,
     },
     Display {
+        #[serde(rename = "sourceId")]
         source_id: String,
     },
     Region {
+        #[serde(rename = "displayId")]
         display_id: String,
         region: PixelRect,
     },
@@ -155,10 +158,12 @@ pub fn start_capture(
     Err(VisualCaptureError::UnsupportedPlatform)
 }
 
-#[cfg(all(test, not(target_os = "windows")))]
+#[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn non_windows_capability_is_explicit() {
         let snapshot = capabilities();
@@ -167,5 +172,77 @@ mod tests {
             source_snapshot(),
             Err(VisualCaptureError::UnsupportedPlatform)
         ));
+    }
+
+    #[test]
+    fn accepts_the_webview_selection_contract_for_every_source_kind() {
+        let application: VisualCaptureSelection = serde_json::from_value(json!({
+            "kind": "applicationWindow",
+            "sourceId": "window:42"
+        }))
+        .expect("application selection");
+        let display: VisualCaptureSelection = serde_json::from_value(json!({
+            "kind": "display",
+            "sourceId": "display:7"
+        }))
+        .expect("display selection");
+        let region: VisualCaptureSelection = serde_json::from_value(json!({
+            "kind": "region",
+            "displayId": "display:7",
+            "region": { "x": 12, "y": 34, "width": 640, "height": 360 }
+        }))
+        .expect("region selection");
+
+        assert_eq!(
+            application,
+            VisualCaptureSelection::ApplicationWindow {
+                source_id: "window:42".into()
+            }
+        );
+        assert_eq!(
+            display,
+            VisualCaptureSelection::Display {
+                source_id: "display:7".into()
+            }
+        );
+        assert_eq!(
+            region,
+            VisualCaptureSelection::Region {
+                display_id: "display:7".into(),
+                region: PixelRect {
+                    x: 12,
+                    y: 34,
+                    width: 640,
+                    height: 360,
+                }
+            }
+        );
+    }
+
+    #[test]
+    fn publishes_selection_fields_in_camel_case() {
+        let application = serde_json::to_value(VisualCaptureSelection::ApplicationWindow {
+            source_id: "window:11".into(),
+        })
+        .expect("serialize application selection");
+        let display = serde_json::to_value(VisualCaptureSelection::Display {
+            source_id: "display:9".into(),
+        })
+        .expect("serialize display selection");
+        let region = serde_json::to_value(VisualCaptureSelection::Region {
+            display_id: "display:9".into(),
+            region: PixelRect::full(1_920, 1_080),
+        })
+        .expect("serialize region selection");
+
+        assert_eq!(application["kind"], "applicationWindow");
+        assert_eq!(application["sourceId"], "window:11");
+        assert!(application.get("source_id").is_none());
+        assert_eq!(display["kind"], "display");
+        assert_eq!(display["sourceId"], "display:9");
+        assert!(display.get("source_id").is_none());
+        assert_eq!(region["kind"], "region");
+        assert_eq!(region["displayId"], "display:9");
+        assert!(region.get("display_id").is_none());
     }
 }

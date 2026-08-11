@@ -12,6 +12,9 @@ prollyglot-visual-pipeline = { path = "../visual-pipeline" }
 serde.workspace = true
 thiserror.workspace = true
 
+[dev-dependencies]
+serde_json.workspace = true
+
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { workspace = true, features = [
     "Graphics_Capture",

@@ -336,6 +336,7 @@ export class CaptionOutputController {
     const targetLanguage = this.targetLanguage;
     this.liveRequest = { key: requestKey, utteranceKey: requestUtteranceKey };
     this.lastLiveStartedAtMs = Date.now();
+    const startedAtMs = this.lastLiveStartedAtMs;
     this.publish();
     try {
       const text = await this.service.translate(
@@ -361,6 +362,12 @@ export class CaptionOutputController {
       this.reportDiagnostic(`Live translation attempt stopped: ${message}`);
     } finally {
       if (this.liveRequest?.key === requestKey) this.liveRequest = undefined;
+      this.reportTranslationTiming(
+        sourceLanguage,
+        targetLanguage,
+        0,
+        Date.now() - startedAtMs
+      );
       const current = this.transcript.provisional;
       if (
         current

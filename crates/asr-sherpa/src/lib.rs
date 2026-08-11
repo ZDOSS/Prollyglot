@@ -15,6 +15,7 @@ const ENDPOINT_RULE_1_TRAILING_SILENCE_SECONDS: f32 = 2.4;
 const ENDPOINT_RULE_2_TRAILING_SILENCE_SECONDS: f32 = 1.2;
 const ENDPOINT_RULE_3_UTTERANCE_SECONDS: f32 = 20.0;
 const NEMOTRON_ENDPOINT_RULE_3_UTTERANCE_SECONDS: f32 = 4.0;
+const NEMOTRON_MAX_UTTERANCE_MICROS: u64 = 4_000_000;
 const STREAM_PREROLL_MILLIS: u32 = 800;
 const NEMOTRON_LEFT_PADDING_MILLIS: u32 = 500;
 const NEMOTRON_RIGHT_PADDING_MILLIS: u32 = 800;
@@ -118,9 +119,9 @@ impl SpeechEngine for SherpaOnlineEngine {
         // Preserve sherpa-onnx's documented endpoint profile explicitly.
         config.rule1_min_trailing_silence = ENDPOINT_RULE_1_TRAILING_SILENCE_SECONDS;
         config.rule2_min_trailing_silence = ENDPOINT_RULE_2_TRAILING_SILENCE_SECONDS;
-        // Translation intentionally waits for finalized source text. Bound a
-        // continuous multilingual utterance more tightly so news and other
-        // pause-light media cannot postpone translation for twenty seconds.
+        // Bound continuous multilingual phrases so live and finalized
+        // translation requests stay readable and do not grow for twenty
+        // seconds during pause-light news or other media.
         config.rule3_min_utterance_length = match model_kind {
             LoadedModelKind::Nemotron => NEMOTRON_ENDPOINT_RULE_3_UTTERANCE_SECONDS,
             LoadedModelKind::Transducer => ENDPOINT_RULE_3_UTTERANCE_SECONDS,
@@ -247,6 +248,7 @@ impl SpeechStream for SherpaOnlineStream {
 
         let mut events = Vec::new();
         let text = self.current_text();
+        let has_hypothesis = !text.is_empty() || !self.last_partial.is_empty();
         if !text.is_empty() && text != self.last_partial {
             self.last_partial.clone_from(&text);
             events.push(SpeechEvent::Partial(self.hypothesis(text)));
@@ -259,6 +261,23 @@ impl SpeechStream for SherpaOnlineStream {
             configure_stream_language(&self.stream, self.model_kind, &self.language);
             self.advance_utterance();
             self.prime_stream();
+        } else if nemotron_boundary_reached(
+            self.model_kind,
+            self.utterance_start_micros,
+            self.latest_audio_micros,
+            has_hypothesis,
+        ) {
+            // Some Nemotron streams do not surface sherpa-onnx's rule-three
+            // endpoint promptly during continuous media speech. Enforce the
+            // same four-second ceiling in the adapter so partial text keeps
+            // reaching translation in bounded, readable phrases.
+            self.flush_padding();
+            self.stream.input_finished();
+            self.decode_ready();
+            if let Some(event) = self.final_event() {
+                events.push(event);
+            }
+            self.start_next_stream();
         }
         Ok(events)
     }
@@ -287,6 +306,19 @@ impl SpeechStream for SherpaOnlineStream {
         self.finished = true;
         Ok(events)
     }
+}
+
+fn nemotron_boundary_reached(
+    model_kind: LoadedModelKind,
+    utterance_start_micros: Option<u64>,
+    latest_audio_micros: u64,
+    has_hypothesis: bool,
+) -> bool {
+    model_kind == LoadedModelKind::Nemotron
+        && has_hypothesis
+        && utterance_start_micros.is_some_and(|start| {
+            latest_audio_micros.saturating_sub(start) >= NEMOTRON_MAX_UTTERANCE_MICROS
+        })
 }
 
 impl SherpaOnlineStream {
@@ -413,6 +445,34 @@ mod tests {
     use sherpa_onnx::Wave;
 
     use super::*;
+
+    #[test]
+    fn enforces_a_bounded_nemotron_utterance_only_after_text_appears() {
+        assert!(!nemotron_boundary_reached(
+            LoadedModelKind::Nemotron,
+            Some(1_000_000),
+            4_999_999,
+            true,
+        ));
+        assert!(nemotron_boundary_reached(
+            LoadedModelKind::Nemotron,
+            Some(1_000_000),
+            5_000_000,
+            true,
+        ));
+        assert!(!nemotron_boundary_reached(
+            LoadedModelKind::Nemotron,
+            Some(1_000_000),
+            8_000_000,
+            false,
+        ));
+        assert!(!nemotron_boundary_reached(
+            LoadedModelKind::Transducer,
+            Some(1_000_000),
+            8_000_000,
+            true,
+        ));
+    }
 
     #[test]
     fn requires_a_loaded_model_before_streaming() {

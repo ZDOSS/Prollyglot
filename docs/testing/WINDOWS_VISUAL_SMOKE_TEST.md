@@ -47,9 +47,12 @@ are explicit; installing the OCR pack does not install every translator.
 
 If application-window capture is blank, stop and retry once with **Whole
 display**. If only part of the screen matters, choose **Selected region**, draw a
-box at least 80 × 60 pixels around it, and start again. The current slice uses
+box at least 80 × 60 pixels around it, and start again. The selector should be
+translucent enough to see the target underneath it. The current slice uses
 Windows Graphics Capture for all three choices; the planned DXGI display
-fallback is not implemented yet.
+fallback is not implemented yet. Ordinary screenshots should include the
+control and selector windows; only the caption overlays intentionally opt out of
+Windows capture to prevent an OCR feedback loop.
 
 Audio captions and screen translation intentionally do not run together in this
 slice. Starting screen translation while captions are live should explicitly

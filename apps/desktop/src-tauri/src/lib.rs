@@ -910,13 +910,7 @@ pub fn run() {
             let runtime = app.state::<RuntimeState>();
             models::initialize(app.handle(), &runtime.model);
             visual::initialize(app.handle(), &runtime.visual);
-            for label in [
-                "main",
-                "appearance",
-                "overlay",
-                "visual-overlay",
-                "region-selector",
-            ] {
+            for label in ["overlay", "visual-overlay"] {
                 if let Some(window) = app.get_webview_window(label) {
                     visual::exclude_window_from_capture(&window);
                 }

@@ -293,7 +293,6 @@ pub fn show_visual_region_selector(
     selector
         .set_size(PhysicalSize::new(display.width, display.height))
         .map_err(|error| error.to_string())?;
-    exclude_window_from_capture(&selector);
     selector.show().map_err(|error| error.to_string())?;
     selector.set_focus().map_err(|error| error.to_string())?;
     Ok(VisualRegionSelectorRequest {

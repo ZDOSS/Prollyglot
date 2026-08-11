@@ -65,23 +65,23 @@ body {
 
 .region-selector-document,
 .region-selector-body,
-#region-selector-app,
-.region-selector {
+#region-selector-app {
   width: 100%;
   height: 100%;
   margin: 0;
   overflow: hidden;
-}
-
-.region-selector-body {
   background: transparent;
 }
 
 .region-selector {
   position: relative;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
   box-sizing: border-box;
   cursor: crosshair;
-  background: rgba(2, 8, 12, 0.48);
+  background: rgba(2, 8, 12, 0.18);
   box-shadow: inset 0 0 0 2px rgba(127, 237, 204, 0.72);
   user-select: none;
 }
@@ -114,9 +114,9 @@ body {
   position: absolute;
   z-index: 2;
   box-sizing: border-box;
-  background: rgba(22, 223, 165, 0.08);
+  background: rgba(22, 223, 165, 0.04);
   border: 2px solid #7fedcc;
-  box-shadow: 0 0 0 9999px rgba(2, 8, 12, 0.22), 0 0 20px rgba(22, 223, 165, 0.24);
+  box-shadow: 0 0 0 9999px rgba(2, 8, 12, 0.18), 0 0 20px rgba(22, 223, 165, 0.24);
   pointer-events: none;
 }
 

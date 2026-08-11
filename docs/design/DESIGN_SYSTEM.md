@@ -103,7 +103,7 @@ App chrome uses the Windows system UI font. Caption font is user-selectable late
 - Opens from a separate secondary action; it does not add capture/OCR controls to the audio Start/Stop path.
 - Uses the same open field flow as the main window: source type, explicit source, text language, target language, required local models, then one Start/Stop action.
 - Required OCR and translation packs appear as compact readiness rows with one explicit Download/Repair action each. The full catalog remains in Settings.
-- Application window, whole display, and selected region are mutually exclusive source choices. Region selection uses a full-screen dimmed drag surface with visible dimensions, Escape, and Cancel.
+- Application window, whole display, and selected region are mutually exclusive source choices. Region selection uses a full-screen transparent drag surface with a light scrim, visible dimensions, Escape, and Cancel, so the target remains easy to see.
 - Active state replaces setup with the selected source, privacy-safe frame/label counters, recovery text, and one Stop action.
 - Audio captions and screen translation cannot be active simultaneously in the experimental slice; the switching action names both effects before it runs.
 
@@ -113,7 +113,7 @@ App chrome uses the Windows system UI font. Caption font is user-selectable late
 - Each recognized source region owns one stable original/translation pair; partial updates must not displace another region's translation.
 - Original text is smaller and neutral; translated text uses the configured translation color and appears above the source when possible, otherwise below it.
 - Labels wrap and clamp to the captured bounds. They must not use ellipses that hide either language.
-- Prollyglot windows request exclusion from display capture to prevent an OCR feedback loop.
+- The audio and visual overlays request exclusion from display capture to prevent an OCR feedback loop. Control, appearance, and selector windows remain available to ordinary screenshots.
 
 ## Component families
 
