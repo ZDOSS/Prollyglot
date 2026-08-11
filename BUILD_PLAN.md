@@ -127,6 +127,23 @@ rendered interaction, and Windows cross-target checks pass; the same Spanish
 title/subtitle case still requires native owner re-testing before the correction
 is accepted.
 
+The follow-up moving-media run found two remaining live-path defects. Capture
+status arrived frequently enough to rebuild the active Screen translation page
+between pointer-down and pointer-up, so a physical Stop click often lost its
+button before the click event could fire. A recognition pass also took roughly
+six seconds in the owner's normal `tauri dev` loop because Rust image conversion
+and OCR post-processing were still running at development profile optimization,
+then published that old result over a newer scene. Status-only updates now patch
+the four counters without replacing the Stop node, Stop cooperatively terminates
+the active ONNX run, and capture status is throttled to two updates per second.
+The worker drains to the newest frame before each pass and rejects results over
+1.5 seconds old when the watched source changed, while retaining a slow result
+for text that is still static. Targeted development-profile optimization covers
+only the CPU-heavy visual OCR path so `tauri dev` remains a useful performance
+loop without making ordinary UI crates expensive to rebuild. Local model,
+pipeline, TypeScript, rendered one-click Stop, and Windows cross-target checks
+pass; the same moving Spanish clip remains the native acceptance check.
+
 The first native-Windows start attempt exposed one shared interop defect rather
 than three source-specific failures: the TypeScript selection union sent
 `sourceId` and `displayId`, while the Rust tagged enum still required snake-case

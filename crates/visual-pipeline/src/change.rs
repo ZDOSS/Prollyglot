@@ -80,26 +80,13 @@ impl FrameGate {
             self.awaiting_confirmation = true;
             return FrameGateDecision::FirstFrame;
         }
-        let total_difference = self
-            .accepted_fingerprint
-            .iter()
-            .zip(&next)
-            .map(|(previous, current)| previous.abs_diff(*current) as f32)
-            .sum::<f32>();
-        let changed_samples = self
-            .accepted_fingerprint
-            .iter()
-            .zip(&next)
-            .filter(|(previous, current)| {
-                previous.abs_diff(**current) >= self.config.sample_delta_threshold
-            })
-            .count();
-        let mean_difference = total_difference / (next.len() as f32 * 255.0);
-        let changed_ratio = changed_samples as f32 / next.len() as f32;
+        let (mean_difference, changed_ratio) = change_metrics(
+            &self.accepted_fingerprint,
+            &next,
+            self.config.sample_delta_threshold,
+        );
         let score = mean_difference.max(changed_ratio);
-        if mean_difference >= self.config.change_threshold
-            || changed_ratio >= self.config.changed_sample_ratio
-        {
+        if self.is_changed(mean_difference, changed_ratio) {
             self.accepted_fingerprint = next;
             self.awaiting_confirmation = true;
             FrameGateDecision::Changed { score }
@@ -110,6 +97,41 @@ impl FrameGate {
             FrameGateDecision::Unchanged { score }
         }
     }
+
+    pub fn is_meaningfully_different(&self, frame: &VisualFrame) -> bool {
+        let next = fingerprint(frame, self.config.sample_columns, self.config.sample_rows);
+        if self.accepted_fingerprint.is_empty() || self.accepted_fingerprint.len() != next.len() {
+            return true;
+        }
+        let (mean_difference, changed_ratio) = change_metrics(
+            &self.accepted_fingerprint,
+            &next,
+            self.config.sample_delta_threshold,
+        );
+        self.is_changed(mean_difference, changed_ratio)
+    }
+
+    fn is_changed(&self, mean_difference: f32, changed_ratio: f32) -> bool {
+        mean_difference >= self.config.change_threshold
+            || changed_ratio >= self.config.changed_sample_ratio
+    }
+}
+
+fn change_metrics(previous: &[u8], next: &[u8], sample_delta_threshold: u8) -> (f32, f32) {
+    let total_difference = previous
+        .iter()
+        .zip(next)
+        .map(|(previous, current)| previous.abs_diff(*current) as f32)
+        .sum::<f32>();
+    let changed_samples = previous
+        .iter()
+        .zip(next)
+        .filter(|(previous, current)| previous.abs_diff(**current) >= sample_delta_threshold)
+        .count();
+    (
+        total_difference / (next.len().max(1) as f32 * 255.0),
+        changed_samples as f32 / next.len().max(1) as f32,
+    )
 }
 
 fn fingerprint(frame: &VisualFrame, requested_columns: u16, requested_rows: u16) -> Vec<u8> {
@@ -208,6 +230,18 @@ mod tests {
         assert!(matches!(
             gate.evaluate(&frame(2, 300_000, changed)),
             FrameGateDecision::Changed { .. }
+        ));
+    }
+
+    #[test]
+    fn compares_a_newer_frame_without_advancing_the_gate() {
+        let mut gate = FrameGate::new(FrameGateConfig::default());
+        gate.evaluate(&solid(1, 0, 20));
+        assert!(!gate.is_meaningfully_different(&solid(2, 300_000, 22)));
+        assert!(gate.is_meaningfully_different(&solid(3, 600_000, 180)));
+        assert!(matches!(
+            gate.evaluate(&solid(4, 900_000, 22)),
+            FrameGateDecision::Confirmation { .. }
         ));
     }
 }

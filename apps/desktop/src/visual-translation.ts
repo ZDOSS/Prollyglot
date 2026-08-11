@@ -77,11 +77,19 @@ export class VisualTranslationController {
   }
 
   clear(): void {
+    this.reset(false);
+  }
+
+  rescan(): void {
+    this.reset(true);
+  }
+
+  private reset(scanning: boolean): void {
     this.generation += 1;
     this.cancelRemovalTimers();
     this.regions.clear();
     this.queue = [];
-    this.scanning = false;
+    this.scanning = scanning;
     void this.render();
   }
 

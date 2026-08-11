@@ -79,6 +79,15 @@ impl<E: OcrEngine> VisualPipeline<E> {
             stats: self.stats,
         })
     }
+
+    pub fn source_changed_since_last_analysis(&self, frame: &VisualFrame) -> bool {
+        self.gate.is_meaningfully_different(frame)
+    }
+
+    pub fn reset_text_tracks(&mut self) {
+        self.stabilizer.reset();
+        self.stats.stable_regions = 0;
+    }
 }
 
 #[cfg(test)]

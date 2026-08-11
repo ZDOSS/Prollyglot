@@ -15,6 +15,9 @@ git pull --ff-only origin main
 pnpm --dir apps/desktop tauri dev
 ```
 
+The first launch after this update may rebuild the optimized visual-OCR crates
+once. That one-time compile is separate from the app's capture-to-result speed.
+
 ## 2. Install only the route you will test
 
 1. Open **Models** from the desktop sidebar (or compact bottom navigation).
@@ -46,11 +49,15 @@ installing the OCR pack does not install every translator.
    The overlay should not repeatedly recognize its own labels or fill the screen
    with unrelated interface text.
 5. Change scenes or move the selected window. Confirm current labels follow the
-   source rather than creating an ever-growing queue. Newly disappeared text may
-   remain readable for up to eight seconds; text that was already visible for
-   twelve seconds or longer should clear as soon as its absence is recognized.
-6. Choose **Stop Screen Translation**. The app should return to setup
-   immediately and remain responsive even if recognition was in progress.
+   source rather than creating an ever-growing queue. A recognition result that
+   is already more than 1.5 seconds behind a changed scene should be discarded;
+   the scanning indicator may return while the newest frame is processed. Newly
+   disappeared text may remain readable for up to eight seconds; text that was
+   already visible for twelve seconds or longer should clear as soon as its
+   absence is recognized.
+6. Choose **Stop Screen Translation once**. The overlay should clear at once,
+   the button should enter **Stopping…**, and the app should return to setup
+   without another click even if recognition was in progress.
 
 If application-window capture is blank, stop and retry once with **Whole
 display**. If only part of the screen matters, choose **Selected region**, draw a

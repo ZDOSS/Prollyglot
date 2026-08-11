@@ -4,15 +4,22 @@
 //! confidence, and capture-space geometry. It never writes source frames to
 //! disk and never includes pixels in an error or diagnostic value.
 
-use std::path::Path;
+use std::{
+    path::Path,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 use image::RgbImage;
 use prollyglot_visual_pipeline::{
     OcrEngine, OcrError, OcrObservation, PixelFormat, VisualFrame, VisualRect,
 };
 use rapidocr_core::{
-    RapidOcr,
+    OcrCancellationToken, RapidOcr,
     config::{LimitType, PipelineConfig, RapidOcrConfig},
+    is_cancelled_error,
     types::Quad,
 };
 
@@ -23,6 +30,57 @@ pub struct RapidOcrEngine {
     runner: RapidOcr,
     language_hint: String,
     profile: RecognitionProfile,
+    cancellation: RapidOcrCancellation,
+}
+
+#[derive(Clone, Default)]
+pub struct RapidOcrCancellation {
+    state: Arc<RapidOcrCancellationState>,
+}
+
+#[derive(Default)]
+struct RapidOcrCancellationState {
+    shutdown_requested: AtomicBool,
+    active: Mutex<Option<OcrCancellationToken>>,
+}
+
+impl RapidOcrCancellation {
+    pub fn cancel(&self) {
+        self.state.shutdown_requested.store(true, Ordering::Release);
+        let active = self
+            .state
+            .active
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        if let Some(active) = active {
+            active.cancel();
+        }
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.state.shutdown_requested.load(Ordering::Acquire)
+    }
+
+    fn begin(&self, token: OcrCancellationToken) {
+        let mut active = self
+            .state
+            .active
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if self.is_cancelled() {
+            token.cancel();
+        }
+        *active = Some(token);
+    }
+
+    fn finish(&self) {
+        self.state
+            .active
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take();
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -67,16 +125,43 @@ impl RapidOcrEngine {
             runner,
             language_hint: language_hint.into(),
             profile,
+            cancellation: RapidOcrCancellation::default(),
         })
+    }
+
+    pub fn cancellation(&self) -> RapidOcrCancellation {
+        self.cancellation.clone()
     }
 }
 
 impl OcrEngine for RapidOcrEngine {
     fn recognize(&mut self, frame: &VisualFrame) -> Result<Vec<OcrObservation>, OcrError> {
-        let image = frame_to_rgb(frame)?;
-        let output = self.runner.run_image(&image).map_err(|error| {
-            OcrError::Inference(format!("PP-OCRv6 inference failed: {error:#}"))
-        })?;
+        let cancellation = OcrCancellationToken::new();
+        self.cancellation.begin(cancellation.clone());
+        let result = self.recognize_cancellable(frame, &cancellation);
+        self.cancellation.finish();
+        result
+    }
+}
+
+impl RapidOcrEngine {
+    fn recognize_cancellable(
+        &mut self,
+        frame: &VisualFrame,
+        cancellation: &OcrCancellationToken,
+    ) -> Result<Vec<OcrObservation>, OcrError> {
+        cancellation.checkpoint().map_err(|_| OcrError::Cancelled)?;
+        let image = frame_to_rgb_cancellable(frame, cancellation)?;
+        let output = self
+            .runner
+            .run_image_cancellable(&image, cancellation)
+            .map_err(|error| {
+                if is_cancelled_error(&error) || cancellation.is_cancelled() {
+                    OcrError::Cancelled
+                } else {
+                    OcrError::Inference(format!("PP-OCRv6 inference failed: {error:#}"))
+                }
+            })?;
         let observations = output
             .lines
             .into_iter()
@@ -443,7 +528,15 @@ fn dominant_script(text: &str) -> Option<&'static str> {
         .map(|(_, label)| label)
 }
 
+#[cfg(test)]
 fn frame_to_rgb(frame: &VisualFrame) -> Result<RgbImage, OcrError> {
+    frame_to_rgb_cancellable(frame, &OcrCancellationToken::new())
+}
+
+fn frame_to_rgb_cancellable(
+    frame: &VisualFrame,
+    cancellation: &OcrCancellationToken,
+) -> Result<RgbImage, OcrError> {
     if frame.pixel_format != PixelFormat::Bgra8 {
         return Err(OcrError::Inference(
             "unsupported visual pixel format".into(),
@@ -461,6 +554,9 @@ fn frame_to_rgb(frame: &VisualFrame) -> Result<RgbImage, OcrError> {
         .ok_or_else(|| OcrError::Inference("visual image size overflowed".into()))?;
     let mut rgb = vec![0_u8; rgb_length];
     for row in 0..height {
+        if row.is_multiple_of(32) {
+            cancellation.checkpoint().map_err(|_| OcrError::Cancelled)?;
+        }
         let source_row = row * frame.stride;
         let target_row = row * width * 3;
         for column in 0..width {
@@ -509,6 +605,17 @@ mod tests {
         .expect("frame");
         let image = frame_to_rgb(&frame).expect("RGB image");
         assert_eq!(image.as_raw(), &[1, 2, 3, 10, 20, 30]);
+    }
+
+    #[test]
+    fn cancellation_is_terminal_for_the_live_ocr_session() {
+        let cancellation = RapidOcrCancellation::default();
+        cancellation.cancel();
+        let request = OcrCancellationToken::new();
+        cancellation.begin(request.clone());
+        assert!(cancellation.is_cancelled());
+        assert!(request.is_cancelled());
+        cancellation.finish();
     }
 
     #[test]

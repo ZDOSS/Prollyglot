@@ -32,6 +32,8 @@ impl OcrObservation {
 
 #[derive(Debug, Error)]
 pub enum OcrError {
+    #[error("OCR was cancelled")]
+    Cancelled,
     #[error("OCR is not available: {0}")]
     Unavailable(String),
     #[error("OCR model is not installed: {0}")]

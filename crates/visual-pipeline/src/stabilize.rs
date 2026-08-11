@@ -147,6 +147,10 @@ impl TextStabilizer {
             removed_track_ids,
         }
     }
+
+    pub fn reset(&mut self) {
+        self.tracks.clear();
+    }
 }
 
 fn update_track(
@@ -280,5 +284,19 @@ mod tests {
         let removed = stabilizer.update(4, Vec::new());
         assert_eq!(removed.removed_track_ids, vec![id]);
         assert!(removed.visible.is_empty());
+    }
+
+    #[test]
+    fn reset_drops_tracks_without_reusing_their_identifiers() {
+        let mut stabilizer = TextStabilizer::new(TextStabilizerConfig {
+            required_consecutive_frames: 1,
+            ..TextStabilizerConfig::default()
+        });
+        let first = stabilizer.update(1, vec![observation("hola", 100.0)]);
+        assert_eq!(first.visible[0].track_id, 1);
+        stabilizer.reset();
+        let second = stabilizer.update(2, vec![observation("adios", 100.0)]);
+        assert_eq!(second.visible.len(), 1);
+        assert_eq!(second.visible[0].track_id, 2);
     }
 }

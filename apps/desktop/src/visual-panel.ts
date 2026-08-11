@@ -147,6 +147,22 @@ export class VisualPanel {
     else this.renderSetup(container, state, actions);
   }
 
+  updateStatus(status: VisualStatus): void {
+    if (!this.state) return;
+    this.state = { ...this.state, status };
+    if (!this.container || !status.active) return;
+    const values: Record<string, number> = {
+      received: status.framesReceived,
+      analyzed: status.framesAnalyzed,
+      visible: status.visibleRegions,
+      replaced: status.replacedFrames
+    };
+    for (const [key, value] of Object.entries(values)) {
+      const output = this.container.querySelector<HTMLElement>(`[data-visual-stat="${key}"]`);
+      if (output) output.textContent = String(value);
+    }
+  }
+
   private rerender(): void {
     if (this.container && this.state && this.actions) {
       this.render(this.container, this.state, this.actions);
@@ -169,10 +185,10 @@ export class VisualPanel {
     hero.append(kicker, title, message);
 
     const stats = create("dl", "visual-stats");
-    this.appendStat(stats, "Live samples", String(state.status.framesReceived));
-    this.appendStat(stats, "OCR passes", String(state.status.framesAnalyzed));
-    this.appendStat(stats, "Visible labels", String(state.status.visibleRegions));
-    this.appendStat(stats, "Stale frames skipped", String(state.status.replacedFrames));
+    this.appendStat(stats, "Live samples", String(state.status.framesReceived), "received");
+    this.appendStat(stats, "OCR passes", String(state.status.framesAnalyzed), "analyzed");
+    this.appendStat(stats, "Visible labels", String(state.status.visibleRegions), "visible");
+    this.appendStat(stats, "Stale frames skipped", String(state.status.replacedFrames), "replaced");
     hero.append(stats);
 
     const stop = create("button", "primary-button stop visual-stop-button");
@@ -549,11 +565,17 @@ export class VisualPanel {
     return source;
   }
 
-  private appendStat(list: HTMLDListElement, label: string, value: string): void {
+  private appendStat(
+    list: HTMLDListElement,
+    label: string,
+    value: string,
+    key: string
+  ): void {
     const row = create("div");
     const term = create("dt");
     term.textContent = label;
     const detail = create("dd");
+    detail.dataset.visualStat = key;
     detail.textContent = value;
     row.append(term, detail);
     list.append(row);

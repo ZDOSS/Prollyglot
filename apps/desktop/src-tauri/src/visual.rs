@@ -13,7 +13,7 @@ use prollyglot_model_manager::{
     DEFAULT_VISUAL_OCR_MODEL_ID, DownloadProgress, ModelInstallState, ModelManager, ModelManifest,
     visual_ocr_manifest, visual_ocr_manifest_by_id,
 };
-use prollyglot_visual_ocr_rapid::{RapidOcrEngine, RecognitionProfile};
+use prollyglot_visual_ocr_rapid::{RapidOcrCancellation, RapidOcrEngine, RecognitionProfile};
 use prollyglot_visual_pipeline::{
     FrameGate, FrameGateConfig, OcrEngine, OcrError, OcrObservation, PixelRect, StabilizerUpdate,
     TextStabilizer, TextStabilizerConfig, VisualFrame, VisualPipeline, VisualPipelineStats,
@@ -32,6 +32,7 @@ const VISUAL_STATUS_EVENT: &str = "visual-status";
 const VISUAL_TEXT_EVENT: &str = "visual-text-update";
 const VISUAL_CLEAR_EVENT: &str = "visual-text-clear";
 const VISUAL_STATUS_INTERVAL: Duration = Duration::from_millis(500);
+const MAX_VISUAL_RESULT_AGE_MICROS: u64 = 1_500_000;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -154,10 +155,12 @@ struct ActiveVisualSession {
     capture: StartedVisualCapture,
     capture_events: Option<JoinHandle<()>>,
     processor: Option<JoinHandle<()>>,
+    ocr_cancellation: RapidOcrCancellation,
 }
 
 impl ActiveVisualSession {
     fn stop(&mut self) -> Result<(), String> {
+        self.ocr_cancellation.cancel();
         let capture_error = self.capture.stop().err().map(|error| error.to_string());
         let event_error = self
             .capture_events
@@ -561,6 +564,7 @@ pub async fn start_visual_translation(
         ?detection_mode,
         "visual OCR model ready"
     );
+    let ocr_cancellation = engine.cancellation();
 
     let capture = prollyglot_visual_windows::start_capture(selection.clone()).map_err(|error| {
         let message = error.to_string();
@@ -605,6 +609,7 @@ pub async fn start_visual_translation(
         capture,
         capture_events: Some(capture_events),
         processor: Some(processor),
+        ocr_cancellation,
     });
     publish_status(
         &app,
@@ -638,7 +643,7 @@ pub fn stop_visual_translation(
         VisualStatus {
             active: true,
             state: VisualState::Stopping,
-            message: Some("Stopping capture and finishing the current recognition pass…".into()),
+            message: Some("Cancelling recognition and stopping screen capture…".into()),
             ..previous
         },
     );
@@ -727,10 +732,25 @@ fn spawn_processor(
             let mut last_slow_pass_log = Instant::now()
                 .checked_sub(Duration::from_secs(5))
                 .unwrap_or_else(Instant::now);
-            while let Ok(frame) = frames.recv() {
+            let mut pending_frame = None;
+            loop {
+                let mut frame = match pending_frame.take() {
+                    Some(frame) => frame,
+                    None => match frames.recv() {
+                        Ok(frame) => frame,
+                        Err(_) => break,
+                    },
+                };
+                while let Ok(newer) = frames.try_recv() {
+                    frame = newer;
+                }
                 let pass_started = Instant::now();
-                let outcome = match pipeline.process(&frame) {
+                let mut outcome = match pipeline.process(&frame) {
                     Ok(outcome) => outcome,
+                    Err(OcrError::Cancelled) => {
+                        tracing::info!("visual OCR pass cancelled");
+                        break;
+                    }
                     Err(error) => {
                         let message = error.to_string();
                         tracing::error!(%error, "visual OCR inference failed");
@@ -739,6 +759,17 @@ fn spawn_processor(
                     }
                 };
                 let pass_elapsed = pass_started.elapsed();
+                let newest_frame = frames.try_recv().ok();
+                let result_age_micros = newest_frame.as_ref().map_or(0, |newest| {
+                    newest
+                        .captured_at_micros
+                        .saturating_sub(frame.captured_at_micros)
+                });
+                let stale_for_changed_source = outcome.update.is_some()
+                    && result_age_micros > MAX_VISUAL_RESULT_AGE_MICROS
+                    && newest_frame
+                        .as_ref()
+                        .is_some_and(|newest| pipeline.source_changed_since_last_analysis(newest));
                 if outcome.update.is_some()
                     && pass_elapsed >= Duration::from_millis(750)
                     && last_slow_pass_log.elapsed() >= Duration::from_secs(5)
@@ -752,19 +783,34 @@ fn spawn_processor(
                     );
                     last_slow_pass_log = Instant::now();
                 }
-                if let Some(update) = outcome.update {
-                    let payload = VisualTextUpdate {
-                        source: source.lock().clone(),
-                        update,
-                    };
-                    if let Err(error) = app.emit(VISUAL_TEXT_EVENT, payload) {
-                        tracing::warn!(%error, "could not emit visual text update");
+                if stale_for_changed_source || outcome.update.is_some() {
+                    let current_status = status.lock();
+                    if current_status.state != VisualState::Capturing || !current_status.active {
+                        break;
+                    }
+                    if stale_for_changed_source {
+                        pipeline.reset_text_tracks();
+                        outcome.stats.stable_regions = 0;
+                        let _ = app.emit(VISUAL_CLEAR_EVENT, ());
+                        tracing::warn!(
+                            result_age_ms = result_age_micros / 1_000,
+                            "discarded stale visual OCR output after the source changed"
+                        );
+                    } else if let Some(update) = outcome.update {
+                        let payload = VisualTextUpdate {
+                            source: source.lock().clone(),
+                            update,
+                        };
+                        if let Err(error) = app.emit(VISUAL_TEXT_EVENT, payload) {
+                            tracing::warn!(%error, "could not emit visual text update");
+                        }
                     }
                 }
                 if last_status_publish.elapsed() >= VISUAL_STATUS_INTERVAL {
                     publish_pipeline_stats(&app, &status, outcome.stats);
                     last_status_publish = Instant::now();
                 }
+                pending_frame = newest_frame;
             }
         })
         .map_err(|error| format!("Could not start the visual OCR worker: {error}"))
@@ -779,9 +825,19 @@ fn spawn_capture_events(
     thread::Builder::new()
         .name("visual-capture-events".into())
         .spawn(move || {
+            let mut last_status_publish = Instant::now()
+                .checked_sub(VISUAL_STATUS_INTERVAL)
+                .unwrap_or_else(Instant::now);
             while let Ok(event) = events.recv() {
                 match event {
                     VisualCaptureEvent::Started(next_source) => {
+                        let current_status = status.lock();
+                        if !matches!(
+                            current_status.state,
+                            VisualState::Starting | VisualState::Capturing
+                        ) {
+                            break;
+                        }
                         *source.lock() = next_source.clone();
                         if let Err(error) = configure_visual_overlay(&app, &next_source) {
                             tracing::warn!(%error, "could not configure visual overlay");
@@ -795,6 +851,13 @@ fn spawn_capture_events(
                         replaced_frames,
                         ..
                     } => {
+                        let mut current_status = status.lock();
+                        if !matches!(
+                            current_status.state,
+                            VisualState::Starting | VisualState::Capturing
+                        ) {
+                            break;
+                        }
                         let changed = {
                             let mut current = source.lock();
                             let changed = current.x != x
@@ -813,9 +876,16 @@ fn spawn_capture_events(
                                 tracing::warn!(%error, "could not follow visual source geometry");
                             }
                         }
-                        let mut next = status.lock().clone();
-                        next.replaced_frames = replaced_frames;
-                        publish_status(&app, &status, next);
+                        if current_status.active
+                            && (changed
+                                || last_status_publish.elapsed() >= VISUAL_STATUS_INTERVAL)
+                        {
+                            current_status.replaced_frames = replaced_frames;
+                            let next = current_status.clone();
+                            drop(current_status);
+                            emit_status(&app, next);
+                            last_status_publish = Instant::now();
+                        }
                     }
                     VisualCaptureEvent::SourceClosed => {
                         let message = "The selected visual source closed. Stop visual translation or choose another source.".to_owned();
@@ -840,12 +910,18 @@ fn publish_pipeline_stats(
     status: &Arc<Mutex<VisualStatus>>,
     stats: VisualPipelineStats,
 ) {
-    let mut next = status.lock().clone();
-    next.frames_received = stats.frames_received;
-    next.frames_analyzed = stats.frames_analyzed;
-    next.frames_unchanged = stats.frames_unchanged;
-    next.visible_regions = stats.stable_regions;
-    publish_status(app, status, next);
+    let next = {
+        let mut current = status.lock();
+        if current.state != VisualState::Capturing || !current.active {
+            return;
+        }
+        current.frames_received = stats.frames_received;
+        current.frames_analyzed = stats.frames_analyzed;
+        current.frames_unchanged = stats.frames_unchanged;
+        current.visible_regions = stats.stable_regions;
+        current.clone()
+    };
+    emit_status(app, next);
 }
 
 fn configure_visual_overlay(app: &AppHandle, source: &PickedVisualSource) -> Result<(), String> {
@@ -1052,6 +1128,10 @@ fn publish_model(app: &AppHandle, catalog: VisualModelCatalogStatus) {
 
 fn publish_status(app: &AppHandle, status: &Arc<Mutex<VisualStatus>>, next: VisualStatus) {
     *status.lock() = next.clone();
+    emit_status(app, next);
+}
+
+fn emit_status(app: &AppHandle, next: VisualStatus) {
     if let Err(error) = app.emit(VISUAL_STATUS_EVENT, next) {
         tracing::warn!(%error, "could not emit visual translation status");
     }

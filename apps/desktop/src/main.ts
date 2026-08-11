@@ -710,7 +710,9 @@ function renderHeaderStatus(): void {
 
 function renderVisualStatus(status: VisualStatus): void {
   const changed = currentVisualStatus.state !== status.state
-    || currentVisualStatus.active !== status.active;
+    || currentVisualStatus.active !== status.active
+    || currentVisualStatus.sourceLabel !== status.sourceLabel
+    || currentVisualStatus.message !== status.message;
   currentVisualStatus = status;
   visualToggle.textContent = status.active ? "View Screen Translation" : "Translate Screen…";
   visualToggle.dataset.active = String(status.active);
@@ -720,7 +722,10 @@ function renderVisualStatus(status: VisualStatus): void {
   renderModelStatus(currentModels);
   renderTranslationSetup();
   if (changed && dialog.open && dialog.dataset.panel === "models") renderSettingsPanel();
-  if (dialog.open && dialog.dataset.panel === "visual") renderVisualPanel();
+  if (dialog.open && dialog.dataset.panel === "visual") {
+    if (changed) renderVisualPanel();
+    else visualPanel.updateStatus(status);
+  }
 }
 
 function renderVisualModelStatus(catalog: VisualModelCatalogStatus): void {
@@ -1445,5 +1450,11 @@ void Promise.all([
   onVisualModelStatus(renderVisualModelStatus),
   onVisualStatus(renderVisualStatus),
   onVisualTextUpdate((update) => visualTranslation.update(update)),
-  onVisualTextClear(() => visualTranslation.clear())
+  onVisualTextClear(() => {
+    if (currentVisualStatus.active && currentVisualStatus.state === "capturing") {
+      visualTranslation.rescan();
+    } else {
+      visualTranslation.clear();
+    }
+  })
 ]);

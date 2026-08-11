@@ -1156,6 +1156,15 @@ limits detector candidates, and skips the direction classifier because desktop
 media text is expected to be upright. Nearby horizontally split or vertically
 stacked OCR lines are joined into one reading-order phrase before filtering and
 translation, so a sign containing three stacked title lines becomes one request.
+Before every recognition pass the worker drains the queue to its newest frame.
+If a completed pass is already more than 1.5 seconds behind and the live source
+has materially changed, its text is discarded instead of being placed over a
+later scene; an unchanged source may still use the result. Discarding an old
+result clears its text tracks, cancels pending translation for that generation,
+and returns the overlay to **Scanning for text…** while the newest frame is
+processed. The CPU-heavy image, ndarray, OCR post-processing, and visual-pipeline
+crates use optimized development profiles so the owner's normal `tauri dev`
+loop exercises representative OCR code rather than debug-speed pixel loops.
 
 **Prominent text** promotes its first high-confidence OCR pass, ranks regions by
 confidence, size, area, and proximity to the source center, and keeps at most six
@@ -1179,6 +1188,12 @@ required, and clamps to the captured bounds. The overlay shows one immediate
 absent, its translation remains readable for at most eight seconds. If the same
 text had already remained continuously visible for twelve seconds or longer, it
 is removed immediately when absent rather than receiving another grace period.
+Live status counters update their existing values in place instead of rebuilding
+the active control surface on every capture event. This keeps the Stop control
+stable between pointer-down and pointer-up. One Stop action hides and clears the
+overlay immediately, sends a cooperative termination request to an active ONNX
+Runtime recognition call, stops capture, and completes cleanup away from the
+command/UI thread.
 
 Prollyglot does not mark its app or overlays with
 `WDA_EXCLUDEFROMCAPTURE`. That affinity caused full-screen troubleshooting
