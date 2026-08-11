@@ -17,6 +17,9 @@ try {
         -p prollyglot-visual-windows `
         --all-targets
     pnpm --dir apps/desktop build
+    # This must perform a real MSVC link. `cargo check` and Clippy did not catch
+    # collisions between the native speech and OCR inference runtimes.
+    cargo build --locked -p prollyglot-desktop
     cargo clippy --locked --workspace --all-targets -- -D warnings
 }
 finally {

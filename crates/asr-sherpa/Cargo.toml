@@ -7,7 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [features]
-default = ["static-runtime"]
+default = ["shared-runtime"]
 static-runtime = ["sherpa-onnx/static"]
 shared-runtime = ["sherpa-onnx/shared"]
 
