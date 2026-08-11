@@ -44,7 +44,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     if !(3..=4).contains(&arguments.len()) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "usage: compare_models <model-cache-directory> <mono-wav> \"<reference text or ->\" [language: en|es|ja|auto]",
+            "usage: compare_models <model-cache-directory> <mono-wav> \"<reference text or ->\" [language code or auto]",
         )
         .into());
     }

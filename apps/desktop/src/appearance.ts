@@ -61,12 +61,12 @@ root.innerHTML = `
         </label>
 
         <label class="setting-row">
-          <span>English color</span>
-          <input id="translated-text-color" class="color-control" type="color" value="#86e3b0" aria-label="English translation color" />
+          <span>Translation color</span>
+          <input id="translated-text-color" class="color-control" type="color" value="#86e3b0" aria-label="Translated caption color" />
         </label>
 
         <label class="setting-row">
-          <span>Original + English layout</span>
+          <span>Bilingual layout</span>
           <span class="compact-select-wrap">
             <select id="bilingual-layout">
               <option value="stacked">Stacked</option>
@@ -74,7 +74,7 @@ root.innerHTML = `
             </select>${icons.chevronDown}
           </span>
         </label>
-        <p class="appearance-help">This controls the preview layout only. Turn translation on with <strong>Caption output → Original + English</strong> in the main window.</p>
+        <p class="appearance-help">This controls the preview layout only. Choose a target and turn on <strong>Original + translation</strong> in the main window.</p>
 
         <label class="range-setting">
           <span class="range-label"><span>Background opacity</span><output id="opacity-output">75%</output></span>
@@ -124,7 +124,7 @@ root.innerHTML = `
         </label>
       </section>
 
-      <section class="preview-canvas" aria-label="Original and English caption appearance preview">
+      <section class="preview-canvas" aria-label="Original and translated caption appearance preview">
         <div class="preview-desktop" id="preview-desktop">
           <div class="preview-caption" id="preview-caption">
             <span class="preview-caption-entry">

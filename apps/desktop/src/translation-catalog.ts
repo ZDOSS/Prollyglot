@@ -1,28 +1,44 @@
+import {
+  SPOKEN_LANGUAGES,
+  type TranslationLanguage
+} from "./language-catalog";
+
 export interface TranslationArtifact {
   path: string;
   size: number;
   sha256: string;
 }
 
+export type TranslationModelKind = "direct" | "toEnglish" | "manyToMany";
+
 export interface TranslationModelManifest {
-  sourceLanguage: "es" | "ja";
-  targetLanguage: "en";
+  kind: TranslationModelKind;
+  sourceLanguages: readonly TranslationLanguage[];
+  targetLanguages: readonly TranslationLanguage[];
   modelId: string;
   displayName: string;
   revision: string;
-  license: "Apache-2.0";
-  artifacts: TranslationArtifact[];
+  license: "Apache-2.0" | "MIT";
+  artifacts: readonly TranslationArtifact[];
   totalBytes: number;
 }
 
 export const TRANSLATION_CACHE_KEY = "prollyglot-translation-models-v1";
 
+const ALL_TRANSLATION_LANGUAGES = SPOKEN_LANGUAGES.map(
+  ({ code }) => code
+) as TranslationLanguage[];
+const NON_ENGLISH_LANGUAGES = ALL_TRANSLATION_LANGUAGES.filter(
+  (language) => language !== "en"
+);
+
 export const TRANSLATION_MODELS: readonly TranslationModelManifest[] = [
   {
-    sourceLanguage: "ja",
-    targetLanguage: "en",
+    kind: "direct",
+    sourceLanguages: ["ja"],
+    targetLanguages: ["en"],
     modelId: "Xenova/opus-mt-ja-en",
-    displayName: "Japanese to English",
+    displayName: "Japanese to English · Compact",
     revision: "1a906cfaaf7c8f4193f67f5885c082aa6dbd9d16",
     license: "Apache-2.0",
     totalBytes: 114_701_000,
@@ -60,10 +76,11 @@ export const TRANSLATION_MODELS: readonly TranslationModelManifest[] = [
     ]
   },
   {
-    sourceLanguage: "es",
-    targetLanguage: "en",
+    kind: "direct",
+    sourceLanguages: ["es"],
+    targetLanguages: ["en"],
     modelId: "Xenova/opus-mt-es-en",
-    displayName: "Spanish to English",
+    displayName: "Spanish to English · Compact",
     revision: "eadfd7c658a9d8929ac3b8e996b68a68e2c7d480",
     license: "Apache-2.0",
     totalBytes: 119_377_236,
@@ -99,11 +116,106 @@ export const TRANSLATION_MODELS: readonly TranslationModelManifest[] = [
         sha256: "e1fac15a910169d5b5ec07a13b0374273626a239b5142db10be229ca66cc52a9"
       }
     ]
+  },
+  {
+    kind: "toEnglish",
+    sourceLanguages: NON_ENGLISH_LANGUAGES,
+    targetLanguages: ["en"],
+    modelId: "Xenova/opus-mt-mul-en",
+    displayName: "Multilingual to English · Compact",
+    revision: "72a05e47cee89c718a9db4dc70d02fef3bc39de8",
+    license: "Apache-2.0",
+    totalBytes: 118_351_723,
+    artifacts: [
+      {
+        path: "config.json",
+        size: 1_390,
+        sha256: "115093532b9893a6e3ec64951db15bafbad200f34929304f9570c3cd7f1dff94"
+      },
+      {
+        path: "onnx/encoder_model_quantized.onnx",
+        size: 52_475_294,
+        sha256: "5ce609a524375dbdd9c66b62b82b41abc667799022667ce424f20c245bd56925"
+      },
+      {
+        path: "onnx/decoder_model_merged_quantized.onnx",
+        size: 59_785_040,
+        sha256: "6add167a0cd3f78aa298b8f927d2e8645e33cb17df11e92967f0c5b5703c8c4d"
+      },
+      {
+        path: "generation_config.json",
+        size: 293,
+        sha256: "66300b2138c7a98fe085d16b590ecbc01d64d46e9db240ee3dab4eadd3a3b1b9"
+      },
+      {
+        path: "tokenizer.json",
+        size: 6_089_424,
+        sha256: "7ae61d18c438de0cf069a5cd25edc0d9d899353d710bf0e774819f97201049b9"
+      },
+      {
+        path: "tokenizer_config.json",
+        size: 282,
+        sha256: "0e5fceb4caf753096870f0a74ec2a0a9825327cefd1cc06e0b8dc71e75257cf7"
+      }
+    ]
+  },
+  {
+    kind: "manyToMany",
+    sourceLanguages: ALL_TRANSLATION_LANGUAGES,
+    targetLanguages: ALL_TRANSLATION_LANGUAGES,
+    modelId: "Xenova/m2m100_418M",
+    displayName: "Universal 29-language translator",
+    revision: "9c374f0b7aca709787cea97b047bfbbd1559d177",
+    license: "MIT",
+    totalBytes: 639_976_029,
+    artifacts: [
+      {
+        path: "config.json",
+        size: 908,
+        sha256: "1dbdf77ddc7809acd4c54ccf0eab46f840b40174afb1b6f6de8787244e832938"
+      },
+      {
+        path: "onnx/encoder_model_quantized.onnx",
+        size: 287_856_370,
+        sha256: "13a94e354a9140764eb81102d77d3ec6952d796e6f113c651eeb3c3443da0386"
+      },
+      {
+        path: "onnx/decoder_model_merged_quantized.onnx",
+        size: 344_128_178,
+        sha256: "007654bcabb6cea6fd3bde34ce933137b431330b3755781145d7b6906270b45a"
+      },
+      {
+        path: "generation_config.json",
+        size: 233,
+        sha256: "722210dd0bee7bef4e8e7f9a8574d8c56a2dfff723d73f390ce67892740b9009"
+      },
+      {
+        path: "tokenizer.json",
+        size: 7_988_527,
+        sha256: "03d9e111731c2d71f39a2c2a88499743e4c251385d07f0384b4349a23ba54363"
+      },
+      {
+        path: "tokenizer_config.json",
+        size: 1_813,
+        sha256: "bacfd4b9da25a61e01f17abe660465f616c9a1a3f5e23ab9ad3326c3788f2d9f"
+      }
+    ]
   }
 ] as const;
 
-export function translationModel(sourceLanguage: string): TranslationModelManifest | undefined {
-  return TRANSLATION_MODELS.find((model) => model.sourceLanguage === sourceLanguage);
+export function translationModelById(modelId: string): TranslationModelManifest | undefined {
+  return TRANSLATION_MODELS.find((model) => model.modelId === modelId);
+}
+
+export function translationModelsForRoute(
+  sourceLanguage: TranslationLanguage,
+  targetLanguage: TranslationLanguage
+): TranslationModelManifest[] {
+  if (sourceLanguage === targetLanguage) return [];
+  return TRANSLATION_MODELS.filter((model) =>
+    model.sourceLanguages.includes(sourceLanguage)
+    && model.targetLanguages.includes(targetLanguage)
+  );
 }
 
 export function translationArtifactUrl(
@@ -118,7 +230,7 @@ export function translationValidationUrl(model: TranslationModelManifest): strin
 }
 
 /**
- * Transformers.js 4.2 probes the default branch before it applies the pinned
+ * Transformers.js probes the default branch before it applies the pinned
  * pipeline revision. Resolve those probes to the verified pinned artifact so
  * model discovery cannot read the network or drift to a newer revision.
  */

@@ -5,7 +5,7 @@ This record explains why Prollyglot exposes NVIDIA Nemotron 3.5 ASR Streaming 0.
 ## Integration profile
 
 - Model: `nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11`
-- Product language settings: English, Spanish, Japanese, and unconstrained automatic detection
+- Product language settings: 15 transcription-ready languages, 13 broad-coverage languages, and unconstrained automatic detection (28 unique forced-language choices)
 - Runtime: sherpa-onnx 1.13.4, two CPU inference threads
 - Model license: OpenMDW-1.1
 - Current acceleration: CPU only
@@ -38,8 +38,10 @@ The earlier pipeline used linear interpolation when converting common 44.1/48 kH
 - Expose Nemotron only through an explicit 650.6 MiB download.
 - Use the 560 ms checkpoint rather than the 1120 ms variant while caption delay is a known concern.
 - Let the owner compare Nemotron against Enhanced on actual Windows media and accents.
-- Treat Spanish as promising but unapproved, and Japanese plus automatic detection as experimental until representative Windows spot checks say otherwise.
+- Treat all catalog coverage as pre-release until representative Windows spot checks say otherwise; label NVIDIA's broad-coverage tier and automatic detection as the less certain paths.
 - This ASR comparison records original-language recognition only; translation quality is evaluated separately after Nemotron commits source text.
+
+The catalog now exposes the complete transcription-ready set—Arabic, Dutch, English, French, German, Hindi, Italian, Japanese, Korean, Portuguese, Russian, Spanish, Turkish, Ukrainian, and Vietnamese—and broad coverage for Bulgarian, Chinese, Croatian, Czech, Danish, Estonian, Finnish, Hungarian, Norwegian Bokmål, Polish, Romanian, Slovak, and Swedish. Bengali is exposed through a separate compact streaming model. The upstream adaptation-ready languages are not listed because they require fine-tuning rather than merely selecting a language code.
 
 ## Reproduce
 
@@ -53,4 +55,4 @@ cargo run --release --locked -p prollyglot-asr-sherpa --example compare_models -
   es
 ```
 
-The fourth argument may be `en`, `es`, `ja`, or `auto`. With `en`, the harness includes all compatible English-only and multilingual models. With `es`, `ja`, or `auto`, it runs Nemotron. Japanese references use character error rate; other supplied references use word error rate.
+The fourth argument may be any language code declared by an installed product manifest or `auto`. The harness includes every compatible catalog model, so languages with a dedicated compact model can be compared against Nemotron while the remaining forced languages run Nemotron. Japanese and other no-space scripts should use a suitable character-level reference metric; ordinary space-delimited references use word error rate.

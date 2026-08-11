@@ -432,9 +432,25 @@ fn product_metadata(model_id: &str) -> (&'static str, &'static str) {
             "Enhanced",
             "The broadest English option, trained on LibriSpeech and GigaSpeech for a better chance on varied speech.",
         ),
+        "sherpa-zipformer-zh-14m-2023-02-23" => (
+            "Chinese · Small",
+            "A low-footprint 14M streaming model for responsive Mandarin captions.",
+        ),
+        "sherpa-zipformer-fr-2023-04-14" => (
+            "French · Compact",
+            "A dedicated streaming French model with much lower resource use than Nemotron.",
+        ),
+        "sherpa-zipformer-ko-2024-06-16" => (
+            "Korean · Compact",
+            "A dedicated streaming Korean model with lower resource use than Nemotron.",
+        ),
+        "sherpa-zipformer-bn-vosk-2026-02-09" => (
+            "Bengali · Compact",
+            "A dedicated streaming Bengali model for local, lower-resource captions.",
+        ),
         NEMOTRON_MULTILINGUAL_MODEL_ID => (
             "Multilingual",
-            "A high-resource 600M-parameter CPU trial for English, Spanish, Japanese, or automatic detection. Expect about 1 GB of app memory; Japanese and automatic detection are experimental.",
+            "A high-resource 600M-parameter CPU model covering 28 languages plus automatic detection. Expect about 1 GB of app memory; broad-coverage languages and automatic detection may be less accurate.",
         ),
         _ => ("Speech", "Local streaming captions."),
     }

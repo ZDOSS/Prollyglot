@@ -130,7 +130,10 @@ Primary screen copy:
 - Speakers (Realtek(R) Audio)
 - Spoken language
 - English
-- Captions
+- Translate to
+- Off · original language
+- Caption output
+- Original language
 - Start Captions
 - Transcript
 - Appearance

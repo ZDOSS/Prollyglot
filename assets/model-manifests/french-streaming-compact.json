@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "id": "sherpa-zipformer-fr-2023-04-14",
+  "version": "3db9565d9633758d6b87b9a7b3dc09ebfb6b2c73",
+  "displayName": "French Streaming Compact",
+  "backend": "sherpa-onnx-online-transducer",
+  "languages": ["fr"],
+  "license": "Apache-2.0",
+  "provenance": {
+    "sourceUrl": "https://huggingface.co/shaojieli/sherpa-onnx-streaming-zipformer-fr-2023-04-14",
+    "revision": "3db9565d9633758d6b87b9a7b3dc09ebfb6b2c73"
+  },
+  "runtime": {
+    "name": "sherpa-onnx",
+    "version": "1.13.4",
+    "license": "Apache-2.0",
+    "sourceUrl": "https://github.com/k2-fsa/sherpa-onnx/tree/v1.13.4"
+  },
+  "approximateMemoryBytes": null,
+  "artifacts": [
+    {
+      "role": "encoder",
+      "path": "encoder-epoch-29-avg-9-with-averaged-model.int8.onnx",
+      "url": "https://huggingface.co/shaojieli/sherpa-onnx-streaming-zipformer-fr-2023-04-14/resolve/3db9565d9633758d6b87b9a7b3dc09ebfb6b2c73/encoder-epoch-29-avg-9-with-averaged-model.int8.onnx",
+      "sizeBytes": 126655903,
+      "sha256": "47a94a7fdc8dff63d708be4ea0535747640224467f91e238311f1ddbdd09327e"
+    },
+    {
+      "role": "decoder",
+      "path": "decoder-epoch-29-avg-9-with-averaged-model.onnx",
+      "url": "https://huggingface.co/shaojieli/sherpa-onnx-streaming-zipformer-fr-2023-04-14/resolve/3db9565d9633758d6b87b9a7b3dc09ebfb6b2c73/decoder-epoch-29-avg-9-with-averaged-model.onnx",
+      "sizeBytes": 2092272,
+      "sha256": "3ef2840b684440e26382af87b2174d25732a9f113f1965cd8abba7ffc5d033fb"
+    },
+    {
+      "role": "joiner",
+      "path": "joiner-epoch-29-avg-9-with-averaged-model.int8.onnx",
+      "url": "https://huggingface.co/shaojieli/sherpa-onnx-streaming-zipformer-fr-2023-04-14/resolve/3db9565d9633758d6b87b9a7b3dc09ebfb6b2c73/joiner-epoch-29-avg-9-with-averaged-model.int8.onnx",
+      "sizeBytes": 259572,
+      "sha256": "fc2f3bb851a15a532c6f2422d53eecd1ca949f12b0897e07a852021c30481711"
+    },
+    {
+      "role": "tokens",
+      "path": "tokens.txt",
+      "url": "https://huggingface.co/shaojieli/sherpa-onnx-streaming-zipformer-fr-2023-04-14/resolve/3db9565d9633758d6b87b9a7b3dc09ebfb6b2c73/tokens.txt",
+      "sizeBytes": 4819,
+      "sha256": "37fb3f2a7bcb85e5fff3f1f66be04e6fbb05077a22f56d177fe85704e945fb31"
+    }
+  ]
+}

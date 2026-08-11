@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "id": "sherpa-zipformer-bn-vosk-2026-02-09",
+  "version": "a7c3c1547450a7c546c876be9ca8a6ab54464423",
+  "displayName": "Bengali Streaming Compact",
+  "backend": "sherpa-onnx-online-transducer",
+  "languages": ["bn"],
+  "license": "Apache-2.0",
+  "provenance": {
+    "sourceUrl": "https://huggingface.co/csukuangfj2/sherpa-onnx-streaming-zipformer-bn-vosk-2026-02-09",
+    "revision": "a7c3c1547450a7c546c876be9ca8a6ab54464423"
+  },
+  "runtime": {
+    "name": "sherpa-onnx",
+    "version": "1.13.4",
+    "license": "Apache-2.0",
+    "sourceUrl": "https://github.com/k2-fsa/sherpa-onnx/tree/v1.13.4"
+  },
+  "approximateMemoryBytes": null,
+  "artifacts": [
+    {
+      "role": "encoder",
+      "path": "encoder.onnx",
+      "url": "https://huggingface.co/csukuangfj2/sherpa-onnx-streaming-zipformer-bn-vosk-2026-02-09/resolve/a7c3c1547450a7c546c876be9ca8a6ab54464423/encoder.onnx",
+      "sizeBytes": 90994145,
+      "sha256": "779f2412d6fa56f76be9fe71349cdf3edd10434ae9b1fc5e49834fb904320516"
+    },
+    {
+      "role": "decoder",
+      "path": "decoder.onnx",
+      "url": "https://huggingface.co/csukuangfj2/sherpa-onnx-streaming-zipformer-bn-vosk-2026-02-09/resolve/a7c3c1547450a7c546c876be9ca8a6ab54464423/decoder.onnx",
+      "sizeBytes": 2093080,
+      "sha256": "fc03e8ca154593b95748198a56de115d4e6048d97c41692f93dfefb05f3693b4"
+    },
+    {
+      "role": "joiner",
+      "path": "joiner.onnx",
+      "url": "https://huggingface.co/csukuangfj2/sherpa-onnx-streaming-zipformer-bn-vosk-2026-02-09/resolve/a7c3c1547450a7c546c876be9ca8a6ab54464423/joiner.onnx",
+      "sizeBytes": 1026462,
+      "sha256": "1df7319f4f9c36d7130cacaf629e1d52e904070e7a14bca9d4f209edeb162da6"
+    },
+    {
+      "role": "tokens",
+      "path": "tokens.txt",
+      "url": "https://huggingface.co/csukuangfj2/sherpa-onnx-streaming-zipformer-bn-vosk-2026-02-09/resolve/a7c3c1547450a7c546c876be9ca8a6ab54464423/tokens.txt",
+      "sizeBytes": 6252,
+      "sha256": "6f3a4d64d7da07e7dd7f3fd679e07607be3ec149d1b807726dbb8bbcc80a9fe1"
+    }
+  ]
+}

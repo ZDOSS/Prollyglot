@@ -41,11 +41,26 @@ This is an optional user-facing model. It streams through the same local runtime
 
 This is the broadest initial user-facing English option. The broader training data makes it a useful candidate for varied speech, but the product does not claim a universal accent or accuracy improvement without representative benchmark evidence.
 
+## Compact language-specific streaming models
+
+These optional transducer models use the same local sherpa-onnx streaming path as the English choices. They provide lower-download alternatives to Nemotron for four languages where suitable pinned online models are available. Their presence is an integration choice, not a claim that each is more accurate than Nemotron on real Windows media.
+
+| Language | Display name | Upstream model and pinned revision | Download | Manifest |
+| --- | --- | --- | ---: | --- |
+| Chinese | Chinese Streaming Small | [`csukuangfj/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23`](https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23/tree/204ad334e2e683fd295359930cc16fc0432a23ac) at `204ad334e2e683fd295359930cc16fc0432a23ac` | 30,975,688 bytes (29.5 MiB) | `assets/model-manifests/chinese-streaming-small.json` |
+| French | French Streaming Compact | [`shaojieli/sherpa-onnx-streaming-zipformer-fr-2023-04-14`](https://huggingface.co/shaojieli/sherpa-onnx-streaming-zipformer-fr-2023-04-14/tree/3db9565d9633758d6b87b9a7b3dc09ebfb6b2c73) at `3db9565d9633758d6b87b9a7b3dc09ebfb6b2c73` | 129,012,566 bytes (123.0 MiB) | `assets/model-manifests/french-streaming-compact.json` |
+| Korean | Korean Streaming Compact | [`k2-fsa/sherpa-onnx-streaming-zipformer-korean-2024-06-16`](https://huggingface.co/k2-fsa/sherpa-onnx-streaming-zipformer-korean-2024-06-16/tree/ba6078bca4daf3f0dd37f79d0ab505af71df14a6) at `ba6078bca4daf3f0dd37f79d0ab505af71df14a6` | 140,919,603 bytes (134.4 MiB) | `assets/model-manifests/korean-streaming-compact.json` |
+| Bengali | Bengali Streaming Compact | [`csukuangfj2/sherpa-onnx-streaming-zipformer-bn-vosk-2026-02-09`](https://huggingface.co/csukuangfj2/sherpa-onnx-streaming-zipformer-bn-vosk-2026-02-09/tree/a7c3c1547450a7c546c876be9ca8a6ab54464423) at `a7c3c1547450a7c546c876be9ca8a6ab54464423` | 94,119,939 bytes (89.8 MiB) | `assets/model-manifests/bengali-streaming-compact.json` |
+
+The Chinese and French conversion records declare Apache-2.0. The Korean conversion originates from the Apache-2.0 [`johnBamma/icefall-asr-ksponspeech-pruned-transducer-stateless7-streaming-2024-06-12`](https://huggingface.co/johnBamma/icefall-asr-ksponspeech-pruned-transducer-stateless7-streaming-2024-06-12) model. The Bengali conversion originates from the Apache-2.0 [`alphacep/vosk-model-small-streaming-bn`](https://huggingface.co/alphacep/vosk-model-small-streaming-bn) model. Each Prollyglot manifest records Apache-2.0 and pins the converted encoder, decoder, joiner, and token artifacts by byte size and SHA-256.
+
 ## Multilingual Nemotron trial
 
 - Display name: Nemotron 3.5 Streaming 0.6B
 - Architecture: NVIDIA Nemotron 3.5 ASR Streaming 0.6B, 560 ms latency checkpoint, INT8 sherpa-onnx conversion
-- Supported product language settings: English, Spanish, Japanese, and automatic detection
+- Transcription-ready product settings: Arabic, Dutch, English, French, German, Hindi, Italian, Japanese, Korean, Portuguese, Russian, Spanish, Turkish, Ukrainian, and Vietnamese
+- Broad-coverage product settings: Bulgarian, Chinese, Croatian, Czech, Danish, Estonian, Finnish, Hungarian, Norwegian Bokmål, Polish, Romanian, Slovak, and Swedish
+- Additional mode: automatic detection
 - Converted upstream model: `csukuangfj2/sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11`
 - Pinned revision: `ab43d895f5985b1bbab8b6eac8607fcdc05343f3`
 - Original model publisher: NVIDIA
@@ -56,7 +71,7 @@ This is the broadest initial user-facing English option. The broader training da
 - Original NVIDIA model card: <https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b>
 - License text and interpretation guide: <https://github.com/OpenMDW/openmdw>
 
-`0.6B` describes approximately 600 million parameters; it is not a download-size label. The pinned INT8 artifacts total 650.6 MiB. This model is an optional pre-release trial, is never bundled or downloaded automatically, and currently runs through the CPU sherpa-onnx path. Its presence in the catalog is not a production-quality claim for every listed language.
+`0.6B` describes approximately 600 million parameters; it is not a download-size label. The pinned INT8 artifacts total 650.6 MiB. This model is an optional pre-release trial, is never bundled or downloaded automatically, and currently runs through the CPU sherpa-onnx path. Prollyglot exposes NVIDIA's 15 transcription-ready languages and 13 broad-coverage languages, for 28 unique languages, but does not expose the model card's adaptation-ready languages because those require fine-tuning. Broad coverage and automatic detection are labeled as less certain, and catalog presence is not a production-quality claim.
 
 ## Runtime
 

@@ -10,13 +10,14 @@ import {
   TRANSLATION_CACHE_KEY,
   TRANSLATION_MODELS,
   translationArtifactUrl,
-  translationModel,
+  translationModelById,
+  translationModelsForRoute,
   translationValidationUrl,
   type TranslationArtifact,
   type TranslationModelManifest
 } from "./translation-catalog";
+import { m2m100LanguageCode, type TranslationLanguage } from "./language-catalog";
 import type {
-  TranslationSourceLanguage,
   TranslationWorkerRequest,
   TranslationWorkerResponse
 } from "./translation-protocol";
@@ -32,19 +33,21 @@ class IntegrityError extends Error {}
 const workerScope = self as unknown as DedicatedWorkerGlobalScope;
 const CACHE_ONLY_LOCAL_PATH = "/__prollyglot_translation_cache_only__/";
 const platformFetch = workerScope.fetch.bind(workerScope);
-const statuses = new Map<TranslationSourceLanguage, TranslationModelStatus>();
-const translators = new Map<TranslationSourceLanguage, Translator>();
+const statuses = new Map<string, TranslationModelStatus>();
+const translators = new Map<string, Translator>();
 let operationQueue = Promise.resolve();
 let lastProgressPublishedAt = 0;
 let cachePromise: Promise<TranslationCache> | undefined;
 
 for (const model of TRANSLATION_MODELS) {
-  statuses.set(model.sourceLanguage, {
+  statuses.set(model.modelId, {
     phase: "checking",
-    sourceLanguage: model.sourceLanguage,
-    targetLanguage: model.targetLanguage,
+    kind: model.kind,
+    sourceLanguages: [...model.sourceLanguages],
+    targetLanguages: [...model.targetLanguages],
     modelId: model.modelId,
     displayName: model.displayName,
+    license: model.license,
     downloadedBytes: 0,
     totalBytes: model.totalBytes,
     message: "Checking local model files…"
@@ -80,7 +83,7 @@ Object.assign(wasmBackend, {
 
 function catalogSnapshot(): TranslationCatalogStatus {
   return {
-    models: TRANSLATION_MODELS.map((model) => ({ ...requiredStatus(model.sourceLanguage) }))
+    models: TRANSLATION_MODELS.map((model) => ({ ...requiredStatus(model.modelId) }))
   };
 }
 
@@ -95,18 +98,18 @@ function post(message: TranslationWorkerResponse): void {
   workerScope.postMessage(message);
 }
 
-function requiredStatus(sourceLanguage: TranslationSourceLanguage): TranslationModelStatus {
-  const status = statuses.get(sourceLanguage);
-  if (!status) throw new Error(`No English translation model supports ${sourceLanguage}.`);
+function requiredStatus(modelId: string): TranslationModelStatus {
+  const status = statuses.get(modelId);
+  if (!status) throw new Error(`Unknown local translation model ${modelId}.`);
   return status;
 }
 
 function setStatus(
-  sourceLanguage: TranslationSourceLanguage,
+  modelId: string,
   patch: Partial<TranslationModelStatus>,
   force = true
 ): void {
-  Object.assign(requiredStatus(sourceLanguage), patch);
+  Object.assign(requiredStatus(modelId), patch);
   publishCatalog(force);
 }
 
@@ -135,7 +138,7 @@ async function inspectCatalog(): Promise<TranslationCatalogStatus> {
     const cache = await modelCache();
     for (const model of TRANSLATION_MODELS) {
       const ready = await hasVerifiedInstall(cache, model);
-      Object.assign(requiredStatus(model.sourceLanguage), {
+      Object.assign(requiredStatus(model.modelId), {
         phase: ready ? "ready" : "notInstalled",
         downloadedBytes: ready ? model.totalBytes : 0,
         message: undefined
@@ -144,7 +147,7 @@ async function inspectCatalog(): Promise<TranslationCatalogStatus> {
   } catch (error) {
     const message = errorMessage(error);
     for (const model of TRANSLATION_MODELS) {
-      Object.assign(requiredStatus(model.sourceLanguage), {
+      Object.assign(requiredStatus(model.modelId), {
         phase: "failed",
         downloadedBytes: 0,
         message
@@ -227,12 +230,12 @@ async function cachedArtifactIsValid(
   }
 }
 
-async function install(sourceLanguage: TranslationSourceLanguage): Promise<void> {
-  const model = translationModel(sourceLanguage);
-  if (!model) throw new Error(`No English translation model supports ${sourceLanguage}.`);
+async function install(modelId: string): Promise<void> {
+  const model = translationModelById(modelId);
+  if (!model) throw new Error(`Unknown local translation model ${modelId}.`);
   const cache = await modelCache();
   await cache.delete(translationValidationUrl(model));
-  setStatus(sourceLanguage, {
+  setStatus(modelId, {
     phase: "downloading",
     downloadedBytes: 0,
     message: "Checking cached model files…"
@@ -243,7 +246,7 @@ async function install(sourceLanguage: TranslationSourceLanguage): Promise<void>
     for (const artifact of model.artifacts) {
       if (await cachedArtifactIsValid(cache, model, artifact)) {
         completedBytes += artifact.size;
-        setStatus(sourceLanguage, {
+        setStatus(modelId, {
           downloadedBytes: completedBytes,
           message: `Verified ${artifact.path}`
         });
@@ -251,7 +254,7 @@ async function install(sourceLanguage: TranslationSourceLanguage): Promise<void>
       }
 
       const url = translationArtifactUrl(model, artifact);
-      setStatus(sourceLanguage, {
+      setStatus(modelId, {
         downloadedBytes: completedBytes,
         message: `Downloading ${artifact.path}…`
       });
@@ -260,7 +263,7 @@ async function install(sourceLanguage: TranslationSourceLanguage): Promise<void>
         throw new Error(`Could not download ${artifact.path} (HTTP ${response.status}).`);
       }
       const bytes = await verifiedBytes(response, artifact, (loaded) => {
-        setStatus(sourceLanguage, {
+        setStatus(modelId, {
           downloadedBytes: completedBytes + loaded,
           message: `Downloading and verifying ${artifact.path}…`
         }, false);
@@ -273,7 +276,7 @@ async function install(sourceLanguage: TranslationSourceLanguage): Promise<void>
         }
       }));
       completedBytes += artifact.size;
-      setStatus(sourceLanguage, {
+      setStatus(modelId, {
         downloadedBytes: completedBytes,
         message: `Verified ${artifact.path}`
       });
@@ -284,14 +287,14 @@ async function install(sourceLanguage: TranslationSourceLanguage): Promise<void>
       revision: model.revision,
       verifiedAt: new Date().toISOString()
     }), { headers: { "content-type": "application/json" } }));
-    setStatus(sourceLanguage, {
+    setStatus(modelId, {
       phase: "ready",
       downloadedBytes: model.totalBytes,
       message: undefined
     });
   } catch (error) {
     const corrupt = error instanceof IntegrityError;
-    setStatus(sourceLanguage, {
+    setStatus(modelId, {
       phase: corrupt ? "corrupt" : "failed",
       downloadedBytes: completedBytes,
       message: errorMessage(error)
@@ -300,43 +303,61 @@ async function install(sourceLanguage: TranslationSourceLanguage): Promise<void>
   }
 }
 
-async function disposeTranslator(sourceLanguage: TranslationSourceLanguage): Promise<void> {
-  const translator = translators.get(sourceLanguage);
+async function disposeTranslator(modelId: string): Promise<void> {
+  const translator = translators.get(modelId);
   if (!translator) return;
-  translators.delete(sourceLanguage);
+  translators.delete(modelId);
   await translator.dispose();
 }
 
-async function remove(sourceLanguage: TranslationSourceLanguage): Promise<void> {
-  const model = translationModel(sourceLanguage);
-  if (!model) throw new Error(`No English translation model supports ${sourceLanguage}.`);
-  await disposeTranslator(sourceLanguage);
+async function remove(modelId: string): Promise<void> {
+  const model = translationModelById(modelId);
+  if (!model) throw new Error(`Unknown local translation model ${modelId}.`);
+  await disposeTranslator(modelId);
   const cache = await modelCache();
   const deletions = model.artifacts.map((artifact) =>
     cache.delete(translationArtifactUrl(model, artifact))
   );
   await Promise.all([...deletions, cache.delete(translationValidationUrl(model))]);
-  setStatus(sourceLanguage, {
+  setStatus(modelId, {
     phase: "notInstalled",
     downloadedBytes: 0,
     message: undefined
   });
 }
 
-async function loadTranslator(sourceLanguage: TranslationSourceLanguage): Promise<Translator> {
-  const existing = translators.get(sourceLanguage);
-  if (existing) return existing;
-  const model = translationModel(sourceLanguage);
-  if (!model) throw new Error(`No English translation model supports ${sourceLanguage}.`);
-  const status = requiredStatus(sourceLanguage);
+function modelForRoute(
+  sourceLanguage: TranslationLanguage,
+  targetLanguage: TranslationLanguage
+): TranslationModelManifest {
+  const candidates = translationModelsForRoute(sourceLanguage, targetLanguage);
+  const installed = candidates.find((model) => {
+    const phase = requiredStatus(model.modelId).phase;
+    return phase === "ready" || phase === "loading";
+  });
+  const model = installed ?? candidates[0];
+  if (!model) {
+    throw new Error(`No local translator supports ${sourceLanguage} to ${targetLanguage}.`);
+  }
+  return model;
+}
+
+async function loadTranslator(
+  sourceLanguage: TranslationLanguage,
+  targetLanguage: TranslationLanguage
+): Promise<{ model: TranslationModelManifest; translator: Translator }> {
+  const model = modelForRoute(sourceLanguage, targetLanguage);
+  const existing = translators.get(model.modelId);
+  if (existing) return { model, translator: existing };
+  const status = requiredStatus(model.modelId);
   if (status.phase !== "ready") {
     throw new Error(`${model.displayName} is not installed and ready.`);
   }
 
-  for (const loadedLanguage of [...translators.keys()]) {
-    if (loadedLanguage !== sourceLanguage) await disposeTranslator(loadedLanguage);
+  for (const loadedModelId of [...translators.keys()]) {
+    if (loadedModelId !== model.modelId) await disposeTranslator(loadedModelId);
   }
-  setStatus(sourceLanguage, {
+  setStatus(model.modelId, {
     phase: "loading",
     message: `Loading ${model.displayName} locally…`
   });
@@ -350,11 +371,11 @@ async function loadTranslator(sourceLanguage: TranslationSourceLanguage): Promis
       // though the original graph is valid. Keep the model graph unchanged.
       session_options: { graphOptimizationLevel: "disabled" }
     }) as unknown as Translator;
-    translators.set(sourceLanguage, translator);
-    setStatus(sourceLanguage, { phase: "ready", message: undefined });
-    return translator;
+    translators.set(model.modelId, translator);
+    setStatus(model.modelId, { phase: "ready", message: undefined });
+    return { model, translator };
   } catch (error) {
-    setStatus(sourceLanguage, {
+    setStatus(model.modelId, {
       phase: "failed",
       message: `The local translator could not load: ${errorMessage(error)}`
     });
@@ -362,13 +383,24 @@ async function loadTranslator(sourceLanguage: TranslationSourceLanguage): Promis
   }
 }
 
-async function translate(sourceLanguage: TranslationSourceLanguage, text: string): Promise<string> {
+async function translate(
+  sourceLanguage: TranslationLanguage,
+  targetLanguage: TranslationLanguage,
+  text: string
+): Promise<string> {
   const trimmed = text.trim();
   if (!trimmed) return "";
-  const translator = await loadTranslator(sourceLanguage);
+  const { model, translator } = await loadTranslator(sourceLanguage, targetLanguage);
+  const routeOptions = model.kind === "manyToMany"
+    ? {
+        src_lang: m2m100LanguageCode(sourceLanguage),
+        tgt_lang: m2m100LanguageCode(targetLanguage)
+      }
+    : {};
   const output = await translator(trimmed, {
     max_new_tokens: 192,
-    num_beams: 1
+    num_beams: 1,
+    ...routeOptions
   });
   const translated = output[0]?.translation_text?.trim();
   if (!translated) throw new Error("The local translator returned no text.");
@@ -383,13 +415,15 @@ async function handleRequest(request: TranslationWorkerRequest): Promise<void> {
   try {
     let result: unknown;
     if (request.type === "status") result = await inspectCatalog();
-    if (request.type === "install") result = await install(request.sourceLanguage);
-    if (request.type === "remove") result = await remove(request.sourceLanguage);
+    if (request.type === "install") result = await install(request.modelId);
+    if (request.type === "remove") result = await remove(request.modelId);
     if (request.type === "prepare") {
-      await loadTranslator(request.sourceLanguage);
+      await loadTranslator(request.sourceLanguage, request.targetLanguage);
       result = undefined;
     }
-    if (request.type === "translate") result = await translate(request.sourceLanguage, request.text);
+    if (request.type === "translate") {
+      result = await translate(request.sourceLanguage, request.targetLanguage, request.text);
+    }
     post({ type: "reply", requestId: request.requestId, ok: true, result });
   } catch (error) {
     post({ type: "reply", requestId: request.requestId, ok: false, error: errorMessage(error) });

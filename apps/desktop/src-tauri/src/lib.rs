@@ -755,10 +755,11 @@ fn configure_overlay_window(
     let logical_width = (f64::from(settings.width) + 40.0).clamp(320.0, maximum_logical_width);
     let (bilingual_height, current_wrap_allowance) = match settings.bilingual_layout {
         BilingualLayout::Stacked => (2.0, 0.0),
-        // A bilingual row has two narrower columns, so reserve three additional
-        // visual lines for the current caption to wrap without clipping a
-        // complete history row above it.
-        BilingualLayout::SideBySide => (1.0, 3.0),
+        // Both columns wrap in full instead of ellipsizing history. Reserve two
+        // visual lines per requested row plus room for a longer live pair; the
+        // frontend drops only complete oldest pairs if content still exceeds
+        // the available work area.
+        BilingualLayout::SideBySide => (3.0, 3.0),
     };
     let logical_height = (f64::from(settings.font_size)
         * 1.25

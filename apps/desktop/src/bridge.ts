@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { SPOKEN_LANGUAGES } from "./language-catalog";
 
 import type {
   CaptureSelection,
@@ -73,11 +74,54 @@ let mockModelCatalog: ModelCatalogStatus = {
     },
     {
       phase: "notInstalled",
+      modelId: "sherpa-zipformer-zh-14m-2023-02-23",
+      displayName: "Chinese Streaming Small",
+      profile: "Chinese · Small",
+      description: "A low-footprint 14M streaming model for responsive Mandarin captions.",
+      languages: ["zh"],
+      downloadedBytes: 0,
+      totalBytes: 30_975_688
+    },
+    {
+      phase: "notInstalled",
+      modelId: "sherpa-zipformer-fr-2023-04-14",
+      displayName: "French Streaming Compact",
+      profile: "French · Compact",
+      description: "A dedicated streaming French model with much lower resource use than Nemotron.",
+      languages: ["fr"],
+      downloadedBytes: 0,
+      totalBytes: 129_012_566
+    },
+    {
+      phase: "notInstalled",
+      modelId: "sherpa-zipformer-ko-2024-06-16",
+      displayName: "Korean Streaming Compact",
+      profile: "Korean · Compact",
+      description: "A dedicated streaming Korean model with lower resource use than Nemotron.",
+      languages: ["ko"],
+      downloadedBytes: 0,
+      totalBytes: 140_919_603
+    },
+    {
+      phase: "notInstalled",
+      modelId: "sherpa-zipformer-bn-vosk-2026-02-09",
+      displayName: "Bengali Streaming Compact",
+      profile: "Bengali · Compact",
+      description: "A dedicated streaming Bengali model for local, lower-resource captions.",
+      languages: ["bn"],
+      downloadedBytes: 0,
+      totalBytes: 94_119_939
+    },
+    {
+      phase: "notInstalled",
       modelId: "nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11",
       displayName: "Nemotron 3.5 Streaming 0.6B",
       profile: "Multilingual",
-      description: "A high-resource 600M-parameter CPU trial for English, Spanish, Japanese, or automatic detection. Expect about 1 GB of app memory; Japanese and automatic detection are experimental.",
-      languages: ["auto", "en", "es", "ja"],
+      description: "A high-resource 600M-parameter CPU model covering 28 languages plus automatic detection. Expect about 1 GB of app memory; broad-coverage languages and automatic detection may be less accurate.",
+      languages: [
+        "auto",
+        ...SPOKEN_LANGUAGES.filter(({ code }) => code !== "bn").map(({ code }) => code)
+      ],
       downloadedBytes: 0,
       totalBytes: 682_215_356
     }

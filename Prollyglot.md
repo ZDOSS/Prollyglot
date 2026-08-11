@@ -492,7 +492,9 @@ These names describe product profiles and training/resource tradeoffs, not a gua
 
 Fast remains the initial default until representative Windows comparisons justify changing it. Comparisons should cover accented and unaccented conversation, media, and noisy game/call audio, and should include accuracy, partial-caption latency, real-time factor, memory use, and download size. Every model's exact upstream revision, runtime files, sizes, SHA-256 digests, and license must remain recorded in a versioned manifest.
 
-The pre-release catalog also includes an explicit opt-in **Multilingual** trial: the INT8 560 ms conversion of NVIDIA Nemotron 3.5 ASR Streaming 0.6B. Here `0.6B` means approximately 600 million parameters, not a 600 MB file; its verified download is 650.6 MiB. The current integration runs locally on CPU, supports original-language English, Spanish, Japanese, and automatic detection, and uses the same install/select/remove lifecycle as the English choices. It is not the default. Initial development-host evidence is promising for a Spanish publisher fixture but weaker for one English fixture and poor for the available Japanese and unconstrained automatic-detection spot checks, so Japanese and automatic detection remain experimental until representative Windows validation supports stronger claims. The 560 ms checkpoint is intentionally preferred over the 1120 ms variant while caption delay is already a reported concern.
+The pre-release catalog also includes four smaller Apache-2.0 streaming choices for languages where compatible online transducers are available: **Chinese Small** (29.5 MiB), **French Compact** (123.0 MiB), **Korean Compact** (134.4 MiB), and **Bengali Compact** (89.8 MiB). These are independent optional downloads and use the same install/select/remove lifecycle as the English choices. They avoid requiring a 0.6B multilingual model for a user who needs only one of those languages, but their catalog presence does not claim better real-media accuracy until representative Windows comparisons exist.
+
+The catalog also includes an explicit opt-in **Multilingual** trial: the INT8 560 ms conversion of NVIDIA Nemotron 3.5 ASR Streaming 0.6B. Here `0.6B` means approximately 600 million parameters, not a 600 MB file; its verified download is 650.6 MiB. The current integration runs locally on CPU and exposes NVIDIA's 15 transcription-ready languages plus 13 broad-coverage languages, for 28 unique forced-language choices, as well as automatic detection. Adaptation-ready languages that require fine-tuning are not exposed. Nemotron is not the default. Initial development-host evidence is promising for a Spanish publisher fixture but weaker for one English fixture and poor for the first Japanese and unconstrained automatic-detection fixtures, so the whole catalog remains pre-release and broad coverage plus automatic detection are explicitly less certain. The 560 ms checkpoint is intentionally preferred over the 1120 ms variant while caption delay is already a reported concern.
 
 Initial goal:
 
@@ -512,7 +514,7 @@ Models remain separate from the application binary. Downloads occur only after a
 
 # 13. Language packs
 
-Prollyglot should support independently downloadable language packs whenever the selected model architecture permits it. A multilingual engine may instead cover several languages in one optional download; the current Nemotron trial follows that architecture and must never be downloaded merely because an English-only user installed the app.
+Prollyglot should support independently downloadable language packs whenever the selected model architecture permits it. A multilingual engine may instead cover several languages in one optional download; Nemotron follows that architecture and must never be downloaded merely because an English-only user installed the app. The current catalog combines both approaches: small dedicated Chinese, French, Korean, and Bengali models plus the wider Nemotron option.
 
 Example:
 
@@ -521,16 +523,16 @@ Languages
 
 Installed
 
-✓ English
-✓ Spanish
-✓ Japanese
+✓ English — Fast
+✓ Japanese — Multilingual
 
 Available
 
-  French       Download
-  German       Download
-  Korean       Download
-  Mandarin     Download
+  Chinese — Small       Download
+  French — Compact      Download
+  Korean — Compact      Download
+  Bengali — Compact     Download
+  Multilingual          Download
 ```
 
 A user should not have to install speech models for languages they will never use.
@@ -631,6 +633,8 @@ Spoken language
 ○ English
 ○ Spanish
 ○ Japanese
+○ French
+○ Korean
 
 ○ Allowed languages...
 ```
@@ -780,8 +784,11 @@ Dual language should also offer a side-by-side layout when the selected width
 can keep both columns readable. The source and translation colors should be
 independently configurable so the two outputs remain easy to distinguish.
 Each source caption and its translation form one stable visual row. A new or
-provisional source must not span the bilingual grid, displace the English half
-of an older pair, or allow one language to be clipped independently.
+provisional source must not span the bilingual grid, displace the translated
+half of an older pair, or allow one language to be clipped independently.
+Both columns wrap in full. Prior pairs may use a smaller faded type size and the
+oldest complete pair may be removed when space is exhausted, but neither column
+may be independently ellipsized or truncated.
 
 ### Minimal
 
@@ -953,30 +960,38 @@ Result:
 "The government announced a new plan this morning."
 ```
 
-The initial pre-release implementation supports forced Japanese to English and
-forced Spanish to English. Each direction is an optional q8 model downloaded
-only after an explicit action. The model revision and every required artifact's
-size and SHA-256 digest are pinned; inference reads only the verified local
-cache and runs in a dedicated CPU/WebAssembly worker. English-only users do not
-download or load either translator.
+The pre-release implementation supports a selectable translation target for
+each of the 29 forced spoken-language choices. Japanese-to-English and
+Spanish-to-English retain compact direct q8 models. One compact multilingual
+OPUS model handles the remaining supported sources to English. An optional
+larger M2M100 q8 model translates directly among all 29 selectable languages.
+These are explicit downloads: the route resolver prefers an installed compact
+model, never silently downloads the universal model, and the worker keeps at
+most one translator loaded. Model revisions and every required artifact's size
+and SHA-256 digest are pinned; inference reads only the verified local cache and
+runs in a dedicated CPU/WebAssembly worker.
 
-Only finalized ASR segments are translated. Original text renders immediately,
-and its English position says **English after pause…** while recognition is
-still provisional. **Translating…** is reserved for a finalized segment that
-has actually entered translation. For the current Nemotron integration, a
-continuous pause-light utterance finalizes at an eight-second safety boundary
-rather than waiting for the prior 20-second boundary.
+Original text renders immediately. Once a provisional caption has at least four
+characters, translation can begin from the newest coalesced partial after about
+420 ms. Changing partials replace the pending text without restarting that first
+deadline; further live requests are throttled to no more than one every 900 ms
+so translation cannot build a per-word backlog. Finalized source text has
+priority and is translated again unless an exact live result can be reused. For
+Nemotron, a continuous pause-light utterance has a four-second finalization
+safety boundary, but live translation no longer depends on reaching it.
 
 The translation queue is bounded and prioritizes the newest finalized caption.
 If translation falls behind, stale queued captions are skipped so the live
 display can return to the current edge instead of exhaustively replaying old
-work. The English line fills its existing source/translation pair independently.
+work. The translated line fills its existing source/translation pair independently.
 Translation failure falls back to original text and writes privacy-safe timing
 and failure diagnostics without logging caption contents.
 
-The implemented display choices are Original, English, and Original + English.
+The implemented display choices are Original, Translation, and Original + Translation.
 The bilingual choice supports stacked and side-by-side layouts plus independent
-source and English colors. Automatic mixed-language recognition remains
+source and translated colors. Side-by-side text wraps in full, and zero to three
+complete prior pairs can remain above the live pair at a smaller fading size.
+Automatic mixed-language recognition remains
 original-only until the recognizer reports a dependable detected language on
 each finalized segment; silently guessing which translator to run would make
 both latency and output quality worse.
@@ -1163,8 +1178,11 @@ Example:
 │ Spoken language                        │
 │ English                             ▾  │
 │                                        │
-│ Captions                               │
-│ English                             ▾  │
+│ Translate to                           │
+│ Off                                 ▾  │
+│                                        │
+│ Caption output                         │
+│ Original                            ▾  │
 │                                        │
 │ Engine                                 │
 │ Automatic                           ▾  │
@@ -1251,7 +1269,15 @@ Enhanced — English Streaming Enhanced
 [ Download ]
 
 Multilingual — Nemotron 3.5 Streaming 0.6B
-650.6 MiB · Optional · English, Spanish, Japanese, automatic detection
+650.6 MiB · Optional · 28 languages, automatic detection
+[ Download ]
+
+Chinese — Streaming Small
+29.5 MiB · Optional
+[ Download ]
+
+French / Korean / Bengali — Compact
+89.8–134.4 MiB · Optional
 [ Download ]
 ```
 
@@ -1741,7 +1767,7 @@ After the Windows POCs succeed:
 
 ### Strongly desired
 
-- Spanish and Japanese original-language captioning (the optional Nemotron pre-release path exists, but production quality approval remains),
+- multilingual original-language captioning (29 forced choices now exist through dedicated models and Nemotron, but production quality approval remains),
 - `.txt` export,
 - `.srt` export,
 - `.vtt` export,
@@ -1766,8 +1792,8 @@ Once that baseline is reliable, Version 0.2 feature work may include:
 - language profiles,
 - production approval and allowed-language constraints for automatic detection,
 - additional or improved multilingual ASR backends,
-- production approval and additional targets for local translation,
-- richer dual-subtitle layout and language-profile behavior,
+- production approval and optimization of compact-to-English and many-to-many local translation,
+- richer language-profile behavior,
 - improved model selection,
 - improved overlay,
 - GPU acceleration options.
@@ -1952,12 +1978,13 @@ Translation can make otherwise responsive captions feel delayed.
 
 Mitigation:
 
-Transcription should render immediately; translated captions can update independently.
-Translate only stable finalized text, but give pause-light multilingual speech
-a bounded finalization point. Process the newest finalized caption before stale
-queued work, cap the backlog, discard stale translations when necessary, and
-make the pre-finalization wait distinct from active translation in both the UI
-and privacy-safe timing logs.
+Transcription should render immediately; translated captions update independently.
+Coalesce changing partial text into a short throttled live-translation cadence
+instead of waiting for the speaker to stop or queuing every partial. Translate
+final text again for stability, process finalized captions before provisional
+work, give pause-light multilingual speech a bounded finalization point, cap the
+backlog, discard stale translations when necessary, and expose timing in
+privacy-safe logs without caption contents.
 
 ## Hardware fragmentation
 

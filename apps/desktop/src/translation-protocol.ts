@@ -1,16 +1,23 @@
 import type { TranslationCatalogStatus } from "./types";
+import type { TranslationLanguage } from "./language-catalog";
 
-export type TranslationSourceLanguage = "es" | "ja";
+export type TranslationSourceLanguage = TranslationLanguage;
 
 export type TranslationWorkerRequest =
   | { type: "status"; requestId: number }
-  | { type: "install"; requestId: number; sourceLanguage: TranslationSourceLanguage }
-  | { type: "remove"; requestId: number; sourceLanguage: TranslationSourceLanguage }
-  | { type: "prepare"; requestId: number; sourceLanguage: TranslationSourceLanguage }
+  | { type: "install"; requestId: number; modelId: string }
+  | { type: "remove"; requestId: number; modelId: string }
+  | {
+      type: "prepare";
+      requestId: number;
+      sourceLanguage: TranslationLanguage;
+      targetLanguage: TranslationLanguage;
+    }
   | {
       type: "translate";
       requestId: number;
-      sourceLanguage: TranslationSourceLanguage;
+      sourceLanguage: TranslationLanguage;
+      targetLanguage: TranslationLanguage;
       text: string;
     };
 

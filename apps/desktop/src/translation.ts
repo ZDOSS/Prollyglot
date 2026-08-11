@@ -1,7 +1,10 @@
-import { TRANSLATION_MODELS } from "./translation-catalog";
+import {
+  TRANSLATION_MODELS,
+  translationModelsForRoute
+} from "./translation-catalog";
+import { languageLabel, type TranslationLanguage } from "./language-catalog";
 import type {
   TranslationWorkerCommand,
-  TranslationSourceLanguage,
   TranslationWorkerRequest,
   TranslationWorkerResponse
 } from "./translation-protocol";
@@ -14,13 +17,25 @@ interface PendingRequest {
   reject: (error: Error) => void;
 }
 
+export function translationStatusForRoute(
+  catalog: TranslationCatalogStatus,
+  sourceLanguage: TranslationLanguage,
+  targetLanguage: TranslationLanguage
+): TranslationModelStatus | undefined {
+  const candidates = translationModelsForRoute(sourceLanguage, targetLanguage);
+  const statuses = candidates
+    .map((candidate) => catalog.models.find(({ modelId }) => modelId === candidate.modelId))
+    .filter((status): status is TranslationModelStatus => status !== undefined);
+  return statuses.find(({ phase }) => phase === "ready" || phase === "loading") ?? statuses[0];
+}
+
 export class TranslationService {
   private readonly worker?: Worker;
   private readonly mock: boolean;
   private readonly listeners = new Set<CatalogListener>();
   private readonly pending = new Map<number, PendingRequest>();
-  private readonly preparing = new Map<TranslationSourceLanguage, Promise<void>>();
-  private readonly preparedMockLanguages = new Set<TranslationSourceLanguage>();
+  private readonly preparing = new Map<string, Promise<void>>();
+  private readonly preparedMockModels = new Set<string>();
   private nextRequestId = 1;
   private catalog: TranslationCatalogStatus;
 
@@ -29,10 +44,12 @@ export class TranslationService {
     this.catalog = {
       models: TRANSLATION_MODELS.map((model) => ({
         phase: mock ? "notInstalled" : "checking",
-        sourceLanguage: model.sourceLanguage,
-        targetLanguage: model.targetLanguage,
+        kind: model.kind,
+        sourceLanguages: [...model.sourceLanguages],
+        targetLanguages: [...model.targetLanguages],
         modelId: model.modelId,
         displayName: model.displayName,
+        license: model.license,
         downloadedBytes: 0,
         totalBytes: model.totalBytes,
         message: mock ? undefined : "Checking local model files…"
@@ -63,6 +80,13 @@ export class TranslationService {
     return structuredClone(this.catalog);
   }
 
+  routeStatus(
+    sourceLanguage: TranslationLanguage,
+    targetLanguage: TranslationLanguage
+  ): TranslationModelStatus | undefined {
+    return translationStatusForRoute(this.catalog, sourceLanguage, targetLanguage);
+  }
+
   async initialize(): Promise<TranslationCatalogStatus> {
     if (this.mock) return this.snapshot();
     await this.request({ type: "status" });
@@ -74,68 +98,84 @@ export class TranslationService {
     return () => this.listeners.delete(listener);
   }
 
-  async install(sourceLanguage: TranslationSourceLanguage): Promise<void> {
+  async install(modelId: string): Promise<void> {
     if (this.mock) {
-      this.preparedMockLanguages.delete(sourceLanguage);
-      await this.mockInstall(sourceLanguage);
+      this.preparedMockModels.delete(modelId);
+      await this.mockInstall(modelId);
       return;
     }
-    await this.request({ type: "install", sourceLanguage });
+    await this.request({ type: "install", modelId });
   }
 
-  async remove(sourceLanguage: TranslationSourceLanguage): Promise<void> {
+  async remove(modelId: string): Promise<void> {
     if (this.mock) {
-      this.preparedMockLanguages.delete(sourceLanguage);
-      this.updateMock(sourceLanguage, {
+      this.preparedMockModels.delete(modelId);
+      this.updateMock(modelId, {
         phase: "notInstalled",
         downloadedBytes: 0,
         message: undefined
       });
       return;
     }
-    await this.request({ type: "remove", sourceLanguage });
+    await this.request({ type: "remove", modelId });
   }
 
-  prepare(sourceLanguage: TranslationSourceLanguage): Promise<void> {
-    const existing = this.preparing.get(sourceLanguage);
+  prepare(
+    sourceLanguage: TranslationLanguage,
+    targetLanguage: TranslationLanguage
+  ): Promise<void> {
+    const key = `${sourceLanguage}:${targetLanguage}`;
+    const existing = this.preparing.get(key);
     if (existing) return existing;
-    const operation = Promise.resolve().then(() => this.prepareUncached(sourceLanguage));
-    this.preparing.set(sourceLanguage, operation);
+    const operation = Promise.resolve().then(() =>
+      this.prepareUncached(sourceLanguage, targetLanguage)
+    );
+    this.preparing.set(key, operation);
     void operation.finally(() => {
-      if (this.preparing.get(sourceLanguage) === operation) {
-        this.preparing.delete(sourceLanguage);
-      }
+      if (this.preparing.get(key) === operation) this.preparing.delete(key);
     }).catch(() => undefined);
     return operation;
   }
 
-  async translate(sourceLanguage: TranslationSourceLanguage, text: string): Promise<string> {
+  async translate(
+    sourceLanguage: TranslationLanguage,
+    targetLanguage: TranslationLanguage,
+    text: string
+  ): Promise<string> {
     if (this.mock) {
       await new Promise((resolve) => window.setTimeout(resolve, 260));
-      return mockTranslation(sourceLanguage, text);
+      return mockTranslation(sourceLanguage, targetLanguage, text);
     }
-    const result = await this.request({ type: "translate", sourceLanguage, text });
+    const result = await this.request({
+      type: "translate",
+      sourceLanguage,
+      targetLanguage,
+      text
+    });
     if (typeof result !== "string") throw new Error("The local translator returned an invalid result.");
     return result;
   }
 
-  private async prepareUncached(sourceLanguage: TranslationSourceLanguage): Promise<void> {
+  private async prepareUncached(
+    sourceLanguage: TranslationLanguage,
+    targetLanguage: TranslationLanguage
+  ): Promise<void> {
     if (this.mock) {
-      if (this.preparedMockLanguages.has(sourceLanguage)) return;
-      const status = this.requiredMock(sourceLanguage);
-      if (status.phase !== "ready") {
-        throw new Error(`${status.displayName} is not installed and ready.`);
+      const status = this.routeStatus(sourceLanguage, targetLanguage);
+      if (!status || status.phase !== "ready") {
+        throw new Error(`${status?.displayName ?? "The selected translator"} is not installed and ready.`);
       }
-      this.updateMock(sourceLanguage, {
+      if (this.preparedMockModels.has(status.modelId)) return;
+      this.updateMock(status.modelId, {
         phase: "loading",
         message: `Loading ${status.displayName} locally…`
       });
       await new Promise((resolve) => window.setTimeout(resolve, 180));
-      this.preparedMockLanguages.add(sourceLanguage);
-      this.updateMock(sourceLanguage, { phase: "ready", message: undefined });
+      this.preparedMockModels.add(status.modelId);
+      this.updateMock(status.modelId, { phase: "ready", message: undefined });
       return;
     }
-    await this.request({ type: "prepare", sourceLanguage });
+    await this.request({ type: "prepare", sourceLanguage, targetLanguage });
   }
 
   private request(request: TranslationWorkerCommand): Promise<unknown> {
@@ -160,38 +200,35 @@ export class TranslationService {
     else request.reject(new Error(message.error));
   }
 
-  private async mockInstall(sourceLanguage: TranslationSourceLanguage): Promise<void> {
-    const status = this.requiredMock(sourceLanguage);
-    this.updateMock(sourceLanguage, {
+  private async mockInstall(modelId: string): Promise<void> {
+    const status = this.requiredMock(modelId);
+    this.updateMock(modelId, {
       phase: "downloading",
       downloadedBytes: 0,
       message: "Downloading and verifying local translation model…"
     });
     await new Promise((resolve) => window.setTimeout(resolve, 220));
-    this.updateMock(sourceLanguage, {
+    this.updateMock(modelId, {
       phase: "downloading",
       downloadedBytes: Math.round(status.totalBytes * 0.58),
       message: "Downloading and verifying model weights…"
     });
     await new Promise((resolve) => window.setTimeout(resolve, 380));
-    this.updateMock(sourceLanguage, {
+    this.updateMock(modelId, {
       phase: "ready",
       downloadedBytes: status.totalBytes,
       message: undefined
     });
   }
 
-  private requiredMock(sourceLanguage: TranslationSourceLanguage): TranslationModelStatus {
-    const status = this.catalog.models.find((model) => model.sourceLanguage === sourceLanguage);
-    if (!status) throw new Error(`No English translation model supports ${sourceLanguage}.`);
+  private requiredMock(modelId: string): TranslationModelStatus {
+    const status = this.catalog.models.find((model) => model.modelId === modelId);
+    if (!status) throw new Error(`Unknown local translation model ${modelId}.`);
     return status;
   }
 
-  private updateMock(
-    sourceLanguage: TranslationSourceLanguage,
-    patch: Partial<TranslationModelStatus>
-  ): void {
-    Object.assign(this.requiredMock(sourceLanguage), patch);
+  private updateMock(modelId: string, patch: Partial<TranslationModelStatus>): void {
+    Object.assign(this.requiredMock(modelId), patch);
     this.publish();
   }
 
@@ -201,11 +238,17 @@ export class TranslationService {
   }
 }
 
-function mockTranslation(sourceLanguage: TranslationSourceLanguage, text: string): string {
+function mockTranslation(
+  sourceLanguage: TranslationLanguage,
+  targetLanguage: TranslationLanguage,
+  text: string
+): string {
   const known: Record<string, string> = {
-    "今朝、新しい計画が発表されました。": "A new plan was announced this morning.",
-    "今日は何をする予定ですか？": "What are you planning to do today?",
-    "Las ventanas azules se abren sobre el jardín.": "Blue windows open above the garden."
+    "ja:en:今朝、新しい計画が発表されました。": "A new plan was announced this morning.",
+    "ja:en:今日は何をする予定ですか？": "What are you planning to do today?",
+    "es:en:Las ventanas azules se abren sobre el jardín.": "Blue windows open above the garden."
   };
-  return known[text.trim()] ?? `${sourceLanguage === "ja" ? "Japanese" : "Spanish"} → English: ${text.trim()}`;
+  const key = `${sourceLanguage}:${targetLanguage}:${text.trim()}`;
+  return known[key]
+    ?? `${languageLabel(sourceLanguage)} → ${languageLabel(targetLanguage)}: ${text.trim()}`;
 }

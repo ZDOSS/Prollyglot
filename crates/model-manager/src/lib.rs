@@ -429,6 +429,34 @@ pub fn enhanced_english_manifest() -> Result<ModelManifest, ModelManagerError> {
     ))
 }
 
+/// Compact streaming French model trained on Common Voice.
+pub fn compact_french_manifest() -> Result<ModelManifest, ModelManagerError> {
+    ModelManifest::from_json(include_str!(
+        "../../../assets/model-manifests/french-streaming-compact.json"
+    ))
+}
+
+/// Compact streaming Korean model trained on KsponSpeech.
+pub fn compact_korean_manifest() -> Result<ModelManifest, ModelManagerError> {
+    ModelManifest::from_json(include_str!(
+        "../../../assets/model-manifests/korean-streaming-compact.json"
+    ))
+}
+
+/// Small 14M streaming Mandarin model trained on WenetSpeech.
+pub fn small_chinese_manifest() -> Result<ModelManifest, ModelManagerError> {
+    ModelManifest::from_json(include_str!(
+        "../../../assets/model-manifests/chinese-streaming-small.json"
+    ))
+}
+
+/// Compact streaming Bengali model converted from the Vosk release.
+pub fn compact_bengali_manifest() -> Result<ModelManifest, ModelManagerError> {
+    ModelManifest::from_json(include_str!(
+        "../../../assets/model-manifests/bengali-streaming-compact.json"
+    ))
+}
+
 /// NVIDIA's multilingual 0.6B streaming model converted to pinned INT8 ONNX
 /// artifacts for sherpa-onnx. The 560 ms checkpoint is the balanced streaming
 /// profile; larger upstream chunks trade additional delay for accuracy.
@@ -458,9 +486,21 @@ pub fn english_manifest(model_id: &str) -> Result<ModelManifest, ModelManagerErr
         })
 }
 
+/// Smaller language-specific streaming choices that avoid loading the 0.6B
+/// multilingual model when one of these languages is all the user needs.
+pub fn compact_language_manifests() -> Result<Vec<ModelManifest>, ModelManagerError> {
+    Ok(vec![
+        small_chinese_manifest()?,
+        compact_french_manifest()?,
+        compact_korean_manifest()?,
+        compact_bengali_manifest()?,
+    ])
+}
+
 /// Every speech model currently exposed by Prollyglot, in product order.
 pub fn speech_model_manifests() -> Result<Vec<ModelManifest>, ModelManagerError> {
     let mut manifests = english_model_manifests()?;
+    manifests.extend(compact_language_manifests()?);
     manifests.push(nemotron_multilingual_manifest()?);
     Ok(manifests)
 }
@@ -854,11 +894,18 @@ mod tests {
         let manifest = nemotron_multilingual_manifest().expect("Nemotron manifest");
 
         assert_eq!(manifest.backend, "sherpa-onnx-online-nemotron");
-        assert_eq!(manifest.languages, vec!["auto", "en", "es", "ja"]);
+        assert_eq!(
+            manifest.languages,
+            vec![
+                "auto", "en", "ar", "bg", "zh", "hr", "cs", "da", "nl", "et", "fi", "fr", "de",
+                "hi", "hu", "it", "ja", "ko", "nb", "pl", "pt", "ro", "ru", "sk", "es", "sv", "tr",
+                "uk", "vi",
+            ]
+        );
         assert_eq!(manifest.license, "OpenMDW-1.1");
         assert_eq!(manifest.download_size_bytes(), 682_215_356);
         assert_eq!(manifest.id, NEMOTRON_MULTILINGUAL_MODEL_ID);
-        assert_eq!(speech_model_manifests().expect("speech catalog").len(), 4);
+        assert_eq!(speech_model_manifests().expect("speech catalog").len(), 8);
         assert_eq!(
             speech_manifest(NEMOTRON_MULTILINGUAL_MODEL_ID)
                 .expect("multilingual model")
@@ -866,6 +913,25 @@ mod tests {
             manifest.id
         );
         assert!(speech_manifest("unknown").is_err());
+    }
+
+    #[test]
+    fn compact_language_models_are_pinned_and_distinct() {
+        let models = compact_language_manifests().expect("compact language models");
+        let expected = [
+            ("zh", 30_975_688),
+            ("fr", 129_012_566),
+            ("ko", 140_919_603),
+            ("bn", 94_119_939),
+        ];
+
+        assert_eq!(models.len(), expected.len());
+        for (model, (language, bytes)) in models.iter().zip(expected) {
+            assert_eq!(model.backend, "sherpa-onnx-online-transducer");
+            assert_eq!(model.languages, vec![language]);
+            assert_eq!(model.license, "Apache-2.0");
+            assert_eq!(model.download_size_bytes(), bytes);
+        }
     }
 
     #[test]

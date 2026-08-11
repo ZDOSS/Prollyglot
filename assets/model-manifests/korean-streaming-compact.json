@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "id": "sherpa-zipformer-ko-2024-06-16",
+  "version": "ba6078bca4daf3f0dd37f79d0ab505af71df14a6",
+  "displayName": "Korean Streaming Compact",
+  "backend": "sherpa-onnx-online-transducer",
+  "languages": ["ko"],
+  "license": "Apache-2.0",
+  "provenance": {
+    "sourceUrl": "https://huggingface.co/k2-fsa/sherpa-onnx-streaming-zipformer-korean-2024-06-16",
+    "revision": "ba6078bca4daf3f0dd37f79d0ab505af71df14a6"
+  },
+  "runtime": {
+    "name": "sherpa-onnx",
+    "version": "1.13.4",
+    "license": "Apache-2.0",
+    "sourceUrl": "https://github.com/k2-fsa/sherpa-onnx/tree/v1.13.4"
+  },
+  "approximateMemoryBytes": null,
+  "artifacts": [
+    {
+      "role": "encoder",
+      "path": "encoder-epoch-99-avg-1.int8.onnx",
+      "url": "https://huggingface.co/k2-fsa/sherpa-onnx-streaming-zipformer-korean-2024-06-16/resolve/ba6078bca4daf3f0dd37f79d0ab505af71df14a6/encoder-epoch-99-avg-1.int8.onnx",
+      "sizeBytes": 126968852,
+      "sha256": "8d0b1aa24fbedd4e3948564ab7facd151b8ce9b0c48fc987c541de2de3af5697"
+    },
+    {
+      "role": "decoder",
+      "path": "decoder-epoch-99-avg-1.onnx",
+      "url": "https://huggingface.co/k2-fsa/sherpa-onnx-streaming-zipformer-korean-2024-06-16/resolve/ba6078bca4daf3f0dd37f79d0ab505af71df14a6/decoder-epoch-99-avg-1.onnx",
+      "sizeBytes": 11309084,
+      "sha256": "b29cfb4575141e50a30a22b2c4579934f3d4f45b83c9c8c08c3aef5a3fa7abfc"
+    },
+    {
+      "role": "joiner",
+      "path": "joiner-epoch-99-avg-1.int8.onnx",
+      "url": "https://huggingface.co/k2-fsa/sherpa-onnx-streaming-zipformer-korean-2024-06-16/resolve/ba6078bca4daf3f0dd37f79d0ab505af71df14a6/joiner-epoch-99-avg-1.int8.onnx",
+      "sizeBytes": 2581421,
+      "sha256": "128b80a66a1f718488af8560f9d15895109b99ff3e573f0a0130e03774ef1ced"
+    },
+    {
+      "role": "tokens",
+      "path": "tokens.txt",
+      "url": "https://huggingface.co/k2-fsa/sherpa-onnx-streaming-zipformer-korean-2024-06-16/resolve/ba6078bca4daf3f0dd37f79d0ab505af71df14a6/tokens.txt",
+      "sizeBytes": 60246,
+      "sha256": "016bdf0965029263b7ad01b742366ee542ef0bef38261510e8176ff6f2e9e668"
+    }
+  ]
+}

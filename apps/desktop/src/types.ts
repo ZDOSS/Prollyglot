@@ -73,7 +73,7 @@ export interface TranscriptSnapshot {
   committed: TranscriptSegment[];
 }
 
-export type CaptionOutputMode = "original" | "english" | "both";
+export type CaptionOutputMode = "original" | "translated" | "both";
 
 export interface CaptionOutputEntry {
   key: string;
@@ -86,6 +86,7 @@ export interface CaptionOutputEntry {
 
 export interface CaptionOutputPayload {
   mode: CaptionOutputMode;
+  targetLanguage?: string;
   originalCaption: string;
   entries: CaptionOutputEntry[];
 }
@@ -101,10 +102,12 @@ export type TranslationPhase =
 
 export interface TranslationModelStatus {
   phase: TranslationPhase;
-  sourceLanguage: "es" | "ja";
-  targetLanguage: "en";
+  kind: "direct" | "toEnglish" | "manyToMany";
+  sourceLanguages: string[];
+  targetLanguages: string[];
   modelId: string;
   displayName: string;
+  license: "Apache-2.0" | "MIT";
   downloadedBytes: number;
   totalBytes: number;
   message?: string;

@@ -24,7 +24,13 @@ import {
 } from "./bridge";
 import { CaptionOutputController, supportedSourceLanguage } from "./caption-output";
 import { icons } from "./icons";
-import { TranslationService } from "./translation";
+import {
+  SPOKEN_LANGUAGES,
+  languageLabel,
+  supportedTranslationLanguage,
+  type TranslationLanguage
+} from "./language-catalog";
+import { TranslationService, translationStatusForRoute } from "./translation";
 import type {
   CaptionOutputMode,
   CaptureSelection,
@@ -71,8 +77,8 @@ root.innerHTML = `
       <section id="translation-setup" class="model-setup translation-setup" aria-labelledby="translation-setup-title" hidden>
         <div class="model-copy">
           <span class="model-kicker">Optional local translation</span>
-          <h2 id="translation-setup-title">English captions</h2>
-          <p id="translation-message">Download the English translator once, then translate offline.</p>
+          <h2 id="translation-setup-title">Translated captions</h2>
+          <p id="translation-message">Download the selected translator once, then translate offline.</p>
         </div>
         <progress id="translation-progress" class="model-progress" max="1" value="0" hidden></progress>
         <button id="translation-action" class="secondary-button model-action" type="button">Download translator</button>
@@ -101,15 +107,19 @@ root.innerHTML = `
         <div class="field-group">
           <label class="field-label" for="spoken-language">Spoken language</label>
           <div class="select-wrap">
-            <select id="spoken-language" class="select-control" aria-describedby="spoken-language-help">
-              <option value="en">English</option>
-              <option value="es">Spanish</option>
-              <option value="ja">Japanese</option>
-              <option value="auto">Automatic · mixed languages</option>
-            </select>
+            <select id="spoken-language" class="select-control" aria-describedby="spoken-language-help"></select>
             ${icons.chevronDown}
           </div>
           <span id="spoken-language-help" class="field-help"></span>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label" for="translation-target">Translate to</label>
+          <div class="select-wrap">
+            <select id="translation-target" class="select-control" aria-describedby="translation-target-help"></select>
+            ${icons.chevronDown}
+          </div>
+          <span id="translation-target-help" class="field-help"></span>
         </div>
 
         <div class="field-group">
@@ -149,6 +159,7 @@ const sourceSelect = requireElement<HTMLSelectElement>("#audio-source");
 const deviceSelect = requireElement<HTMLSelectElement>("#playback-device");
 const deviceField = requireElement<HTMLElement>("#device-field");
 const spokenLanguage = requireElement<HTMLSelectElement>("#spoken-language");
+const translationTarget = requireElement<HTMLSelectElement>("#translation-target");
 const captionLanguage = requireElement<HTMLSelectElement>("#caption-language");
 const captureToggle = requireElement<HTMLButtonElement>("#capture-toggle");
 const captureMessage = requireElement<HTMLElement>("#capture-message");
@@ -166,6 +177,7 @@ const translationProgress = requireElement<HTMLProgressElement>("#translation-pr
 const translationAction = requireElement<HTMLButtonElement>("#translation-action");
 const dialog = requireElement<HTMLDialogElement>("#utility-dialog");
 const CAPTION_MODE_STORAGE_KEY = "prollyglot.caption-output";
+const TRANSLATION_TARGET_STORAGE_KEY = "prollyglot.translation-target";
 
 let snapshot: SourceSnapshot = { playbackDevices: [], applications: [] };
 let currentStatus: CaptureStatus = { state: "stopped", peak: 0, droppedFrames: 0 };
@@ -192,15 +204,10 @@ let currentTranscript: TranscriptSnapshot = { revision: 0, committed: [] };
 let settingsNotice: { message: string; tone: "neutral" | "success" | "error" } | undefined;
 let acceptedSpokenLanguage = "en";
 let preferredCaptionMode = storedCaptionMode();
+let preferredTranslationTarget = storedTranslationTarget();
 let transcriptFollowLatest = true;
 const FOLLOW_SYSTEM_DEFAULT = "__follow-system-default__";
 const TRANSCRIPT_BOTTOM_THRESHOLD = 48;
-const LANGUAGE_LABELS: Record<string, string> = {
-  auto: "Automatic detection",
-  en: "English",
-  es: "Spanish",
-  ja: "Japanese"
-};
 const captionOutput = new CaptionOutputController(
   translationService,
   (payload) => {
@@ -232,7 +239,49 @@ function option(value: string, label: string, selected = false): HTMLOptionEleme
 
 function storedCaptionMode(): CaptionOutputMode {
   const stored = localStorage.getItem(CAPTION_MODE_STORAGE_KEY);
-  return stored === "english" || stored === "both" ? stored : "original";
+  if (stored === "english") return "translated";
+  return stored === "translated" || stored === "both" ? stored : "original";
+}
+
+function storedTranslationTarget(): string {
+  const stored = localStorage.getItem(TRANSLATION_TARGET_STORAGE_KEY);
+  return stored === "off" || (stored && supportedTranslationLanguage(stored)) ? stored : "en";
+}
+
+function populateSpokenLanguageOptions(): void {
+  spokenLanguage.replaceChildren(
+    ...SPOKEN_LANGUAGES.map(({ code, label }) => option(code, label, code === "en")),
+    option("auto", "Automatic · mixed languages")
+  );
+  spokenLanguage.value = acceptedSpokenLanguage;
+}
+
+function populateTranslationTargets(): void {
+  const sourceLanguage = supportedSourceLanguage(spokenLanguage.value);
+  if (!sourceLanguage) {
+    translationTarget.replaceChildren(option("off", "Off · original language", true));
+    translationTarget.disabled = true;
+    requireElement<HTMLElement>("#translation-target-help").textContent =
+      "Automatic recognition does not yet report a stable source language for translation.";
+    return;
+  }
+
+  translationTarget.disabled = false;
+  translationTarget.replaceChildren(
+    option("off", "Off · original language"),
+    ...SPOKEN_LANGUAGES
+      .filter(({ code }) => code !== sourceLanguage)
+      .map(({ code, label }) => option(code, label))
+  );
+  const preferredAvailable = [...translationTarget.options]
+    .some(({ value }) => value === preferredTranslationTarget);
+  translationTarget.value = preferredAvailable
+    ? preferredTranslationTarget
+    : sourceLanguage === "en" ? "off" : "en";
+  requireElement<HTMLElement>("#translation-target-help").textContent =
+    translationTarget.value === "off"
+      ? "Recognition stays local and captions remain in the spoken language."
+      : `Translation to ${languageLabel(translationTarget.value)} runs locally.`;
 }
 
 function storedOverlaySettings(): OverlaySettings {
@@ -292,17 +341,15 @@ function selectedCapture(): CaptureSelection {
   return { kind: "application", processId };
 }
 
-function languageLabel(language: string): string {
-  return LANGUAGE_LABELS[language] ?? language;
-}
-
 function selectedTranslationModel(
   catalog = currentTranslations,
-  language = spokenLanguage.value
+  source = spokenLanguage.value,
+  target = translationTarget.value
 ): TranslationModelStatus | undefined {
-  const sourceLanguage = supportedSourceLanguage(language);
-  return sourceLanguage
-    ? catalog.models.find((model) => model.sourceLanguage === sourceLanguage)
+  const sourceLanguage = supportedSourceLanguage(source);
+  const targetLanguage = supportedTranslationLanguage(target);
+  return sourceLanguage && targetLanguage
+    ? translationStatusForRoute(catalog, sourceLanguage, targetLanguage)
     : undefined;
 }
 
@@ -312,38 +359,44 @@ function translationRequested(): boolean {
 
 function renderCaptionOutputControl(): void {
   const sourceLanguage = supportedSourceLanguage(spokenLanguage.value);
-  const allowedModes: Array<[CaptionOutputMode, string]> = sourceLanguage
+  const targetLanguage = supportedTranslationLanguage(translationTarget.value);
+  const targetLabel = targetLanguage ? languageLabel(targetLanguage) : "translation";
+  const routeAvailable = sourceLanguage
+    && targetLanguage
+    && sourceLanguage !== targetLanguage;
+  if (targetLanguage) captionOutput.setTranslationTarget(targetLanguage);
+  const allowedModes: Array<[CaptionOutputMode, string]> = routeAvailable
     ? [
         ["original", "Original only · translation off"],
-        ["english", "English only · translated"],
-        ["both", "Original + English"]
+        ["translated", `${targetLabel} only · translated`],
+        ["both", `Original + ${targetLabel}`]
       ]
-    : [["original", spokenLanguage.value === "en" ? "English (original)" : "Original language"]];
-  const selectedMode = sourceLanguage ? preferredCaptionMode : "original";
+    : [["original", "Original language"]];
+  const selectedMode = routeAvailable ? preferredCaptionMode : "original";
   captionLanguage.replaceChildren(
     ...allowedModes.map(([value, label]) => option(value, label, value === selectedMode))
   );
   captionLanguage.value = selectedMode;
-  captionLanguage.disabled = !sourceLanguage;
+  captionLanguage.disabled = !routeAvailable;
   if (captionOutput.outputMode() !== selectedMode) captionOutput.setOutputMode(selectedMode);
 
   const help = requireElement<HTMLElement>("#caption-language-help");
-  if (spokenLanguage.value === "en") {
-    help.textContent = "The recognized speech is already English.";
-  } else if (spokenLanguage.value === "auto") {
-    help.textContent = "Choose Japanese or Spanish to translate reliably; Automatic does not yet report each detected language.";
+  if (!sourceLanguage) {
+    help.textContent = "Choose a specific spoken language to enable local translation.";
+  } else if (!targetLanguage) {
+    help.textContent = "Choose a Translate to language to enable translated captions.";
   } else {
     const model = selectedTranslationModel();
     if (!translationRequested()) {
       help.textContent = model?.phase === "ready"
-        ? "Translation is off. Choose English only or Original + English to use the installed translator."
-        : "Translation is off. Choose English only or Original + English to install and use a translator.";
+        ? `Translation is off. Choose ${targetLabel} only or Original + ${targetLabel} to use the installed translator.`
+        : `Translation is off. Choose ${targetLabel} only or Original + ${targetLabel} to install a translator.`;
     } else if (model?.phase === "ready") {
-      help.textContent = "English is on and generated locally after each original caption is finalized.";
+      help.textContent = `${targetLabel} starts from live partial speech and is corrected again when each caption finalizes.`;
     } else if (model?.phase === "loading") {
-      help.textContent = "Original captions stay live while the local English translator loads.";
+      help.textContent = `Original captions stay live while the local ${targetLabel} translator loads.`;
     } else {
-      help.textContent = "Original captions stay live until the optional English translator is installed.";
+      help.textContent = `Original captions stay live until the optional ${targetLabel} translator is installed.`;
     }
   }
   renderTranslationSetup();
@@ -352,12 +405,16 @@ function renderCaptionOutputControl(): void {
 
 function prepareSelectedTranslator(): void {
   const sourceLanguage = supportedSourceLanguage(spokenLanguage.value);
+  const targetLanguage = supportedTranslationLanguage(translationTarget.value);
   const model = selectedTranslationModel();
-  if (!sourceLanguage || !translationRequested() || model?.phase !== "ready") return;
-  void translationService.prepare(sourceLanguage).catch((error) => {
+  if (!sourceLanguage || !targetLanguage || !translationRequested() || model?.phase !== "ready") return;
+  void translationService.prepare(sourceLanguage, targetLanguage).catch((error) => {
     const message = error instanceof Error ? error.message : String(error);
-    captureMessage.textContent = `English translator could not start: ${message}`;
-    void reportFrontendDiagnostic("translation-model", `${languageLabel(sourceLanguage)} preload: ${message}`);
+    captureMessage.textContent = `${languageLabel(targetLanguage)} translator could not start: ${message}`;
+    void reportFrontendDiagnostic(
+      "translation-model",
+      `${languageLabel(sourceLanguage)} to ${languageLabel(targetLanguage)} preload: ${message}`
+    );
   });
 }
 
@@ -369,7 +426,7 @@ function renderTranslationSetup(): void {
   }
 
   translationSetup.hidden = false;
-  translationSetupTitle.textContent = `${languageLabel(model.sourceLanguage)} to English`;
+  translationSetupTitle.textContent = `${languageLabel(spokenLanguage.value)} to ${languageLabel(translationTarget.value)}`;
   translationProgress.hidden = model.phase !== "downloading";
   translationProgress.max = Math.max(model.totalBytes, 1);
   translationProgress.value = Math.min(model.downloadedBytes, translationProgress.max);
@@ -390,7 +447,7 @@ function renderTranslationSetup(): void {
     translationMessage.textContent = model.message ?? "Downloading and verifying the translator…";
   } else if (model.phase === "loading") {
     translationAction.textContent = "Loading translator…";
-    translationMessage.textContent = "Original captions remain immediate while English translation starts.";
+    translationMessage.textContent = "Original captions remain immediate while local translation starts.";
   } else {
     translationAction.textContent = model.phase === "corrupt"
       ? "Repair translator"
@@ -419,7 +476,7 @@ function renderTranslationStatus(catalog: TranslationCatalogStatus): void {
   );
   if (completed) {
     settingsNotice = {
-      message: `${completed.displayName} is installed. Choose ${languageLabel(completed.sourceLanguage)} and Original + English under Caption output to use it.`,
+      message: `${completed.displayName} is installed and available from the Translate to control.`,
       tone: "success"
     };
   } else if (failed) {
@@ -441,9 +498,12 @@ function renderTranslationStatus(catalog: TranslationCatalogStatus): void {
 
 function renderLanguageGuidance() {
   const help = requireElement<HTMLElement>("#spoken-language-help");
+  const language = SPOKEN_LANGUAGES.find(({ code }) => code === spokenLanguage.value);
   help.textContent = spokenLanguage.value === "auto"
     ? "For mixed-language audio. Detection can add delay or choose the wrong language."
-    : "Choosing the language guides recognition and usually improves accuracy.";
+    : language?.tier === "broad"
+      ? "Supported by Nemotron's broad-coverage tier; accuracy can vary more than its primary languages."
+      : "Choosing the language guides recognition and usually improves accuracy.";
 }
 
 function captionAction(language: string): string {
@@ -458,9 +518,22 @@ function modelSupportsLanguage(model: ModelStatus, language = spokenLanguage.val
 
 function modelLanguageSummary(model: ModelStatus): string {
   const explicit = model.languages.filter((language) => language !== "auto");
+  if (explicit.length > 6) {
+    return `${explicit.length} languages${model.languages.includes("auto") ? " · Auto detect" : ""}`;
+  }
   const labels = explicit.map(languageLabel);
   if (model.languages.includes("auto")) labels.push("Auto detect");
   return labels.join(" · ");
+}
+
+function translationModelScope(model: TranslationModelStatus): string {
+  if (model.kind === "direct") {
+    return `${languageLabel(model.sourceLanguages[0] ?? "")} → ${languageLabel(model.targetLanguages[0] ?? "")}`;
+  }
+  if (model.kind === "toEnglish") {
+    return `${model.sourceLanguages.length} languages → English`;
+  }
+  return `${model.sourceLanguages.length} languages ↔ ${model.targetLanguages.length} languages`;
 }
 
 function renderStatus(status: CaptureStatus) {
@@ -599,8 +672,7 @@ function formatTimestamp(micros: number): string {
 
 function appendTranscriptCaption(
   item: HTMLElement,
-  segment: TranscriptSegment,
-  provisional = false
+  segment: TranscriptSegment
 ): void {
   const copy = document.createElement("span");
   copy.className = "transcript-copy";
@@ -610,39 +682,35 @@ function appendTranscriptCaption(
   original.textContent = segment.text;
   const mode = captionOutput.outputMode();
   const translated = captionOutput.translationFor(segment);
+  const targetLanguage = captionOutput.translationTarget();
+  const targetLabel = languageLabel(targetLanguage);
 
-  if (mode === "original" || provisional) {
+  if (mode === "original") {
     copy.append(original);
-    if (provisional && mode !== "original") {
-      const note = document.createElement("span");
-      note.className = "transcript-translation-state";
-      note.textContent = "English follows when this caption is finalized.";
-      copy.append(note);
-    }
     item.append(copy);
     return;
   }
 
-  const english = document.createElement("span");
-  english.className = "transcript-text transcript-translation";
-  english.lang = "en";
-  if (translated?.phase === "ready") english.textContent = translated.text;
+  const translation = document.createElement("span");
+  translation.className = "transcript-text transcript-translation";
+  translation.lang = targetLanguage;
+  if (translated?.phase === "ready") translation.textContent = translated.text;
 
   if (mode === "both") copy.append(original);
   if (translated?.phase === "ready") {
-    copy.append(english);
+    copy.append(translation);
   } else {
-    if (mode === "english") {
+    if (mode === "translated") {
       original.classList.add("translation-fallback");
       copy.append(original);
     }
     const note = document.createElement("span");
     note.className = "transcript-translation-state";
     note.textContent = translated?.phase === "failed"
-      ? "English unavailable · showing original"
+      ? `${targetLabel} unavailable · showing original`
       : captionOutput.isTranslationPending(segment)
-        ? "Translating to English…"
-        : "English translator is not ready";
+        ? `Translating to ${targetLabel}…`
+        : `${targetLabel} translator is not ready`;
     copy.append(note);
   }
   item.append(copy);
@@ -716,7 +784,7 @@ function renderTranscriptPanel(forceLatest = false) {
     const timestamp = document.createElement("time");
     timestamp.textContent = "Live";
     item.append(timestamp);
-    appendTranscriptCaption(item, currentTranscript.provisional, true);
+    appendTranscriptCaption(item, currentTranscript.provisional);
     list.append(item);
   }
   content.append(list);
@@ -758,8 +826,8 @@ function renderSettingsPanel() {
     </section>
     <section class="settings-section settings-section-divided" aria-labelledby="translation-settings-title">
       <span class="model-kicker">Optional local translation</span>
-      <h3 id="translation-settings-title">English translation models</h3>
-      <p class="settings-copy">Installing stores a translator locally but does not turn it on. In the main window, choose Japanese or Spanish under Spoken language, then choose English only or Original + English under Caption output.</p>
+      <h3 id="translation-settings-title">Translation models</h3>
+      <p class="settings-copy">Compact models cover translation into English. The larger universal model enables direct translation among every language shown in the Spoken language list. Installing a model does not turn translation on.</p>
       <div id="translation-model-options" class="model-options"></div>
     </section>
     <section class="settings-section settings-section-divided" aria-labelledby="audio-settings-title">
@@ -909,11 +977,12 @@ function renderSettingsPanel() {
   const translationOptions = requireElement<HTMLElement>("#translation-model-options");
   const translationChangesBlocked = currentStatus.state !== "stopped" && currentStatus.state !== "failed";
   const anotherTranslationDownload = currentTranslations.models.some(({ phase }) => phase === "downloading");
+  const activeTranslationModel = selectedTranslationModel();
   for (const model of currentTranslations.models) {
     const card = document.createElement("article");
     card.className = "model-option";
     card.dataset.selected = String(
-      spokenLanguage.value === model.sourceLanguage && captionOutput.outputMode() !== "original"
+      activeTranslationModel?.modelId === model.modelId && translationRequested()
     );
 
     const heading = document.createElement("div");
@@ -921,7 +990,7 @@ function renderSettingsPanel() {
     const names = document.createElement("div");
     const profile = document.createElement("span");
     profile.className = "model-profile";
-    profile.textContent = `${languageLabel(model.sourceLanguage)} → English`;
+    profile.textContent = translationModelScope(model);
     const name = document.createElement("h4");
     name.textContent = model.displayName;
     names.append(profile, name);
@@ -935,10 +1004,14 @@ function renderSettingsPanel() {
 
     const description = document.createElement("p");
     description.className = "model-option-description";
-    description.textContent = `Translates finalized ${languageLabel(model.sourceLanguage)} captions to English locally.`;
+    description.textContent = model.kind === "manyToMany"
+      ? "Translates directly between supported languages locally. This option is larger and may add more delay on CPU."
+      : model.kind === "toEnglish"
+        ? "One compact local model for the additional supported spoken languages translating into English."
+        : "A compact language-specific route tuned for fast local translation into English.";
     const metadata = document.createElement("p");
     metadata.className = "model-option-metadata";
-    metadata.textContent = `${formatBytes(model.totalBytes)} · CPU · Apache-2.0`;
+    metadata.textContent = `${formatBytes(model.totalBytes)} · CPU · ${model.license}`;
     card.append(heading, description, metadata);
 
     if (model.phase === "downloading") {
@@ -985,7 +1058,7 @@ function renderSettingsPanel() {
         primary.disabled = true;
         setSettingsNotice(`Starting ${model.displayName} download…`, "neutral");
         try {
-          await translationService.install(model.sourceLanguage);
+          await translationService.install(model.modelId);
         } catch (error) {
           setSettingsNotice(error instanceof Error ? error.message : String(error), "error");
           primary.disabled = false;
@@ -1004,7 +1077,7 @@ function renderSettingsPanel() {
         remove.disabled = true;
         setSettingsNotice(`Removing ${model.displayName}…`, "neutral");
         try {
-          await translationService.remove(model.sourceLanguage);
+          await translationService.remove(model.modelId);
           setSettingsNotice(`${model.displayName} was removed from this PC.`, "success");
         } catch (error) {
           setSettingsNotice(error instanceof Error ? error.message : String(error), "error");
@@ -1053,6 +1126,7 @@ function setSettingsNotice(message: string, tone: "neutral" | "success" | "error
 async function updateSpokenLanguage() {
   const language = spokenLanguage.value;
   renderLanguageGuidance();
+  populateTranslationTargets();
   renderCaptionOutputControl();
   captureMessage.textContent = "";
   const current = selectedModel();
@@ -1066,6 +1140,7 @@ async function updateSpokenLanguage() {
   const candidate = candidates.find(({ phase }) => phase === "ready") ?? candidates[0];
   if (!candidate) {
     spokenLanguage.value = acceptedSpokenLanguage;
+    populateTranslationTargets();
     captureMessage.textContent = `No installed model catalog supports ${languageLabel(language)}.`;
     renderCaptionOutputControl();
     renderModelStatus(currentModels);
@@ -1078,6 +1153,7 @@ async function updateSpokenLanguage() {
     renderModelStatus(await modelStatus());
   } catch (error) {
     spokenLanguage.value = acceptedSpokenLanguage;
+    populateTranslationTargets();
     captureMessage.textContent = error instanceof Error ? error.message : String(error);
     renderCaptionOutputControl();
     renderModelStatus(currentModels);
@@ -1086,9 +1162,20 @@ async function updateSpokenLanguage() {
 
 sourceSelect.addEventListener("change", updateSourceMode);
 spokenLanguage.addEventListener("change", () => void updateSpokenLanguage());
+translationTarget.addEventListener("change", () => {
+  preferredTranslationTarget = translationTarget.value;
+  localStorage.setItem(TRANSLATION_TARGET_STORAGE_KEY, preferredTranslationTarget);
+  const targetLanguage = supportedTranslationLanguage(translationTarget.value);
+  if (targetLanguage) captionOutput.setTranslationTarget(targetLanguage);
+  requireElement<HTMLElement>("#translation-target-help").textContent = targetLanguage
+    ? `Translation to ${languageLabel(targetLanguage)} runs locally.`
+    : "Recognition stays local and captions remain in the spoken language.";
+  renderCaptionOutputControl();
+  if (dialog.open && dialog.dataset.panel === "transcript") renderTranscriptPanel();
+});
 captionLanguage.addEventListener("change", () => {
   const mode = captionLanguage.value as CaptionOutputMode;
-  if (mode !== "original" && mode !== "english" && mode !== "both") return;
+  if (mode !== "original" && mode !== "translated" && mode !== "both") return;
   preferredCaptionMode = mode;
   localStorage.setItem(CAPTION_MODE_STORAGE_KEY, mode);
   captionOutput.setOutputMode(mode);
@@ -1108,7 +1195,7 @@ translationAction.addEventListener("click", async () => {
   const model = selectedTranslationModel();
   if (!model) return;
   try {
-    await translationService.install(model.sourceLanguage);
+    await translationService.install(model.modelId);
   } catch (error) {
     captureMessage.textContent = error instanceof Error ? error.message : String(error);
   }
@@ -1182,6 +1269,8 @@ dialog.addEventListener("click", (event) => {
 });
 
 translationService.subscribe(renderTranslationStatus);
+populateSpokenLanguageOptions();
+populateTranslationTargets();
 renderLanguageGuidance();
 renderCaptionOutputControl();
 void Promise.all([

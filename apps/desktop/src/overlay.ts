@@ -3,6 +3,7 @@ import "./styles.css";
 import { listen } from "@tauri-apps/api/event";
 
 import { isTauri } from "./bridge";
+import { languageLabel } from "./language-catalog";
 import {
   DEFAULT_OVERLAY_SETTINGS,
   type CaptionOutputEntry,
@@ -67,9 +68,10 @@ function captionLine(text: string, className: string, language: string): HTMLEle
 }
 
 function translationStatus(entry: CaptionOutputEntry): string {
-  if (!entry.isFinal) return "English after pause…";
+  const target = output.targetLanguage ? languageLabel(output.targetLanguage) : "Translation";
+  if (!entry.isFinal) return `${target} is catching up…`;
   if (entry.translationPending) return "Translating…";
-  return "English unavailable";
+  return `${target} unavailable`;
 }
 
 function markTranslationState(group: HTMLElement, entry: CaptionOutputEntry): void {
@@ -120,9 +122,13 @@ function renderCaption(): void {
         "caption-line caption-original",
         entry.sourceLanguage === "auto" ? "" : entry.sourceLanguage
       ));
-    } else if (mode === "english" && entry.translation) {
-      group.append(captionLine(entry.translation, "caption-line caption-translation", "en"));
-    } else if (mode === "english") {
+    } else if (mode === "translated" && entry.translation) {
+      group.append(captionLine(
+        entry.translation,
+        "caption-line caption-translation",
+        output.targetLanguage ?? ""
+      ));
+    } else if (mode === "translated") {
       markTranslationState(group, entry);
       group.append(captionLine(
         entry.original,
@@ -132,7 +138,7 @@ function renderCaption(): void {
       group.append(captionLine(
         translationStatus(entry),
         "caption-line caption-translation caption-translation-status",
-        "en"
+        output.targetLanguage ?? ""
       ));
     } else {
       group.append(captionLine(
@@ -141,13 +147,17 @@ function renderCaption(): void {
         entry.sourceLanguage === "auto" ? "" : entry.sourceLanguage
       ));
       if (entry.translation) {
-        group.append(captionLine(entry.translation, "caption-line caption-translation", "en"));
+        group.append(captionLine(
+          entry.translation,
+          "caption-line caption-translation",
+          output.targetLanguage ?? ""
+        ));
       } else {
         markTranslationState(group, entry);
         group.append(captionLine(
           translationStatus(entry),
           "caption-line caption-translation caption-translation-status",
-          "en"
+          output.targetLanguage ?? ""
         ));
       }
     }

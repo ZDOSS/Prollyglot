@@ -4,7 +4,11 @@
   "version": "ab43d895f5985b1bbab8b6eac8607fcdc05343f3",
   "displayName": "Nemotron 3.5 Streaming 0.6B",
   "backend": "sherpa-onnx-online-nemotron",
-  "languages": ["auto", "en", "es", "ja"],
+  "languages": [
+    "auto", "en", "ar", "bg", "zh", "hr", "cs", "da", "nl", "et",
+    "fi", "fr", "de", "hi", "hu", "it", "ja", "ko", "nb", "pl",
+    "pt", "ro", "ru", "sk", "es", "sv", "tr", "uk", "vi"
+  ],
   "license": "OpenMDW-1.1",
   "provenance": {
     "sourceUrl": "https://huggingface.co/csukuangfj2/sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11",
