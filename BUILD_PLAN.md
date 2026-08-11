@@ -68,13 +68,14 @@ The same owner run showed that more installed recognition models made the contro
 
 The language/translation catalog is now expanded as one integrated pre-release slice. Chinese, French, Korean, and Bengali have smaller dedicated streaming downloads; Nemotron exposes its 28 supported forced languages with ready versus broad-coverage guidance; and the UI offers 29 spoken-language choices in total. Translation has a separate target selector, preferring compact Japanese/Spanish-to-English routes, then a compact multilingual-to-English route, with a larger optional M2M100 model for direct translation among all 29 choices. The rendered-app pass verified changing provisional translation before finalization, three complete wrapped side-by-side history pairs, a real compact French-to-English graph, and a real universal Japanese-to-Spanish graph after full artifact verification. Native Windows media, broader language quality, cold-load timing, and sustained resource use remain the gates.
 
-Settings now treats those catalogs as a scalable model library instead of a
-three-thousand-pixel wall of expanded cards. Search covers model and language
-names; speech and translation routes are grouped separately; each model owns an
-accessible disclosure with its details and explicit lifecycle actions; and the
-selected speech/current translation route open first without forcing the other
-rows open. Progress rerenders preserve disclosure, scroll, and keyboard-focus
-state, while action feedback remains visible above the scroll position.
+The control app now has a full desktop workspace with persistent navigation and
+a separately selectable compact utility, rather than presenting the growing
+feature set as one narrow mobile-style form. Caption and screen-translation
+setup use desktop-width grouped panels, while Transcript, Models, Appearance,
+and Settings have stable destinations. The model manager puts all installed
+packs in one collapsed inventory and uses purpose, language/route, and compatible
+model selectors for explicit additions. Progress rerenders preserve selections,
+disclosure state, scroll, and keyboard focus.
 
 The next media run exposed an overlay ordering race: a direct raw-caption event
 could arrive just before the structured bilingual payload and temporarily turn
@@ -91,10 +92,16 @@ through Windows Graphics Capture, and sends transient BGRA frames through a
 capacity-one latest-frame queue. The live source is sampled at up to 12 FPS,
 while localized frame-change detection caps expensive OCR opportunities at four
 per second and confirms static detections once before going idle. PP-OCRv6 Small
-and two-frame text stabilization feed positioned original/translated labels
-that reuse the local translation worker. Only the audio and visual overlay
-surfaces request exclusion from capture; controls and the region selector remain
-available to screenshots used for ordinary troubleshooting.
+and two-frame text stabilization feed positioned translated labels that reuse
+the local translation worker; original text remains visible at its source. The
+default prominent-text profile filters low-confidence, tiny, wrong-script, and
+common interface-noise results, with an explicit all-detected-text option for
+small text. App and overlay surfaces remain available to normal screenshots.
+The capture worker suppresses only bounded matches for translations currently
+drawn by Prollyglot instead of using display affinity to hide overlay windows.
+Stopping hides and clears the visual overlay immediately, then joins capture and
+OCR work off the command path so a slow recognition call cannot hold the UI in
+an active state.
 
 The 30.4 MiB OCR pack is optional, explicitly downloaded, and fully verified;
 actual model initialization and platform-neutral pipeline tests pass on the
@@ -285,10 +292,10 @@ The experimental direction is now represented by an integrated first slice:
   instead of recognizing every video frame;
 - stabilize identical text across frames, track its bounding box, and route new
   text through the existing local translation service;
-- render original and translated labels above or below their source regions in
-  a separate click-through overlay; and
-- request capture exclusion for the audio and visual overlays to prevent an OCR
-  feedback loop while keeping controls and the selector screenshotable.
+- render translated labels above or below their original source text in a
+  separate click-through overlay; and
+- keep the app screenshotable while filtering the bounded set of translations
+  currently drawn by Prollyglot out of later OCR observations.
 
 The documented DXGI Desktop Duplication backend and equivalent OBS Display
 Capture remain compatibility comparisons, not implemented claims. A

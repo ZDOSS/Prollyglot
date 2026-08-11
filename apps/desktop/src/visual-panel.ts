@@ -9,6 +9,7 @@ import type {
   PixelRect,
   TranslationCatalogStatus,
   VisualCaptureCapabilities,
+  VisualDetectionMode,
   VisualCaptureSelection,
   VisualModelCatalogStatus,
   VisualSource,
@@ -35,7 +36,8 @@ export interface VisualPanelActions {
   start: (
     selection: VisualCaptureSelection,
     sourceLanguage: string,
-    targetLanguage: string
+    targetLanguage: string,
+    detectionMode: VisualDetectionMode
   ) => Promise<void>;
   stop: () => Promise<void>;
   stopAudio: () => Promise<void>;
@@ -49,6 +51,7 @@ interface StoredVisualPreferences {
   targetLanguage?: string;
   windowId?: string;
   displayId?: string;
+  detectionMode?: VisualDetectionMode;
 }
 
 const STORAGE_KEY = "prollyglot.visual-translation";
@@ -109,6 +112,7 @@ export class VisualPanel {
   private targetLanguage: string;
   private windowId?: string;
   private displayId?: string;
+  private detectionMode: VisualDetectionMode;
   private region?: PixelRect;
   private notice = "";
   private busy = false;
@@ -126,6 +130,7 @@ export class VisualPanel {
     if (this.sourceLanguage === this.targetLanguage) this.targetLanguage = "en";
     this.windowId = stored.windowId;
     this.displayId = stored.displayId;
+    this.detectionMode = stored.detectionMode === "allText" ? "allText" : "focused";
   }
 
   render(
@@ -220,6 +225,25 @@ export class VisualPanel {
       container.append(unavailable);
     }
 
+    const setupGrid = create("div", "visual-setup-grid");
+    const sourceColumn = create("section", "visual-setup-column");
+    const sourceHeading = create("div", "visual-setup-column-heading");
+    const sourceTitle = create("h3");
+    sourceTitle.textContent = "Capture source";
+    const sourceDescription = create("p");
+    sourceDescription.textContent = "Choose what Prollyglot watches and how selective recognition should be.";
+    sourceHeading.append(sourceTitle, sourceDescription);
+    sourceColumn.append(sourceHeading);
+
+    const outputColumn = create("section", "visual-setup-column");
+    const outputHeading = create("div", "visual-setup-column-heading");
+    const outputTitle = create("h3");
+    outputTitle.textContent = "Language & output";
+    const outputDescription = create("p");
+    outputDescription.textContent = "Route detected text through an installed local translator.";
+    outputHeading.append(outputTitle, outputDescription);
+    outputColumn.append(outputHeading);
+
     const mode = create("select");
     mode.id = "visual-source-mode";
     mode.append(
@@ -234,7 +258,7 @@ export class VisualPanel {
       this.persist();
       this.rerender();
     });
-    container.append(selectField(
+    sourceColumn.append(selectField(
       "Screen source",
       mode,
       this.mode === "applicationWindow"
@@ -245,7 +269,27 @@ export class VisualPanel {
     ));
 
     const sourceField = this.sourceField(state.sources, actions);
-    container.append(sourceField);
+    sourceColumn.append(sourceField);
+
+    const detectionMode = create("select");
+    detectionMode.id = "visual-detection-mode";
+    detectionMode.append(
+      option("focused", "Prominent text · recommended", this.detectionMode === "focused"),
+      option("allText", "All detected text", this.detectionMode === "allText")
+    );
+    detectionMode.disabled = this.busy;
+    detectionMode.addEventListener("change", () => {
+      this.detectionMode = detectionMode.value as VisualDetectionMode;
+      this.persist();
+      this.rerender();
+    });
+    sourceColumn.append(selectField(
+      "Detection detail",
+      detectionMode,
+      this.detectionMode === "focused"
+        ? "Filters low-confidence and small interface text so video captions, signs, and prominent HUD text stay useful."
+        : "Includes small interface text. Use a selected region when the source contains unrelated controls."
+    ));
 
     const languages = create("div", "visual-language-grid");
     const sourceLanguage = create("select");
@@ -285,17 +329,17 @@ export class VisualPanel {
     languages.append(selectField(
       "Translate to",
       targetLanguage,
-      "Original text stays visible above its local translation."
+      "The original remains visible while its local translation appears nearby."
     ));
-    container.append(languages);
+    outputColumn.append(languages);
 
-    this.renderReadiness(container, state, actions);
+    this.renderReadiness(outputColumn, state, actions);
 
     const notice = create("p", "capture-message visual-panel-notice");
     notice.setAttribute("role", "status");
     notice.setAttribute("aria-live", "polite");
     notice.textContent = this.notice;
-    container.append(notice);
+    outputColumn.append(notice);
 
     const start = create("button", "primary-button visual-start-button");
     start.type = "button";
@@ -311,10 +355,12 @@ export class VisualPanel {
       void this.run(async () => {
         if (state.audioActive) await actions.stopAudio();
         const selection = this.selection(state.sources);
-        await actions.start(selection, this.sourceLanguage, this.targetLanguage);
+        await actions.start(selection, this.sourceLanguage, this.targetLanguage, this.detectionMode);
       }, "Could not start screen translation.");
     });
-    container.append(start);
+    outputColumn.append(start);
+    setupGrid.append(sourceColumn, outputColumn);
+    container.append(setupGrid);
   }
 
   private sourceField(sources: VisualSourceSnapshot, actions: VisualPanelActions): HTMLElement {
@@ -539,7 +585,8 @@ export class VisualPanel {
       sourceLanguage: this.sourceLanguage,
       targetLanguage: this.targetLanguage,
       windowId: this.windowId,
-      displayId: this.displayId
+      displayId: this.displayId,
+      detectionMode: this.detectionMode
     } satisfies StoredVisualPreferences));
   }
 }

@@ -910,11 +910,6 @@ pub fn run() {
             let runtime = app.state::<RuntimeState>();
             models::initialize(app.handle(), &runtime.model);
             visual::initialize(app.handle(), &runtime.visual);
-            for label in ["overlay", "visual-overlay"] {
-                if let Some(window) = app.get_webview_window(label) {
-                    visual::exclude_window_from_capture(&window);
-                }
-            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -941,6 +936,7 @@ pub fn run() {
             visual::cancel_visual_region_selection,
             visual::install_visual_model,
             visual::remove_visual_model,
+            visual::update_visual_overlay_echoes,
             visual::start_visual_translation,
             visual::stop_visual_translation,
         ])

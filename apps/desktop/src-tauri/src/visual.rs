@@ -13,17 +13,17 @@ use prollyglot_model_manager::{
     DEFAULT_VISUAL_OCR_MODEL_ID, DownloadProgress, ModelInstallState, ModelManager, ModelManifest,
     visual_ocr_manifest, visual_ocr_manifest_by_id,
 };
-use prollyglot_visual_ocr_rapid::RapidOcrEngine;
+use prollyglot_visual_ocr_rapid::{RapidOcrEngine, RecognitionProfile};
 use prollyglot_visual_pipeline::{
-    FrameGate, FrameGateConfig, PixelRect, StabilizerUpdate, TextStabilizer, TextStabilizerConfig,
-    VisualPipeline, VisualPipelineStats,
+    FrameGate, FrameGateConfig, OcrEngine, OcrError, OcrObservation, PixelRect, StabilizerUpdate,
+    TextStabilizer, TextStabilizerConfig, VisualFrame, VisualPipeline, VisualPipelineStats,
 };
 use prollyglot_visual_windows::{
     PickedVisualSource, StartedVisualCapture, VisualCaptureCapabilities, VisualCaptureEvent,
     VisualCaptureSelection, VisualSourceSnapshot,
 };
-use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, State, WebviewWindow};
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, State};
 
 use crate::RuntimeState;
 
@@ -105,6 +105,14 @@ pub enum VisualState {
     Failed,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum VisualDetectionMode {
+    #[default]
+    Focused,
+    AllText,
+}
+
 #[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VisualStatus {
@@ -178,6 +186,22 @@ impl ActiveVisualSession {
     }
 }
 
+struct EchoFilteringEngine {
+    inner: RapidOcrEngine,
+    overlay_echoes: Arc<Mutex<Vec<String>>>,
+}
+
+impl OcrEngine for EchoFilteringEngine {
+    fn recognize(&mut self, frame: &VisualFrame) -> Result<Vec<OcrObservation>, OcrError> {
+        let observations = self.inner.recognize(frame)?;
+        let echoes = self.overlay_echoes.lock();
+        Ok(observations
+            .into_iter()
+            .filter(|observation| !matches_overlay_echo(&observation.text, &echoes))
+            .collect())
+    }
+}
+
 #[derive(Default)]
 pub struct VisualRuntime {
     catalog: Arc<Mutex<VisualModelCatalogStatus>>,
@@ -185,6 +209,7 @@ pub struct VisualRuntime {
     inspecting: Arc<AtomicBool>,
     status: Arc<Mutex<VisualStatus>>,
     session: Mutex<Option<ActiveVisualSession>>,
+    overlay_echoes: Arc<Mutex<Vec<String>>>,
 }
 
 pub fn initialize(app: &AppHandle, runtime: &VisualRuntime) {
@@ -265,6 +290,19 @@ pub fn visual_status(state: State<'_, RuntimeState>) -> VisualStatus {
 #[tauri::command]
 pub fn visual_model_status(state: State<'_, RuntimeState>) -> VisualModelCatalogStatus {
     state.visual.catalog.lock().clone()
+}
+
+#[tauri::command]
+pub fn update_visual_overlay_echoes(state: State<'_, RuntimeState>, texts: Vec<String>) {
+    let echoes = texts
+        .into_iter()
+        .take(48)
+        .filter_map(|text| {
+            let normalized = normalize_overlay_text(&text);
+            (normalized.chars().count() >= 4).then_some(normalized)
+        })
+        .collect();
+    *state.visual.overlay_echoes.lock() = echoes;
 }
 
 #[tauri::command]
@@ -464,8 +502,10 @@ pub async fn start_visual_translation(
     selection: VisualCaptureSelection,
     source_language: String,
     target_language: String,
+    detection_mode: Option<VisualDetectionMode>,
 ) -> Result<(), String> {
     validate_language_pair(&source_language, &target_language)?;
+    let detection_mode = detection_mode.unwrap_or_default();
     {
         let _control = state.control.lock();
         if super::audio_session_active(&state) {
@@ -483,6 +523,7 @@ pub async fn start_visual_translation(
                 ..VisualStatus::default()
             },
         );
+        state.visual.overlay_echoes.lock().clear();
     }
 
     let model_directory =
@@ -490,9 +531,17 @@ pub async fn start_visual_translation(
             publish_failure(&app, &state.visual.status, message.clone());
         })?;
     let source_language_for_worker = source_language.clone();
+    let recognition_profile = match detection_mode {
+        VisualDetectionMode::Focused => RecognitionProfile::Focused,
+        VisualDetectionMode::AllText => RecognitionProfile::AllText,
+    };
     let load_started = Instant::now();
     let engine = tauri::async_runtime::spawn_blocking(move || {
-        RapidOcrEngine::load(model_directory, source_language_for_worker)
+        RapidOcrEngine::load_with_profile(
+            model_directory,
+            source_language_for_worker,
+            recognition_profile,
+        )
     })
     .await
     .map_err(|error| {
@@ -509,6 +558,7 @@ pub async fn start_visual_translation(
         elapsed_ms = load_started.elapsed().as_millis(),
         %source_language,
         %target_language,
+        ?detection_mode,
         "visual OCR model ready"
     );
 
@@ -527,7 +577,10 @@ pub async fn start_visual_translation(
         Arc::clone(&state.visual.status),
         Arc::clone(&source),
         capture.frames.clone(),
-        engine,
+        EchoFilteringEngine {
+            inner: engine,
+            overlay_echoes: Arc::clone(&state.visual.overlay_echoes),
+        },
     )
     .inspect_err(|message| {
         publish_start_failure(&app, &state.visual.status, message.clone());
@@ -584,22 +637,27 @@ pub fn stop_visual_translation(
         VisualStatus {
             active: true,
             state: VisualState::Stopping,
-            message: None,
+            message: Some("Stopping capture and finishing the current recognition pass…".into()),
             ..previous
         },
     );
-    let stop_result = session.stop();
     if let Some(overlay) = app.get_webview_window("visual-overlay") {
         let _ = overlay.hide();
     }
     let _ = app.emit(VISUAL_CLEAR_EVENT, ());
-    match stop_result {
-        Ok(()) => {
-            tracing::info!("visual translation session stopped");
-            publish_status(&app, &state.visual.status, VisualStatus::default());
-            Ok(())
-        }
-        Err(message) => {
+    state.visual.overlay_echoes.lock().clear();
+
+    let app_for_worker = app.clone();
+    let status = Arc::clone(&state.visual.status);
+    thread::Builder::new()
+        .name("visual-stop".into())
+        .spawn(move || {
+            let result = session.stop();
+            finish_visual_stop(&app_for_worker, &status, result);
+        })
+        .map(|_| ())
+        .map_err(|error| {
+            let message = format!("Could not start the visual shutdown worker: {error}");
             publish_status(
                 &app,
                 &state.visual.status,
@@ -610,7 +668,31 @@ pub fn stop_visual_translation(
                     ..VisualStatus::default()
                 },
             );
-            Err(message)
+            message
+        })
+}
+
+fn finish_visual_stop(
+    app: &AppHandle,
+    status: &Arc<Mutex<VisualStatus>>,
+    result: Result<(), String>,
+) {
+    match result {
+        Ok(()) => {
+            tracing::info!("visual translation session stopped");
+            publish_status(app, status, VisualStatus::default());
+        }
+        Err(message) => {
+            publish_status(
+                app,
+                status,
+                VisualStatus {
+                    active: false,
+                    state: VisualState::Failed,
+                    message: Some(message),
+                    ..VisualStatus::default()
+                },
+            );
         }
     }
 }
@@ -620,7 +702,7 @@ fn spawn_processor(
     status: Arc<Mutex<VisualStatus>>,
     source: Arc<Mutex<PickedVisualSource>>,
     frames: crossbeam_channel::Receiver<prollyglot_visual_pipeline::VisualFrame>,
-    engine: RapidOcrEngine,
+    engine: EchoFilteringEngine,
 ) -> Result<JoinHandle<()>, String> {
     thread::Builder::new()
         .name("visual-ocr".into())
@@ -755,32 +837,31 @@ fn configure_visual_overlay(app: &AppHandle, source: &PickedVisualSource) -> Res
     overlay
         .set_size(PhysicalSize::new(source.width, source.height))
         .map_err(|error| error.to_string())?;
-    exclude_window_from_capture(&overlay);
     overlay.show().map_err(|error| error.to_string())
 }
 
-#[cfg(target_os = "windows")]
-pub fn exclude_window_from_capture(window: &WebviewWindow) {
-    use windows::Win32::Foundation::HWND;
-    use windows::Win32::UI::WindowsAndMessaging::{
-        SetWindowDisplayAffinity, WDA_EXCLUDEFROMCAPTURE,
-    };
-
-    match window.hwnd() {
-        Ok(hwnd) => {
-            let hwnd = HWND(hwnd.0);
-            if let Err(error) = unsafe { SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE) } {
-                tracing::warn!(window = window.label(), %error, "could not exclude Prollyglot window from display capture");
-            }
-        }
-        Err(error) => {
-            tracing::warn!(window = window.label(), %error, "could not read Prollyglot window handle for capture exclusion");
-        }
-    }
+fn normalize_overlay_text(text: &str) -> String {
+    text.chars()
+        .filter(|character| character.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .take(500)
+        .collect()
 }
 
-#[cfg(not(target_os = "windows"))]
-pub fn exclude_window_from_capture(_window: &WebviewWindow) {}
+fn matches_overlay_echo(text: &str, echoes: &[String]) -> bool {
+    let candidate = normalize_overlay_text(text);
+    let candidate_length = candidate.chars().count();
+    if candidate_length < 4 {
+        return false;
+    }
+    echoes.iter().any(|echo| {
+        let echo_length = echo.chars().count();
+        echo_length >= 4
+            && (candidate == *echo
+                || (candidate_length >= 6
+                    && (candidate.contains(echo) || echo.contains(&candidate))))
+    })
+}
 
 fn validate_language_pair(source: &str, target: &str) -> Result<(), String> {
     let manifest = visual_ocr_manifest().map_err(|error| error.to_string())?;
@@ -969,4 +1050,23 @@ fn publish_start_failure(app: &AppHandle, status: &Arc<Mutex<VisualStatus>>, mes
     }
     let _ = app.emit(VISUAL_CLEAR_EVENT, ());
     publish_failure(app, status, message);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn overlay_echo_matching_ignores_spacing_and_punctuation() {
+        let echoes = vec![normalize_overlay_text("Good morning, everyone!")];
+        assert!(matches_overlay_echo("Good morning everyone", &echoes));
+        assert!(matches_overlay_echo("Morning, everyone", &echoes));
+    }
+
+    #[test]
+    fn overlay_echo_matching_does_not_hide_short_source_words() {
+        let echoes = vec![normalize_overlay_text("No")];
+        assert!(!matches_overlay_echo("No", &echoes));
+        assert!(!matches_overlay_echo("News update", &echoes));
+    }
 }

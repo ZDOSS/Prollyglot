@@ -70,6 +70,7 @@ export interface VisualCaptureCapabilities {
 }
 
 export type VisualSourceKind = "applicationWindow" | "display";
+export type VisualDetectionMode = "focused" | "allText";
 
 export interface VisualSource {
   id: string;

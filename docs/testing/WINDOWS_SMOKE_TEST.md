@@ -20,7 +20,7 @@ The app should open without a UAC prompt or blank window. No subtitle preview sh
 
 Open **Appearance** once. Its sample stays inside the Appearance window rather than opening a second always-on-top preview over the controls. Confirm both **Done** and the title-bar **Close** return to the main window; no screenshot is required.
 
-If the selected model is missing, download it normally and wait for it to finish. Fast is the smallest English default; Balanced and Enhanced are optional English choices under **Settings**. Smaller Chinese, French, Korean, and Bengali streaming models are also optional. Nemotron is the much larger 28-language option and does not need to be downloaded for an ordinary English smoke. Interrupted-download recovery is deferred to a later hardening pass and is not part of this smoke test.
+If the selected model is missing, open **Models**, download it normally, and wait for it to finish. Fast is the smallest English default; Balanced and Enhanced are optional English choices under **Models → Speech recognition**. Smaller Chinese, French, Korean, and Bengali streaming models are also optional. Nemotron is the much larger 28-language option and does not need to be downloaded for an ordinary English smoke. Interrupted-download recovery is deferred to a later hardening pass and is not part of this smoke test.
 
 ## 2. Smoke-test Everything I hear
 
@@ -33,15 +33,15 @@ If the selected model is missing, download it normally and wait for it to finish
 
 Recognizing the audible selected-device output is enough to pass this pre-release capture smoke. Exact wording and punctuation do not need to match perfectly.
 
-## 3. Smoke-test Settings
+## 3. Smoke-test Models and Settings
 
 Open **Settings** and select **Refresh audio sources**. The dialog should immediately say it is refreshing, then report how many playback devices and applications it found. Newly opened audio applications should appear in the main source list after closing Settings.
 
-Settings should show a searchable **Models & language packs** library. The eight recognition models are grouped under English quality, dedicated languages, and Multilingual; translation has compact routes into English plus the universal route. Each collapsed row shows its language scope, download size, and state. Expand one row with its caret to reveal that model's description and Download/Use/Remove actions. Searching for **Japanese** should narrow the model rows to routes that support Japanese; clear the search to restore the full catalog. One speech model must be clearly marked **In use**, and a translation route required by the current main-screen choices is marked **Needed now** or **Current route**.
+Open **Models**. **Installed on this PC** should start collapsed and show the installed count and disk use; opening it lists every installed speech, translation, and screen-text model with an individual Remove action. Under **Add a model**, switch among **Speech recognition**, **Translation**, and **Screen text**. Choose a language or translation route and confirm the compatible-model selector shows only models that support it, with one model's details and Download/Use state at a time. Searching for **Japanese** may narrow those compatible choices; clear the search to restore them. One installed speech model must be clearly marked **In use** or **Selected for captions**.
 
-To compare recognition, stop captions, expand another compatible model, download it, select **Use model**, and replay the same difficult speech. The open row and scroll position should not jump back to the top as progress changes, and completion feedback should remain visible in the dialog. A simple note about which model sounded better is enough; no recording, reference transcript, or screenshot is required for this pre-release check.
+To compare recognition, stop captions, choose **Speech recognition**, the spoken language, and another compatible model. Download it, select **Use model**, and replay the same difficult speech. The purpose/language/model choices and scroll position should not jump as progress changes, and completion feedback should remain visible. A simple note about which model sounded better is enough; no recording, reference transcript, or screenshot is required for this pre-release check.
 
-Model removal is not required on every build. When specifically checking it, stop captions, choose **Remove**, and confirm that Settings reports success. Removing an unselected model returns it to **Optional**. Removing the selected model returns first-run setup and disables **Start Captions** until that model is reinstalled or another installed model is selected.
+Model removal is not required on every build. When specifically checking it, stop captions, open **Installed on this PC**, choose **Remove**, and confirm that Models reports success. The removed model returns to **Not installed** in the compatible-model picker. Removing the selected model returns first-run setup and disables **Start Captions** until that model is reinstalled or another installed model is selected.
 
 When specifically spot-checking multilingual captions, choose a known language under **Spoken language**. Chinese, French, Korean, and Bengali can select their smaller dedicated model; the other non-English choices use Nemotron and ask for its one-time 650.6 MiB download if needed. Start with translation **Off**, play familiar speech, and report whether the wording feels usable and how much recognition delay you notice. Languages labeled as Nemotron broad coverage should be treated as more experimental.
 

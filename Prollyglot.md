@@ -1159,14 +1159,28 @@ CPU, and recall evidence rather than exposed as premature performance controls.
 
 The translated visual layer is separate from the bottom audio-caption surface.
 Each result retains a capture-space bounding box mapped through crop and current
-source geometry into screen coordinates. Translation appears just above the
-source box when space permits, moves below it when required, and clamps to the
-captured bounds. Prollyglot's audio and visual overlay surfaces request
-`WDA_EXCLUDEFROMCAPTURE` where supported so display capture does not repeatedly
-OCR its own translations. The control, appearance, and translucent region
-selector remain visible to ordinary screenshots so users can report problems.
-Explicit masking remains a fallback if native Windows validation exposes systems
-where overlay affinity is unavailable.
+source geometry into screen coordinates. The source text is not redrawn because
+it is already visible in the captured application or display. Translation
+appears just above the source box when space permits, moves below it when
+required, and clamps to the captured bounds.
+
+Prollyglot does not mark its app or overlays with
+`WDA_EXCLUDEFROMCAPTURE`. That affinity caused full-screen troubleshooting
+captures to omit the app or the surface under its transparent visual overlay.
+The app, overlay, controls, and translucent selector must remain visible to an
+ordinary user screenshot. To prevent an OCR feedback loop, the capture worker
+instead tracks the bounded set of translated strings currently drawn by the
+visual overlay and rejects matching OCR observations before stabilization and
+translation. The list and text-match threshold are deliberately bounded; native
+media testing must watch for false suppression when genuine source text happens
+to match a currently displayed translation.
+
+Visual OCR has two explicit recognition profiles. **Prominent text** is the
+default for media and filters low-confidence observations, tiny interface text,
+common URL/interface noise, and results whose dominant script conflicts with a
+forced source language. **All detected text** lowers the size and confidence
+thresholds for users who intentionally need small text. Neither profile silently
+changes the user's selected capture region.
 
 The integrated slice is accepted only if representative Japanese and Spanish
 video subtitles, game UI, and signs remain positionally stable and useful on a
@@ -1323,15 +1337,28 @@ The extension should remain optional.
 
 # 34. User interface
 
-The default Prollyglot window should be minimal, small, and approachable.
+The default Prollyglot window is a desktop workspace, not a phone-shaped stack
+of every available control. It opens at approximately 1180 × 760 and uses a
+persistent left sidebar for **Captions**, **Screen translation**,
+**Transcript**, **Models**, **Appearance**, and **Settings**. A compact-mode
+control in the title bar switches to an approximately 440 × 640 focused utility
+that preserves the existing quick Start/Stop flow and bottom navigation. The
+chosen mode persists between launches.
 
 The UI principle is:
 
 > Minimal by default, customizable by choice.
 
-The primary window should expose only the decisions required to start useful captions. Visual customization and advanced engine controls should remain easy to find without crowding the default path.
+The full workspace should use the width available on a desktop. Caption setup
+pairs the source and language controls with a live transcript/status panel.
+Screen translation separates capture-source controls from language/output
+controls. Transcript and model management use dedicated pages rather than
+nested mobile-style sheets. Compact mode exposes only the decisions required to
+start useful captions, while the same secondary destinations open as contained
+dialogs. Visual customization and advanced engine controls remain easy to find
+without crowding either primary path.
 
-Example:
+Compact example:
 
 ```text
 ┌────────────────────────────────────────┐
@@ -1390,6 +1417,11 @@ While running:
 
 System-tray operation should eventually be supported.
 
+In full mode the active session keeps the same persistent navigation and
+replaces the setup action with one obvious Stop action. In compact mode it keeps
+the smaller live summary shown above. Changing view mode must not start or stop
+capture, lose transcript state, or leave a secondary dialog trapped open.
+
 ---
 
 # 36. Advanced settings
@@ -1414,55 +1446,48 @@ These settings should stay out of the standard setup path.
 
 # 37. Model manager
 
-Prollyglot should include a model manager that remains usable as recognition
-and translation catalogs grow. Settings should present one searchable model
-library, separated into speech-recognition and translation sections. Speech
-models are grouped into English quality choices, dedicated languages, and
-multilingual coverage. Translation models are grouped into compact routes to
-English and flexible many-to-many routes.
+Prollyglot includes a dedicated **Models** workspace that remains usable as the
+catalog grows. It must not mix model inventory into unrelated application
+settings or render every model as a permanently expanded card.
+
+The page starts with a collapsed **Installed on this PC** disclosure showing
+the installed count and total disk use. Opening it shows every installed speech,
+translation, and visual OCR pack together, with its purpose, language scope,
+size, selected/in-use state, and individual Remove action.
+
+Below that, **Add a model** uses purpose tabs for **Speech**,
+**Translation**, and **Screen text**. Within the chosen purpose the user first
+selects a language or route, then a second selector contains only compatible
+models. Exactly one model's size, coverage, tradeoff, state, and lifecycle
+action is presented at a time. Search may supplement this flow later, but must
+not restore an unbounded wall of cards.
 
 Example:
 
 ```text
-Models & language packs
-[ Search models or languages                     ]
+Models                                    3 installed
 
-Speech recognition                         1 installed
+› Installed on this PC · 3 models · 793 MiB
 
-English quality
-⌄ Fast — English Streaming Small       In use
-  English · 43.1 MiB
-  Lowest download and CPU cost...
-  [ Remove ]
+Add a model
+[ Speech ] [ Translation ] [ Screen text ]
 
-› Balanced — English Streaming Standard  Available
-  English · 70.0 MiB
+Language or coverage
+Japanese                               ▾
 
-Dedicated languages
-› Chinese — Streaming Small              Available
-› French — Streaming Compact             Available
+Compatible model
+Nemotron multilingual                 ▾
 
-Translation                              0 installed
-› Japanese → English · Compact            Available
-› 29-language universal route             Needed now
+650.6 MiB · streaming · broad coverage
+[ Download ]
 ```
 
-Each model is a disclosure row rather than a permanently expanded card. The
-collapsed row shows its product profile or route, name, language scope,
-download size, and current state. Expanding it shows the evidence-based
-tradeoff, exact coverage where useful, runtime/license facts, progress or error
-messages, and that individual model's Download, Repair, Use, or Remove actions.
-The selected speech model and a translation model needed by the current caption
-route may open automatically the first time Settings is shown; the user can
-collapse either one and may keep multiple rows open.
-
-Search must match model names and supported language names without hiding the
-unrelated audio-source controls. Model progress updates should preserve the
-settings scroll position, open disclosures, and a sensible keyboard focus
-target. Download/removal feedback must remain visible regardless of where the
-affected row sits in the scrollable catalog. Disclosure buttons expose
-`aria-expanded` and `aria-controls`, expanded content is associated with its
-button, and every action has a model-specific accessible name.
+Model progress updates preserve the selected purpose, language, model, scroll
+position, and a sensible keyboard focus target. Download/removal feedback must
+remain visible in the active detail panel or installed inventory. The installed
+disclosure exposes `aria-expanded` and `aria-controls`, its content is
+associated with its button, and every action has a model-specific accessible
+name.
 
 The model manager should show:
 

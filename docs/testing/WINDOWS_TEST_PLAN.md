@@ -237,7 +237,8 @@ pnpm --dir apps/desktop tauri dev
 
 Leave this terminal open. The first Rust build can take several minutes. Expected:
 
-- a compact window titled **Prollyglot** opens;
+- a full desktop workspace titled **Prollyglot** opens, with a title-bar control
+  available for compact mode;
 - there is no administrator/UAC prompt from the application;
 - the window is not blank;
 - the initial status is **Ready**; and
@@ -249,7 +250,7 @@ If the app crashes, preserve the entire development-terminal output and copy the
 
 ## 6. Test the first-run model lifecycle
 
-Perform this section before normal caption testing. If Fast was installed by an earlier run, open **Settings**, make **English Streaming Small** the selected model, press **Remove**, close Prollyglot, stop `tauri dev` with `Ctrl+C`, and launch it again.
+Perform this section before normal caption testing. If Fast was installed by an earlier run, open **Models**, expand **Installed on this PC**, make **English Streaming Small** the selected model if necessary, press its **Remove** action, close Prollyglot, stop `tauri dev` with `Ctrl+C`, and launch it again.
 
 ### WIN-MODEL-01 — missing-model state
 
@@ -275,8 +276,8 @@ Expected: the partial download is never reported as ready, the retry starts norm
 1. Let the download finish.
 2. Confirm the model card disappears.
 3. Confirm **Start Captions** becomes available.
-4. Open **Settings**.
-5. Confirm **English Streaming Small** is marked **In use** and reports approximately 43.1 MB; Balanced and Enhanced should remain optional.
+4. Open **Models**, then expand **Installed on this PC**.
+5. Confirm **English Streaming Small** is marked **In use** and reports approximately 43.1 MB. Under **Add a model → Speech recognition → English**, Balanced and Enhanced should remain available but not installed.
 
 Expected: all checks pass. Save `model-installed.png`.
 
@@ -294,10 +295,10 @@ Expected: an already-installed model loads and captions locally with no account 
 
 ### WIN-MODEL-05 — remove and reinstall
 
-1. Start captions and open **Settings**.
+1. Start captions and open **Models**.
 2. Confirm model selection and removal controls are disabled while the session is active and the model remains installed.
 3. Press **Stop Captions** and wait for **Ready**.
-4. Open **Settings** and press **Remove** on English Streaming Small.
+4. Open **Models → Installed on this PC** and press **Remove** on English Streaming Small.
 5. Confirm the missing-model card returns and **Start Captions** becomes unavailable.
 6. Reinstall the model and leave it installed for the remaining tests.
 

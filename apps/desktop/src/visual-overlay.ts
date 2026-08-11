@@ -46,6 +46,12 @@ function labelFor(region: VisualOutputRegion): HTMLElement {
   label.dataset.trackId = String(region.trackId);
   label.dataset.pending = String(region.translationPending);
   label.title = region.original;
+  label.setAttribute(
+    "aria-label",
+    region.translation
+      ? `${region.original}. Translation: ${region.translation}`
+      : `${region.original}. Translation pending.`
+  );
 
   const center = ((region.bounds.x + region.bounds.width / 2) / output.sourceWidth) * 100;
   const top = (region.bounds.y / output.sourceHeight) * 100;
@@ -57,7 +63,6 @@ function labelFor(region: VisualOutputRegion): HTMLElement {
   label.style.top = `${placeBelow ? bottom : top}%`;
   label.style.setProperty("--visual-source-width", `${Math.max(14, Math.min(72, sourceWidth))}vw`);
 
-  label.append(line(region.original, "visual-source-copy", output.sourceLanguage));
   if (region.translation) {
     label.append(line(region.translation, "visual-translated-copy", output.targetLanguage));
   } else {

@@ -19,6 +19,7 @@ import {
   removeSpeechModel,
   removeVisualModel,
   selectSpeechModel,
+  setWindowLayout,
   showAppearance,
   sourceSnapshot,
   startWindowDrag,
@@ -69,113 +70,165 @@ const root = document.querySelector<HTMLElement>("#app");
 if (!root) throw new Error("missing app root");
 
 root.innerHTML = `
-  <section class="app-window main-window" aria-label="Prollyglot controls">
+  <section class="app-window main-window" aria-label="Prollyglot controls" data-view-mode="full">
     <header class="titlebar">
       <div class="brand">
         <img class="brand-mark" src="/branding/prollyglot-mark.png" alt="" />
         <span class="brand-name">Prollyglot</span>
         <span class="status-label" data-state="stopped"><span class="status-dot"></span><span id="status-text">Ready</span></span>
       </div>
-      <div class="window-controls" aria-label="Window controls">
-        <button class="window-control" type="button" data-window-action="minimize" aria-label="Minimize">${icons.minimize}</button>
-        <button class="window-control" type="button" data-window-action="maximize" aria-label="Maximize">${icons.maximize}</button>
-        <button class="window-control close" type="button" data-window-action="close" aria-label="Close">${icons.close}</button>
+      <div class="titlebar-actions">
+        <button id="view-mode-toggle" class="view-mode-toggle" type="button">
+          <span class="view-mode-icon">${icons.compact}</span>
+          <span class="view-mode-label">Compact view</span>
+        </button>
+        <div class="window-controls" aria-label="Window controls">
+          <button class="window-control" type="button" data-window-action="minimize" aria-label="Minimize">${icons.minimize}</button>
+          <button class="window-control" type="button" data-window-action="maximize" aria-label="Maximize">${icons.maximize}</button>
+          <button class="window-control close" type="button" data-window-action="close" aria-label="Close">${icons.close}</button>
+        </div>
       </div>
     </header>
 
-    <div class="main-content">
-      <section id="model-setup" class="model-setup" aria-labelledby="model-setup-title" hidden>
-        <div class="model-copy">
-          <span class="model-kicker">Local model required</span>
-          <h2 id="model-setup-title">Local captions</h2>
-          <p id="model-message">Download the selected speech model once, then caption offline.</p>
+    <div class="desktop-frame">
+      <nav class="desktop-nav" aria-label="Application views">
+        <div class="desktop-nav-primary">
+          <button type="button" class="desktop-nav-action is-active" data-workspace="captions" aria-current="page">${icons.captions}<span>Captions</span></button>
+          <button type="button" class="desktop-nav-action" data-panel="visual">${icons.screen}<span>Screen translation</span></button>
+          <button type="button" class="desktop-nav-action" data-panel="transcript">${icons.transcript}<span>Transcript</span></button>
+          <button type="button" class="desktop-nav-action" data-panel="models">${icons.models}<span>Models</span></button>
+          <button type="button" class="desktop-nav-action" data-appearance>${icons.appearance}<span>Appearance</span></button>
+          <button type="button" class="desktop-nav-action" data-panel="settings">${icons.settings}<span>Settings</span></button>
         </div>
-        <progress id="model-progress" class="model-progress" max="1" value="0" hidden></progress>
-        <button id="model-action" class="secondary-button model-action" type="button">Download model</button>
-      </section>
-
-      <section id="translation-setup" class="model-setup translation-setup" aria-labelledby="translation-setup-title" hidden>
-        <div class="model-copy">
-          <span class="model-kicker">Optional local translation</span>
-          <h2 id="translation-setup-title">Translated captions</h2>
-          <p id="translation-message">Download the selected translator once, then translate offline.</p>
+        <div class="desktop-nav-footer">
+          <span class="privacy-state"><span class="status-dot"></span>Local processing</span>
+          <span class="version-state">Pre-release · 0.1.0</span>
         </div>
-        <progress id="translation-progress" class="model-progress" max="1" value="0" hidden></progress>
-        <button id="translation-action" class="secondary-button model-action" type="button">Download translator</button>
-      </section>
+      </nav>
 
-      <div class="field-group">
-        <label class="field-label" for="audio-source">Audio source</label>
-        <div class="select-wrap">
-          <select id="audio-source" class="select-control" aria-describedby="source-help">
-            <option value="system">Everything I hear</option>
-          </select>
-          ${icons.chevronDown}
-        </div>
-        <span id="source-help" class="sr-only">Choose all audio from a playback device or one application.</span>
-      </div>
+      <main class="workspace">
+        <section id="caption-workspace" class="workspace-page" aria-labelledby="caption-page-title">
+          <header class="workspace-heading">
+            <div>
+              <h1 id="caption-page-title">Captions</h1>
+              <p>Transcribe and translate audio playing on this PC.</p>
+            </div>
+          </header>
 
-      <div class="field-group" id="device-field">
-        <label class="field-label" for="playback-device">Playback device</label>
-        <div class="select-wrap">
-          <select id="playback-device" class="select-control"></select>
-          ${icons.chevronDown}
-        </div>
-      </div>
+          <div class="caption-workspace-grid">
+            <section class="main-content caption-setup" aria-label="Caption setup">
+              <section id="model-setup" class="model-setup" aria-labelledby="model-setup-title" hidden>
+                <div class="model-copy">
+                  <span class="model-kicker">Local model required</span>
+                  <h2 id="model-setup-title">Local captions</h2>
+                  <p id="model-message">Download the selected speech model once, then caption offline.</p>
+                </div>
+                <progress id="model-progress" class="model-progress" max="1" value="0" hidden></progress>
+                <button id="model-action" class="secondary-button model-action" type="button">Download model</button>
+              </section>
 
-      <div class="field-grid">
-        <div class="field-group">
-          <label class="field-label" for="spoken-language">Spoken language</label>
-          <div class="select-wrap">
-            <select id="spoken-language" class="select-control" aria-describedby="spoken-language-help"></select>
-            ${icons.chevronDown}
+              <section id="translation-setup" class="model-setup translation-setup" aria-labelledby="translation-setup-title" hidden>
+                <div class="model-copy">
+                  <span class="model-kicker">Optional local translation</span>
+                  <h2 id="translation-setup-title">Translated captions</h2>
+                  <p id="translation-message">Download the selected translator once, then translate offline.</p>
+                </div>
+                <progress id="translation-progress" class="model-progress" max="1" value="0" hidden></progress>
+                <button id="translation-action" class="secondary-button model-action" type="button">Download translator</button>
+              </section>
+
+              <div class="capture-field-grid source-field-grid">
+                <div class="field-group">
+                  <label class="field-label" for="audio-source">Audio source</label>
+                  <div class="select-wrap">
+                    <select id="audio-source" class="select-control" aria-describedby="source-help">
+                      <option value="system">Everything I hear</option>
+                    </select>
+                    ${icons.chevronDown}
+                  </div>
+                  <span id="source-help" class="sr-only">Choose all audio from a playback device or one application.</span>
+                </div>
+
+                <div class="field-group" id="device-field">
+                  <label class="field-label" for="playback-device">Playback device</label>
+                  <div class="select-wrap">
+                    <select id="playback-device" class="select-control"></select>
+                    ${icons.chevronDown}
+                  </div>
+                </div>
+              </div>
+
+              <div class="field-grid">
+                <div class="field-group">
+                  <label class="field-label" for="spoken-language">Spoken language</label>
+                  <div class="select-wrap">
+                    <select id="spoken-language" class="select-control" aria-describedby="spoken-language-help"></select>
+                    ${icons.chevronDown}
+                  </div>
+                  <span id="spoken-language-help" class="field-help"></span>
+                </div>
+
+                <div class="field-group">
+                  <label class="field-label" for="translation-target">Translate to</label>
+                  <div class="select-wrap">
+                    <select id="translation-target" class="select-control" aria-describedby="translation-target-help"></select>
+                    ${icons.chevronDown}
+                  </div>
+                  <span id="translation-target-help" class="field-help"></span>
+                </div>
+
+                <div class="field-group caption-output-field">
+                  <label class="field-label" for="caption-language">Caption output</label>
+                  <div class="select-wrap">
+                    <select id="caption-language" class="select-control" aria-describedby="caption-language-help">
+                      <option value="original">Original language</option>
+                    </select>
+                    ${icons.chevronDown}
+                  </div>
+                  <span id="caption-language-help" class="field-help"></span>
+                </div>
+              </div>
+
+              <p id="capture-message" class="capture-message" role="status" aria-live="polite"></p>
+
+              <div class="capture-actions">
+                <button id="capture-toggle" class="primary-button" type="button">Start Captions</button>
+                <button id="visual-toggle" class="secondary-button screen-translation-button" type="button">Translate Screen…</button>
+              </div>
+            </section>
+
+            <aside class="session-preview" aria-labelledby="session-preview-title">
+              <header class="session-preview-header">
+                <div>
+                  <span class="session-preview-kicker">Current session</span>
+                  <h2 id="session-preview-title">Live transcript</h2>
+                </div>
+                <button type="button" class="text-button" data-panel="transcript">Open transcript</button>
+              </header>
+              <div id="session-preview-content" class="session-preview-content"></div>
+            </aside>
           </div>
-          <span id="spoken-language-help" class="field-help"></span>
-        </div>
+        </section>
 
-        <div class="field-group">
-          <label class="field-label" for="translation-target">Translate to</label>
-          <div class="select-wrap">
-            <select id="translation-target" class="select-control" aria-describedby="translation-target-help"></select>
-            ${icons.chevronDown}
+        <dialog id="utility-dialog" class="utility-dialog" aria-labelledby="dialog-title">
+          <div class="dialog-title-row">
+            <div class="dialog-heading-copy">
+              <h2 id="dialog-title"></h2>
+              <p id="dialog-subtitle"></p>
+            </div>
+            <button type="button" class="dialog-close" aria-label="Close">${icons.close}</button>
           </div>
-          <span id="translation-target-help" class="field-help"></span>
-        </div>
-
-        <div class="field-group">
-          <label class="field-label" for="caption-language">Caption output</label>
-          <div class="select-wrap">
-            <select id="caption-language" class="select-control" aria-describedby="caption-language-help">
-              <option value="original">Original language</option>
-            </select>
-            ${icons.chevronDown}
-          </div>
-          <span id="caption-language-help" class="field-help"></span>
-        </div>
-      </div>
-
-      <p id="capture-message" class="capture-message" role="status" aria-live="polite"></p>
-
-      <div class="capture-actions">
-        <button id="capture-toggle" class="primary-button" type="button">Start Captions</button>
-        <button id="visual-toggle" class="secondary-button screen-translation-button" type="button">Translate Screen…</button>
-      </div>
+          <div id="dialog-content"></div>
+          <p id="settings-action-status" class="settings-action-status" role="status" aria-live="polite" hidden></p>
+        </dialog>
+      </main>
     </div>
 
-    <nav class="utility-nav" aria-label="Application views">
+    <nav class="utility-nav compact-nav" aria-label="Compact application views">
       <button type="button" class="utility-action" data-panel="transcript">${icons.transcript}<span>Transcript</span></button>
-      <button type="button" class="utility-action" id="appearance-action">${icons.appearance}<span>Appearance</span></button>
-      <button type="button" class="utility-action" data-panel="settings">${icons.settings}<span>Settings</span></button>
+      <button type="button" class="utility-action" data-appearance>${icons.appearance}<span>Appearance</span></button>
+      <button type="button" class="utility-action" data-panel="models">${icons.models}<span>Models</span></button>
     </nav>
-
-    <dialog id="utility-dialog" class="utility-dialog" aria-labelledby="dialog-title">
-      <div class="dialog-title-row">
-        <h2 id="dialog-title"></h2>
-        <button type="button" class="dialog-close" aria-label="Close">${icons.close}</button>
-      </div>
-      <div id="dialog-content"></div>
-      <p id="settings-action-status" class="settings-action-status" role="status" aria-live="polite" hidden></p>
-    </dialog>
   </section>
 `;
 
@@ -201,8 +254,18 @@ const translationMessage = requireElement<HTMLElement>("#translation-message");
 const translationProgress = requireElement<HTMLProgressElement>("#translation-progress");
 const translationAction = requireElement<HTMLButtonElement>("#translation-action");
 const dialog = requireElement<HTMLDialogElement>("#utility-dialog");
+const appWindow = requireElement<HTMLElement>(".main-window");
+const viewModeToggle = requireElement<HTMLButtonElement>("#view-mode-toggle");
+const sessionPreviewContent = requireElement<HTMLElement>("#session-preview-content");
+const captionWorkspace = requireElement<HTMLElement>("#caption-workspace");
 const CAPTION_MODE_STORAGE_KEY = "prollyglot.caption-output";
 const TRANSLATION_TARGET_STORAGE_KEY = "prollyglot.translation-target";
+const VIEW_MODE_STORAGE_KEY = "prollyglot.view-mode";
+
+type AppViewMode = "full" | "compact";
+type DialogPanel = "transcript" | "models" | "settings" | "visual";
+
+let currentViewMode: AppViewMode = storedViewMode();
 
 let snapshot: SourceSnapshot = { playbackDevices: [], applications: [] };
 let currentStatus: CaptureStatus = { state: "stopped", peak: 0, droppedFrames: 0 };
@@ -256,6 +319,7 @@ const captionOutput = new CaptionOutputController(
   translationService,
   (payload) => {
     if (dialog.open && dialog.dataset.panel === "transcript") renderTranscriptPanel();
+    renderSessionPreview();
     return updateCaptionOutput(payload);
   },
   (message) => {
@@ -297,6 +361,36 @@ function storedCaptionMode(): CaptionOutputMode {
 function storedTranslationTarget(): string {
   const stored = localStorage.getItem(TRANSLATION_TARGET_STORAGE_KEY);
   return stored === "off" || (stored && supportedTranslationLanguage(stored)) ? stored : "en";
+}
+
+function storedViewMode(): AppViewMode {
+  return localStorage.getItem(VIEW_MODE_STORAGE_KEY) === "compact" ? "compact" : "full";
+}
+
+function renderViewMode(): void {
+  appWindow.dataset.viewMode = currentViewMode;
+  const compact = currentViewMode === "compact";
+  viewModeToggle.setAttribute("aria-label", compact ? "Open full view" : "Use compact view");
+  viewModeToggle.querySelector<HTMLElement>(".view-mode-icon")!.innerHTML = compact
+    ? icons.fullView
+    : icons.compact;
+  viewModeToggle.querySelector<HTMLElement>(".view-mode-label")!.textContent = compact
+    ? "Open full view"
+    : "Compact view";
+}
+
+async function changeViewMode(next: AppViewMode): Promise<void> {
+  if (next === currentViewMode) return;
+  if (dialog.open) dialog.close();
+  currentViewMode = next;
+  localStorage.setItem(VIEW_MODE_STORAGE_KEY, next);
+  renderViewMode();
+  setActiveNavigation("captions");
+  try {
+    await setWindowLayout(next);
+  } catch (error) {
+    reportWindowControlError(`switch to ${next} view`, error);
+  }
 }
 
 function populateSpokenLanguageOptions(): void {
@@ -544,7 +638,7 @@ function renderTranslationStatus(catalog: TranslationCatalogStatus): void {
   }
   currentTranslations = catalog;
   renderCaptionOutputControl();
-  if (dialog.open && dialog.dataset.panel === "settings") renderSettingsPanel();
+  if (dialog.open && dialog.dataset.panel === "models") renderSettingsPanel();
   if (dialog.open && dialog.dataset.panel === "visual") renderVisualPanel();
 }
 
@@ -578,7 +672,7 @@ function renderStatus(status: CaptureStatus) {
   updatePrimaryAvailability();
   renderTranslationSetup();
   document.documentElement.style.setProperty("--audio-peak", String(status.peak));
-  if (stateChanged && dialog.open && dialog.dataset.panel === "settings") renderSettingsPanel();
+  if (stateChanged && dialog.open && dialog.dataset.panel === "models") renderSettingsPanel();
   if (dialog.open && dialog.dataset.panel === "visual") renderVisualPanel();
 }
 
@@ -621,7 +715,9 @@ function renderVisualStatus(status: VisualStatus): void {
   visualToggle.disabled = status.state === "starting" || status.state === "stopping";
   renderHeaderStatus();
   updatePrimaryAvailability();
-  if (changed && dialog.open && dialog.dataset.panel === "settings") renderSettingsPanel();
+  renderModelStatus(currentModels);
+  renderTranslationSetup();
+  if (changed && dialog.open && dialog.dataset.panel === "models") renderSettingsPanel();
   if (dialog.open && dialog.dataset.panel === "visual") renderVisualPanel();
 }
 
@@ -640,7 +736,7 @@ function renderVisualModelStatus(catalog: VisualModelCatalogStatus): void {
     settingsNotice = { message: failed.message ?? `${failed.displayName} could not be installed.`, tone: "error" };
   }
   currentVisualModels = catalog;
-  if (dialog.open && dialog.dataset.panel === "settings") renderSettingsPanel();
+  if (dialog.open && dialog.dataset.panel === "models") renderSettingsPanel();
   if (dialog.open && dialog.dataset.panel === "visual") renderVisualPanel();
 }
 
@@ -724,12 +820,13 @@ function renderModelStatus(catalog: ModelCatalogStatus) {
     modelMessage.textContent = `Download ${status.displayName} once, then ${captionAction(spokenLanguage.value)} offline.`;
   }
   updatePrimaryAvailability();
-  if (dialog.open && dialog.dataset.panel === "settings") renderSettingsPanel();
+  if (dialog.open && dialog.dataset.panel === "models") renderSettingsPanel();
 }
 
 function renderTranscript(snapshot: TranscriptSnapshot) {
   currentTranscript = snapshot;
   captionOutput.updateTranscript(snapshot);
+  renderSessionPreview();
   if (dialog.open && dialog.dataset.panel === "transcript") renderTranscriptPanel();
 }
 
@@ -811,6 +908,36 @@ function appendTranscriptCaption(
     copy.append(note);
   }
   item.append(copy);
+}
+
+function renderSessionPreview(): void {
+  sessionPreviewContent.replaceChildren();
+  const segments = currentTranscript.committed.slice(-6);
+  if (currentTranscript.provisional) segments.push(currentTranscript.provisional);
+  if (segments.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "session-preview-empty";
+    empty.innerHTML = `${icons.transcript}<strong>Waiting for captions</strong><span>The newest finalized and provisional text will stay visible here.</span>`;
+    sessionPreviewContent.append(empty);
+    return;
+  }
+
+  const list = document.createElement("ol");
+  list.className = "session-preview-list";
+  list.setAttribute("aria-label", "Latest captions");
+  for (const segment of segments) {
+    const item = document.createElement("li");
+    item.className = `transcript-segment${segment.isFinal ? "" : " provisional"}`;
+    const timestamp = document.createElement("time");
+    timestamp.textContent = segment.isFinal ? formatTimestamp(segment.startMicros) : "Live";
+    item.append(timestamp);
+    appendTranscriptCaption(item, segment);
+    list.append(item);
+  }
+  sessionPreviewContent.append(list);
+  requestAnimationFrame(() => {
+    sessionPreviewContent.scrollTop = sessionPreviewContent.scrollHeight;
+  });
 }
 
 function renderTranscriptPanel(forceLatest = false) {
@@ -951,6 +1078,52 @@ function renderSettingsPanel() {
   renderSettingsNotice();
 }
 
+function renderGeneralSettingsPanel(): void {
+  const content = dialogContent();
+  content.className = "general-settings-content";
+  content.innerHTML = `
+    <section class="general-settings-section" aria-labelledby="audio-settings-title">
+      <div>
+        <h3 id="audio-settings-title">Audio sources</h3>
+        <p>Refresh after opening or closing an audio-producing application or changing playback devices.</p>
+      </div>
+      <button id="refresh-audio-sources" class="secondary-button" type="button">${icons.refresh}<span>Refresh sources</span></button>
+      <p id="refresh-audio-result" class="settings-inline-status" role="status" aria-live="polite"></p>
+    </section>
+    <section class="general-settings-section" aria-labelledby="privacy-settings-title">
+      <div>
+        <h3 id="privacy-settings-title">Privacy</h3>
+        <p>Audio, screenshots, recognized text, captions, and translation remain local. Prollyglot does not save raw audio or captured frames.</p>
+      </div>
+      <span class="settings-value"><span class="status-dot"></span>Local processing</span>
+    </section>
+    <section class="general-settings-section" aria-labelledby="window-settings-title">
+      <div>
+        <h3 id="window-settings-title">Window layout</h3>
+        <p>Use the full workspace for setup and management, or switch to the compact utility for everyday Start and Stop controls.</p>
+      </div>
+      <button id="settings-view-mode" class="secondary-button" type="button">${currentViewMode === "full" ? icons.compact : icons.fullView}<span>${currentViewMode === "full" ? "Use compact view" : "Open full view"}</span></button>
+    </section>
+  `;
+  const refresh = requireElement<HTMLButtonElement>("#refresh-audio-sources");
+  const result = requireElement<HTMLElement>("#refresh-audio-result");
+  refresh.addEventListener("click", () => {
+    refresh.disabled = true;
+    result.textContent = "Refreshing audio sources…";
+    void refreshSources().then((next) => {
+      if (!next.ok) throw new Error(next.message);
+      result.textContent = `Found ${next.snapshot.playbackDevices.length} playback ${next.snapshot.playbackDevices.length === 1 ? "device" : "devices"} and ${next.snapshot.applications.length} ${next.snapshot.applications.length === 1 ? "application" : "applications"}.`;
+    }).catch((error) => {
+      result.textContent = error instanceof Error ? error.message : String(error);
+    }).finally(() => {
+      refresh.disabled = false;
+    });
+  });
+  requireElement<HTMLButtonElement>("#settings-view-mode").addEventListener("click", () => {
+    void changeViewMode(currentViewMode === "full" ? "compact" : "full");
+  });
+}
+
 function renderVisualPanel(): void {
   visualPanel.render(dialogContent(), {
     capabilities: currentVisualCapabilities,
@@ -964,10 +1137,10 @@ function renderVisualPanel(): void {
     pickRegion: pickVisualRegion,
     installVisualModel,
     installTranslationModel: (modelId) => translationService.install(modelId),
-    start: async (selection, sourceLanguage, targetLanguage) => {
+    start: async (selection, sourceLanguage, targetLanguage, detectionMode) => {
       visualTranslation.begin(sourceLanguage, targetLanguage);
       try {
-        await startVisualTranslation(selection, sourceLanguage, targetLanguage);
+        await startVisualTranslation(selection, sourceLanguage, targetLanguage, detectionMode);
       } catch (error) {
         visualTranslation.clear();
         throw error;
@@ -978,7 +1151,7 @@ function renderVisualPanel(): void {
       visualTranslation.clear();
     },
     stopAudio: stopCapture,
-    openSettings: () => openDialogPanel("settings"),
+    openSettings: () => openDialogPanel("models"),
     report: (message) => {
       void reportFrontendDiagnostic("visual-translation", message);
     }
@@ -990,7 +1163,7 @@ function renderSettingsNotice() {
   if (!status) return;
   status.textContent = settingsNotice?.message ?? "";
   status.dataset.tone = settingsNotice?.tone ?? "neutral";
-  status.hidden = !settingsNotice || dialog.dataset.panel !== "settings";
+  status.hidden = !settingsNotice || dialog.dataset.panel !== "models";
   dialog.dataset.hasNotice = String(!status.hidden);
 }
 
@@ -1102,7 +1275,13 @@ captureToggle.addEventListener("click", async () => {
 
 visualToggle.addEventListener("click", () => openDialogPanel("visual"));
 
-requireElement<HTMLButtonElement>("#appearance-action").addEventListener("click", () => void showAppearance());
+for (const button of document.querySelectorAll<HTMLButtonElement>("[data-appearance]")) {
+  button.addEventListener("click", () => void showAppearance());
+}
+
+viewModeToggle.addEventListener("click", () => {
+  void changeViewMode(currentViewMode === "full" ? "compact" : "full");
+});
 
 function reportWindowControlError(action: string, error: unknown): void {
   const message = error instanceof Error ? error.message : String(error);
@@ -1127,37 +1306,89 @@ for (const button of document.querySelectorAll<HTMLButtonElement>("[data-window-
   });
 }
 
-type DialogPanel = "transcript" | "settings" | "visual";
-
 function openDialogPanel(panel: DialogPanel): void {
-  const titles: Record<DialogPanel, string> = {
-    transcript: "Transcript",
-    settings: "Models & settings",
-    visual: "Translate screen"
+  const copy: Record<DialogPanel, { title: string; subtitle: string }> = {
+    transcript: {
+      title: "Transcript",
+      subtitle: "Follow the newest caption by default or scroll back without losing your place."
+    },
+    models: {
+      title: "Models",
+      subtitle: "Manage installed packs and choose compatible local models by language."
+    },
+    settings: {
+      title: "Settings",
+      subtitle: "Application, source, and privacy controls."
+    },
+    visual: {
+      title: "Screen translation",
+      subtitle: "Continuously recognize and translate text in a window, display, or selected region."
+    }
   };
   dialog.dataset.panel = panel;
-  requireElement<HTMLElement>("#dialog-title").textContent = titles[panel];
-  settingsNotice = undefined;
-  if (panel === "settings") settingsPanel.resetView();
-  else renderSettingsNotice();
-  if (!dialog.open) dialog.showModal();
-  if (panel === "settings") renderSettingsPanel();
+  requireElement<HTMLElement>("#dialog-title").textContent = copy[panel].title;
+  requireElement<HTMLElement>("#dialog-subtitle").textContent = copy[panel].subtitle;
+  if (panel === "models") {
+    settingsNotice = undefined;
+    settingsPanel.resetView();
+  } else {
+    renderSettingsNotice();
+  }
+  if (!dialog.open) {
+    if (currentViewMode === "full") dialog.show();
+    else dialog.showModal();
+  }
+  captionWorkspace.inert = true;
+  captionWorkspace.setAttribute("aria-hidden", "true");
+  setActiveNavigation(panel);
+  if (panel === "models") renderSettingsPanel();
+  else if (panel === "settings") renderGeneralSettingsPanel();
   else if (panel === "visual") renderVisualPanel();
   else renderTranscriptPanel(true);
 }
 
+function setActiveNavigation(destination: DialogPanel | "captions"): void {
+  for (const button of document.querySelectorAll<HTMLButtonElement>(".desktop-nav-action")) {
+    const selected = destination === "captions"
+      ? button.dataset.workspace === "captions"
+      : button.dataset.panel === destination;
+    button.classList.toggle("is-active", selected);
+    if (selected) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
+  }
+}
+
 for (const button of document.querySelectorAll<HTMLButtonElement>("[data-panel]")) {
   button.addEventListener("click", () => {
-    openDialogPanel(button.dataset.panel === "transcript" ? "transcript" : "settings");
+    const panel = button.dataset.panel;
+    if (panel === "transcript" || panel === "models" || panel === "settings" || panel === "visual") {
+      openDialogPanel(panel);
+    }
+  });
+}
+
+for (const button of document.querySelectorAll<HTMLButtonElement>("[data-workspace='captions']")) {
+  button.addEventListener("click", () => {
+    if (dialog.open) dialog.close();
+    setActiveNavigation("captions");
   });
 }
 
 requireElement<HTMLButtonElement>(".dialog-close").addEventListener("click", () => dialog.close());
 dialog.addEventListener("click", (event) => {
-  if (event.target === dialog) dialog.close();
+  if (currentViewMode === "compact" && event.target === dialog) dialog.close();
+});
+dialog.addEventListener("close", () => {
+  captionWorkspace.inert = false;
+  captionWorkspace.removeAttribute("aria-hidden");
+  setActiveNavigation("captions");
 });
 
 translationService.subscribe(renderTranslationStatus);
+renderViewMode();
+if (currentViewMode === "compact") {
+  void setWindowLayout("compact").catch((error) => reportWindowControlError("restore compact view", error));
+}
 populateSpokenLanguageOptions();
 populateTranslationTargets();
 renderLanguageGuidance();

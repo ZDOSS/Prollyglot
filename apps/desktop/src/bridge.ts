@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { LogicalSize } from "@tauri-apps/api/dpi";
 import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { SPOKEN_LANGUAGES } from "./language-catalog";
@@ -14,6 +15,7 @@ import type {
   TranscriptSnapshot,
   VisualCaptureCapabilities,
   VisualCaptureSelection,
+  VisualDetectionMode,
   VisualModelCatalogStatus,
   VisualOutputPayload,
   VisualSourceSnapshot,
@@ -494,12 +496,14 @@ export async function visualStatus(): Promise<VisualStatus> {
 export async function startVisualTranslation(
   selection: VisualCaptureSelection,
   sourceLanguage: string,
-  targetLanguage: string
+  targetLanguage: string,
+  detectionMode: VisualDetectionMode
 ): Promise<void> {
   if (isTauri()) {
-    await invoke("start_visual_translation", { selection, sourceLanguage, targetLanguage });
+    await invoke("start_visual_translation", { selection, sourceLanguage, targetLanguage, detectionMode });
     return;
   }
+  void detectionMode;
   const model = mockVisualModelCatalog.models[0];
   if (!model || model.phase !== "ready") {
     throw new Error("Install PP-OCRv6 Small in Settings before starting visual translation.");
@@ -618,7 +622,13 @@ export async function updateVisualOutput(output: VisualOutputPayload): Promise<v
   if (window.__PROLLYGLOT_PREVIEW__) {
     window.__PROLLYGLOT_PREVIEW__.visualOutput = structuredClone(output);
   }
-  if (isTauri()) await emit("visual-overlay-output", output);
+  if (isTauri()) {
+    const texts = [...new Set(output.regions
+      .map(({ translation }) => translation?.trim())
+      .filter((translation): translation is string => Boolean(translation)))];
+    await invoke("update_visual_overlay_echoes", { texts });
+    await emit("visual-overlay-output", output);
+  }
 }
 
 export async function transcriptSnapshot(): Promise<TranscriptSnapshot> {
@@ -712,4 +722,14 @@ export async function windowAction(action: "minimize" | "maximize" | "close"): P
 export async function startWindowDrag(): Promise<void> {
   if (!isTauri()) return;
   await getCurrentWindow().startDragging();
+}
+
+export async function setWindowLayout(layout: "full" | "compact"): Promise<void> {
+  if (!isTauri()) return;
+  const current = getCurrentWindow();
+  if (await current.isMaximized()) await current.unmaximize();
+  const size = layout === "full"
+    ? new LogicalSize(1180, 760)
+    : new LogicalSize(440, 640);
+  await current.setSize(size);
 }
