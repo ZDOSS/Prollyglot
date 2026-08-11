@@ -105,6 +105,9 @@ App chrome uses the Windows system UI font. Caption font is user-selectable late
 - `UtilityNav`: three text actions with consistent 20px outline icons.
 - `StatusLabel`: Ready, Live, Waiting, and Error variants without a pill container.
 - `SettingRow`: label/value alignment for select, slider, color, and toggle controls.
+- `ModelDisclosure`: searchable grouped list row with a plain-text state,
+  rotating outline caret, collapsed name/language/size summary, and expanded
+  facts plus model-specific actions. It is a disclosure list, not a card grid.
 - `Toggle`: compact track and thumb with a visible focus ring.
 - `CaptionSurface`: provisional/final text treatment inside the overlay.
 
@@ -174,6 +177,8 @@ Runtime source names and status/error messages may replace sample values. Do not
 - Minimum pointer target is 40 × 40px; primary controls use the 52px control height.
 - Text and essential control boundaries meet WCAG AA contrast.
 - All icons have text labels or accessible names; the brand mark is decorative beside the visible product name.
+- Model disclosure buttons expose expanded state and panel ownership; progress
+  updates retain the open rows, scroll position, and a usable focus target.
 - Motion only clarifies state and respects `prefers-reduced-motion`.
 - Error states use text plus color. Ready/Live state must not rely on a green dot alone.
 
@@ -182,5 +187,7 @@ Runtime source names and status/error messages may replace sample values. Do not
 - Preserve the open layout and restrained border system.
 - Preserve dark-neutral background and mint accent semantics.
 - Do not convert fields or settings into a card grid.
+- Large model catalogs use search, semantic grouping, and disclosure rows rather
+  than permanently expanded model cards or a dense matrix of download buttons.
 - Do not add a sidebar, onboarding carousel, account menu, cloud status, fake audio waveform, or model-performance metrics.
 - Keep customization out of the primary Start/Stop flow.

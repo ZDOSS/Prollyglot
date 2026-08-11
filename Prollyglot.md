@@ -1391,37 +1391,55 @@ These settings should stay out of the standard setup path.
 
 # 37. Model manager
 
-Prollyglot should include a model manager.
+Prollyglot should include a model manager that remains usable as recognition
+and translation catalogs grow. Settings should present one searchable model
+library, separated into speech-recognition and translation sections. Speech
+models are grouped into English quality choices, dedicated languages, and
+multilingual coverage. Translation models are grouped into compact routes to
+English and flexible many-to-many routes.
 
 Example:
 
 ```text
-English caption quality
+Models & language packs
+[ Search models or languages                     ]
 
-Fast — English Streaming Small
-43.1 MiB · In use
-[ Remove ]
+Speech recognition                         1 installed
 
-Balanced — English Streaming Standard
-70.0 MiB · Installed
-[ Use model ] [ Remove ]
+English quality
+⌄ Fast — English Streaming Small       In use
+  English · 43.1 MiB
+  Lowest download and CPU cost...
+  [ Remove ]
 
-Enhanced — English Streaming Enhanced
-181.4 MiB · Optional
-[ Download ]
+› Balanced — English Streaming Standard  Available
+  English · 70.0 MiB
 
-Multilingual — Nemotron 3.5 Streaming 0.6B
-650.6 MiB · Optional · 28 languages, automatic detection
-[ Download ]
+Dedicated languages
+› Chinese — Streaming Small              Available
+› French — Streaming Compact             Available
 
-Chinese — Streaming Small
-29.5 MiB · Optional
-[ Download ]
-
-French / Korean / Bengali — Compact
-89.8–134.4 MiB · Optional
-[ Download ]
+Translation                              0 installed
+› Japanese → English · Compact            Available
+› 29-language universal route             Needed now
 ```
+
+Each model is a disclosure row rather than a permanently expanded card. The
+collapsed row shows its product profile or route, name, language scope,
+download size, and current state. Expanding it shows the evidence-based
+tradeoff, exact coverage where useful, runtime/license facts, progress or error
+messages, and that individual model's Download, Repair, Use, or Remove actions.
+The selected speech model and a translation model needed by the current caption
+route may open automatically the first time Settings is shown; the user can
+collapse either one and may keep multiple rows open.
+
+Search must match model names and supported language names without hiding the
+unrelated audio-source controls. Model progress updates should preserve the
+settings scroll position, open disclosures, and a sensible keyboard focus
+target. Download/removal feedback must remain visible regardless of where the
+affected row sits in the scrollable catalog. Disclosure buttons expose
+`aria-expanded` and `aria-controls`, expanded content is associated with its
+button, and every action has a model-specific accessible name.
 
 The model manager should show:
 
@@ -1434,6 +1452,9 @@ The model manager should show:
 - installed state,
 - selected state,
 - a short, evidence-based explanation of the tradeoff.
+
+No model is downloaded merely because it appears in search, is expanded, or is
+required by a newly selected route. Downloads always require an explicit action.
 
 ---
 

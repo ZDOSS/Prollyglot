@@ -27,9 +27,9 @@ import { icons } from "./icons";
 import {
   SPOKEN_LANGUAGES,
   languageLabel,
-  supportedTranslationLanguage,
-  type TranslationLanguage
+  supportedTranslationLanguage
 } from "./language-catalog";
+import { SettingsPanel, type SettingsNotice, type SettingsNoticeTone } from "./settings";
 import { TranslationService, translationStatusForRoute } from "./translation";
 import type {
   CaptionOutputMode,
@@ -151,6 +151,7 @@ root.innerHTML = `
         <button type="button" class="dialog-close" aria-label="Close">${icons.close}</button>
       </div>
       <div id="dialog-content"></div>
+      <p id="settings-action-status" class="settings-action-status" role="status" aria-live="polite" hidden></p>
     </dialog>
   </section>
 `;
@@ -201,13 +202,14 @@ const useMockTranslation = !isTauri()
 const translationService = new TranslationService(useMockTranslation);
 let currentTranslations = translationService.snapshot();
 let currentTranscript: TranscriptSnapshot = { revision: 0, committed: [] };
-let settingsNotice: { message: string; tone: "neutral" | "success" | "error" } | undefined;
+let settingsNotice: SettingsNotice | undefined;
 let acceptedSpokenLanguage = "en";
 let preferredCaptionMode = storedCaptionMode();
 let preferredTranslationTarget = storedTranslationTarget();
 let transcriptFollowLatest = true;
 const FOLLOW_SYSTEM_DEFAULT = "__follow-system-default__";
 const TRANSCRIPT_BOTTOM_THRESHOLD = 48;
+const settingsPanel = new SettingsPanel();
 const captionOutput = new CaptionOutputController(
   translationService,
   (payload) => {
@@ -516,26 +518,6 @@ function modelSupportsLanguage(model: ModelStatus, language = spokenLanguage.val
   return model.languages.includes(language);
 }
 
-function modelLanguageSummary(model: ModelStatus): string {
-  const explicit = model.languages.filter((language) => language !== "auto");
-  if (explicit.length > 6) {
-    return `${explicit.length} languages${model.languages.includes("auto") ? " · Auto detect" : ""}`;
-  }
-  const labels = explicit.map(languageLabel);
-  if (model.languages.includes("auto")) labels.push("Auto detect");
-  return labels.join(" · ");
-}
-
-function translationModelScope(model: TranslationModelStatus): string {
-  if (model.kind === "direct") {
-    return `${languageLabel(model.sourceLanguages[0] ?? "")} → ${languageLabel(model.targetLanguages[0] ?? "")}`;
-  }
-  if (model.kind === "toEnglish") {
-    return `${model.sourceLanguages.length} languages → English`;
-  }
-  return `${model.sourceLanguages.length} languages ↔ ${model.targetLanguages.length} languages`;
-}
-
 function renderStatus(status: CaptureStatus) {
   const stateChanged = currentStatus.state !== status.state;
   currentStatus = status;
@@ -569,7 +551,7 @@ function updatePrimaryAvailability() {
 
 function formatBytes(bytes: number): string {
   if (bytes <= 0) return "Unknown size";
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
 }
 
 function selectedModel(catalog = currentModels): ModelStatus {
@@ -718,6 +700,7 @@ function appendTranscriptCaption(
 
 function renderTranscriptPanel(forceLatest = false) {
   const content = dialogContent();
+  content.className = "";
   const previousList = content.querySelector<HTMLOListElement>(".transcript-list");
   const previousScrollTop = previousList?.scrollTop ?? 0;
   const previousDistanceFromBottom = previousList
@@ -816,299 +799,37 @@ function renderTranscriptPanel(forceLatest = false) {
 
 function renderSettingsPanel() {
   const content = dialogContent();
-  content.innerHTML = `
-    <section class="settings-section" aria-labelledby="model-settings-title">
-      <span class="model-kicker">Local speech models</span>
-      <h3 id="model-settings-title">Recognition model</h3>
-      <p class="settings-copy">Choose a speed, language, and quality tradeoff. Every option streams locally; selections apply to the next caption session.</p>
-      <div id="model-options" class="model-options"></div>
-      <p id="settings-action-status" class="settings-action-status" role="status" aria-live="polite"></p>
-    </section>
-    <section class="settings-section settings-section-divided" aria-labelledby="translation-settings-title">
-      <span class="model-kicker">Optional local translation</span>
-      <h3 id="translation-settings-title">Translation models</h3>
-      <p class="settings-copy">Compact models cover translation into English. The larger universal model enables direct translation among every language shown in the Spoken language list. Installing a model does not turn translation on.</p>
-      <div id="translation-model-options" class="model-options"></div>
-    </section>
-    <section class="settings-section settings-section-divided" aria-labelledby="audio-settings-title">
-      <span class="model-kicker">Audio</span>
-      <h3 id="audio-settings-title">Available sources</h3>
-      <p class="settings-copy">Refresh after opening or closing an audio-producing application or changing playback devices.</p>
-      <button class="secondary-button settings-wide-action" id="refresh-sources" type="button">${icons.refresh}<span>Refresh audio sources</span></button>
-    </section>
-  `;
-
-  const options = requireElement<HTMLElement>("#model-options");
-  const modelChangesBlocked = currentStatus.state !== "stopped" && currentStatus.state !== "failed";
-  const anotherDownloadRunning = currentModels.models.some(({ phase }) => phase === "downloading");
-
-  for (const model of currentModels.models) {
-    const selected = model.modelId === currentModels.selectedModelId;
-    const compatible = modelSupportsLanguage(model);
-    const card = document.createElement("article");
-    card.className = "model-option";
-    card.dataset.selected = String(selected);
-
-    const heading = document.createElement("div");
-    heading.className = "model-option-heading";
-    const names = document.createElement("div");
-    const profile = document.createElement("span");
-    profile.className = "model-profile";
-    profile.textContent = model.profile;
-    const name = document.createElement("h4");
-    name.textContent = model.displayName;
-    names.append(profile, name);
-
-    const badge = document.createElement("span");
-    badge.className = "model-state-badge";
-    badge.dataset.phase = model.phase;
-    badge.textContent = model.phase === "checking"
-      ? "Checking"
-      : selected
-      ? model.phase === "ready" ? "In use" : "Selected"
-      : model.phase === "ready" ? "Installed" : "Optional";
-    heading.append(names, badge);
-
-    const description = document.createElement("p");
-    description.className = "model-option-description";
-    description.textContent = model.description;
-    const metadata = document.createElement("p");
-    metadata.className = "model-option-metadata";
-    metadata.textContent = `${modelLanguageSummary(model)} · ${formatBytes(model.totalBytes)} · CPU`;
-    card.append(heading, description, metadata);
-
-    if (model.phase === "downloading") {
-      const progress = document.createElement("progress");
-      progress.className = "model-progress model-option-progress";
-      progress.max = Math.max(model.totalBytes, 1);
-      progress.value = Math.min(model.downloadedBytes, progress.max);
-      card.append(progress);
-    }
-    if (model.message && model.phase !== "ready") {
-      const message = document.createElement("p");
-      message.className = "model-option-message";
-      message.dataset.tone = model.phase === "failed" || model.phase === "corrupt" ? "error" : "neutral";
-      message.textContent = model.message;
-      card.append(message);
-    }
-
-    const actions = document.createElement("div");
-    actions.className = "model-option-actions";
-    const primary = document.createElement("button");
-    primary.type = "button";
-    primary.className = "secondary-button model-option-action";
-
-    if (model.phase === "ready") {
-      primary.textContent = selected
-        ? "In use"
-        : compatible ? "Use model" : `${modelLanguageSummary(model)} only`;
-      primary.disabled = selected || modelChangesBlocked || !compatible;
-      if (!selected && compatible) {
-        primary.addEventListener("click", async () => {
-          primary.disabled = true;
-          setSettingsNotice(`Selecting ${model.displayName}…`, "neutral");
-          try {
-            await selectSpeechModel(model.modelId);
-            settingsNotice = {
-              message: `${model.displayName} will be used for the next caption session.`,
-              tone: "success"
-            };
-            renderModelStatus(await modelStatus());
-          } catch (error) {
-            setSettingsNotice(error instanceof Error ? error.message : String(error), "error");
-            primary.disabled = false;
-          }
-        });
-      }
-    } else if (model.phase === "checking") {
-      primary.textContent = "Checking…";
-      primary.disabled = true;
-    } else if (model.phase === "downloading") {
-      const percent = model.totalBytes > 0
-        ? Math.round((model.downloadedBytes / model.totalBytes) * 100)
-        : 0;
-      primary.textContent = `Downloading ${percent}%`;
-      primary.disabled = true;
-    } else {
-      primary.textContent = model.phase === "corrupt"
-        ? "Repair"
-        : model.phase === "failed" ? "Retry" : "Download";
-      primary.disabled = modelChangesBlocked || anotherDownloadRunning;
-      primary.addEventListener("click", async () => {
-        primary.disabled = true;
-        setSettingsNotice(`Starting ${model.displayName} download…`, "neutral");
-        try {
-          await installSpeechModel(model.modelId);
-        } catch (error) {
-          setSettingsNotice(error instanceof Error ? error.message : String(error), "error");
-          primary.disabled = false;
-        }
-      });
-    }
-    actions.append(primary);
-
-    if (model.phase === "ready") {
-      const remove = document.createElement("button");
-      remove.type = "button";
-      remove.className = "text-button danger-text";
-      remove.textContent = "Remove";
-      remove.disabled = modelChangesBlocked || anotherDownloadRunning;
-      remove.addEventListener("click", async () => {
-        remove.disabled = true;
-        setSettingsNotice(`Removing ${model.displayName}…`, "neutral");
-        try {
-          await removeSpeechModel(model.modelId);
-          settingsNotice = {
-            message: `${model.displayName} was removed from this PC.`,
-            tone: "success"
-          };
-          renderModelStatus(await modelStatus());
-        } catch (error) {
-          setSettingsNotice(error instanceof Error ? error.message : String(error), "error");
-          remove.disabled = false;
-        }
-      });
-      actions.append(remove);
-    }
-    card.append(actions);
-    options.append(card);
-  }
-
-  const translationOptions = requireElement<HTMLElement>("#translation-model-options");
-  const translationChangesBlocked = currentStatus.state !== "stopped" && currentStatus.state !== "failed";
-  const anotherTranslationDownload = currentTranslations.models.some(({ phase }) => phase === "downloading");
   const activeTranslationModel = selectedTranslationModel();
-  for (const model of currentTranslations.models) {
-    const card = document.createElement("article");
-    card.className = "model-option";
-    card.dataset.selected = String(
-      activeTranslationModel?.modelId === model.modelId && translationRequested()
-    );
-
-    const heading = document.createElement("div");
-    heading.className = "model-option-heading";
-    const names = document.createElement("div");
-    const profile = document.createElement("span");
-    profile.className = "model-profile";
-    profile.textContent = translationModelScope(model);
-    const name = document.createElement("h4");
-    name.textContent = model.displayName;
-    names.append(profile, name);
-    const badge = document.createElement("span");
-    badge.className = "model-state-badge";
-    badge.dataset.phase = model.phase;
-    badge.textContent = model.phase === "ready"
-      ? "Installed"
-      : model.phase === "loading" ? "Loading" : model.phase === "downloading" ? "Downloading" : "Optional";
-    heading.append(names, badge);
-
-    const description = document.createElement("p");
-    description.className = "model-option-description";
-    description.textContent = model.kind === "manyToMany"
-      ? "Translates directly between supported languages locally. This option is larger and may add more delay on CPU."
-      : model.kind === "toEnglish"
-        ? "One compact local model for the additional supported spoken languages translating into English."
-        : "A compact language-specific route tuned for fast local translation into English.";
-    const metadata = document.createElement("p");
-    metadata.className = "model-option-metadata";
-    metadata.textContent = `${formatBytes(model.totalBytes)} · CPU · ${model.license}`;
-    card.append(heading, description, metadata);
-
-    if (model.phase === "downloading") {
-      const progress = document.createElement("progress");
-      progress.className = "model-progress model-option-progress";
-      progress.max = Math.max(model.totalBytes, 1);
-      progress.value = Math.min(model.downloadedBytes, progress.max);
-      card.append(progress);
+  settingsPanel.render(content, {
+    speechCatalog: currentModels,
+    translationCatalog: currentTranslations,
+    spokenLanguage: spokenLanguage.value,
+    modelChangesBlocked: currentStatus.state !== "stopped" && currentStatus.state !== "failed",
+    translationRequested: translationRequested(),
+    activeTranslationModelId: activeTranslationModel?.modelId
+  }, {
+    announce: setSettingsNotice,
+    installSpeech: installSpeechModel,
+    selectSpeech: async (modelId) => {
+      await selectSpeechModel(modelId);
+      renderModelStatus(await modelStatus());
+    },
+    removeSpeech: async (modelId) => {
+      await removeSpeechModel(modelId);
+      renderModelStatus(await modelStatus());
+    },
+    installTranslation: (modelId) => translationService.install(modelId),
+    removeTranslation: (modelId) => translationService.remove(modelId),
+    refreshSources: async () => {
+      const result = await refreshSources();
+      if (!result.ok) throw new Error(result.message);
+      return {
+        playbackDevices: result.snapshot.playbackDevices.length,
+        applications: result.snapshot.applications.length
+      };
     }
-    if (model.message && model.phase !== "ready") {
-      const message = document.createElement("p");
-      message.className = "model-option-message";
-      message.dataset.tone = model.phase === "failed" || model.phase === "corrupt" ? "error" : "neutral";
-      message.textContent = model.message;
-      card.append(message);
-    }
-
-    const actions = document.createElement("div");
-    actions.className = "model-option-actions";
-    const primary = document.createElement("button");
-    primary.type = "button";
-    primary.className = "secondary-button model-option-action";
-    if (model.phase === "ready") {
-      primary.textContent = "Installed";
-      primary.disabled = true;
-    } else if (model.phase === "checking") {
-      primary.textContent = "Checking…";
-      primary.disabled = true;
-    } else if (model.phase === "loading") {
-      primary.textContent = "Loading…";
-      primary.disabled = true;
-    } else if (model.phase === "downloading") {
-      const percent = model.totalBytes > 0
-        ? Math.round((model.downloadedBytes / model.totalBytes) * 100)
-        : 0;
-      primary.textContent = `Downloading ${percent}%`;
-      primary.disabled = true;
-    } else {
-      primary.textContent = model.phase === "corrupt"
-        ? "Repair"
-        : model.phase === "failed" ? "Retry" : "Download";
-      primary.disabled = translationChangesBlocked || anotherTranslationDownload;
-      primary.addEventListener("click", async () => {
-        primary.disabled = true;
-        setSettingsNotice(`Starting ${model.displayName} download…`, "neutral");
-        try {
-          await translationService.install(model.modelId);
-        } catch (error) {
-          setSettingsNotice(error instanceof Error ? error.message : String(error), "error");
-          primary.disabled = false;
-        }
-      });
-    }
-    actions.append(primary);
-
-    if (model.phase === "ready") {
-      const remove = document.createElement("button");
-      remove.type = "button";
-      remove.className = "text-button danger-text";
-      remove.textContent = "Remove";
-      remove.disabled = translationChangesBlocked || anotherTranslationDownload;
-      remove.addEventListener("click", async () => {
-        remove.disabled = true;
-        setSettingsNotice(`Removing ${model.displayName}…`, "neutral");
-        try {
-          await translationService.remove(model.modelId);
-          setSettingsNotice(`${model.displayName} was removed from this PC.`, "success");
-        } catch (error) {
-          setSettingsNotice(error instanceof Error ? error.message : String(error), "error");
-          remove.disabled = false;
-        }
-      });
-      actions.append(remove);
-    }
-    card.append(actions);
-    translationOptions.append(card);
-  }
-  renderSettingsNotice();
-
-  const refresh = requireElement<HTMLButtonElement>("#refresh-sources");
-  refresh.addEventListener("click", async () => {
-    refresh.disabled = true;
-    setSettingsNotice("Refreshing audio sources…", "neutral");
-    const result = await refreshSources();
-    if (result.ok) {
-      const deviceCount = result.snapshot.playbackDevices.length;
-      const applicationCount = result.snapshot.applications.length;
-      setSettingsNotice(
-        `Found ${deviceCount} playback ${deviceCount === 1 ? "device" : "devices"} and ${applicationCount} ${applicationCount === 1 ? "application" : "applications"}.`,
-        "success"
-      );
-    } else {
-      setSettingsNotice(result.message, "error");
-    }
-    refresh.disabled = false;
   });
-
+  renderSettingsNotice();
 }
 
 function renderSettingsNotice() {
@@ -1116,9 +837,11 @@ function renderSettingsNotice() {
   if (!status) return;
   status.textContent = settingsNotice?.message ?? "";
   status.dataset.tone = settingsNotice?.tone ?? "neutral";
+  status.hidden = !settingsNotice || dialog.dataset.panel !== "settings";
+  dialog.dataset.hasNotice = String(!status.hidden);
 }
 
-function setSettingsNotice(message: string, tone: "neutral" | "success" | "error") {
+function setSettingsNotice(message: string, tone: SettingsNoticeTone) {
   settingsNotice = { message, tone };
   renderSettingsNotice();
 }
@@ -1256,10 +979,14 @@ for (const button of document.querySelectorAll<HTMLButtonElement>("[data-panel]"
     requireElement<HTMLElement>("#dialog-title").textContent = title;
     if (panel === "settings") {
       settingsNotice = undefined;
-      renderSettingsPanel();
+      settingsPanel.resetView();
+    } else {
+      settingsNotice = undefined;
+      renderSettingsNotice();
     }
     dialog.showModal();
-    if (panel === "transcript") renderTranscriptPanel(true);
+    if (panel === "settings") renderSettingsPanel();
+    else renderTranscriptPanel(true);
   });
 }
 

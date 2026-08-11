@@ -68,6 +68,14 @@ The same owner run showed that more installed recognition models made the contro
 
 The language/translation catalog is now expanded as one integrated pre-release slice. Chinese, French, Korean, and Bengali have smaller dedicated streaming downloads; Nemotron exposes its 28 supported forced languages with ready versus broad-coverage guidance; and the UI offers 29 spoken-language choices in total. Translation has a separate target selector, preferring compact Japanese/Spanish-to-English routes, then a compact multilingual-to-English route, with a larger optional M2M100 model for direct translation among all 29 choices. The rendered-app pass verified changing provisional translation before finalization, three complete wrapped side-by-side history pairs, a real compact French-to-English graph, and a real universal Japanese-to-Spanish graph after full artifact verification. Native Windows media, broader language quality, cold-load timing, and sustained resource use remain the gates.
 
+Settings now treats those catalogs as a scalable model library instead of a
+three-thousand-pixel wall of expanded cards. Search covers model and language
+names; speech and translation routes are grouped separately; each model owns an
+accessible disclosure with its details and explicit lifecycle actions; and the
+selected speech/current translation route open first without forcing the other
+rows open. Progress rerenders preserve disclosure, scroll, and keyboard-focus
+state, while action feedback remains visible above the scroll position.
+
 The next media run exposed an overlay ordering race: a direct raw-caption event
 could arrive just before the structured bilingual payload and temporarily turn
 the original language into a full-width replacement for its translation. The

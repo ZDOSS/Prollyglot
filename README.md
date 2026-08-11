@@ -56,6 +56,7 @@ The repository currently contains:
 - a sherpa-onnx adapter that loads Zipformer or Nemotron streaming models, preserves phrase openings and decoder context, and exposes incremental and finalized hypotheses;
 - original-language controls for 29 selectable spoken languages plus mixed-language automatic detection, with clear forced-language guidance and unsupported model/language combinations prevented before capture starts;
 - optional pinned local translators for compact Japanese/Spanish-to-English, compact multilingual-to-English, and direct translation among the 29 selectable languages;
+- a searchable Settings model library with grouped expandable rows, per-model download/remove actions, installed counts, route-aware status, and keyboard/screen-reader disclosure semantics;
 - Original, Translation, and Original + Translation output modes, with stable stacked or side-by-side pairs, independent colors, wrapped text, and zero to three fading prior caption rows;
 - reproducible English and multilingual comparison tooling covering the same model choices exposed by the app;
 - a bounded capture-to-inference bridge with visible backpressure and recovery behavior; and
