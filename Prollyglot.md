@@ -105,6 +105,17 @@ A dedicated high-end GPU should improve performance but should not be a fundamen
 
 Prollyglot should remain a focused desktop utility.
 
+The project exists to give people meaningful control over cross-language media.
+Original speech or visible text should remain available beside translation so a
+viewer can compare them and judge whether a result is accurate and faithful.
+No model can guarantee a perfect translation; Prollyglot should expose the
+source and uncertainty rather than presenting one opaque output as unquestionable.
+
+Local, free-to-use original-plus-translation output should also support language
+learning through immersion in news, films, streams, games, and other media. The
+larger purpose is to help people understand and communicate with others they
+otherwise might not, reducing the lines that language can draw between us.
+
 It should not gradually become:
 
 - an AI meeting assistant,
@@ -1039,6 +1050,11 @@ by another application, translate it locally, and place the result near that
 text. It is not a mandate to become a general screen recorder, OBS replacement,
 or open-ended visual assistant.
 
+This specifically includes text rendered into video subtitles, signs visible
+inside a video, menus, title cards, and text drawn into a game or application's
+HUD. It does not require a general vision model to describe non-text objects or
+events in the scene.
+
 The first Windows experiment should be a separate mode with its own action:
 
 ```text
@@ -1057,13 +1073,28 @@ Visual sources:
 - one selected application window; or
 - one selected display.
 
-Windows capture should use the documented `Windows.Graphics.Capture` path. A
-region is a crop of a captured display rather than a separate injection or
-application hook. The system picker is the ordinary consent path, while Win32
-interop can create capture items for a known `HWND` or `HMONITOR` on supported
-Windows versions. Protected or unavailable pixels follow the same policy as
-audio: process whatever the documented API exposes, accept a black or excluded
-frame as an unavailable capture condition, and do not build a bypass.
+Windows capture should use the documented `Windows.Graphics.Capture` path for
+selected application windows and displays. A region is a crop of a captured
+display rather than a separate injection or application hook. The system picker
+is the ordinary consent path, while Win32 interop can create capture items for a
+known `HWND` or `HMONITOR` on supported Windows versions.
+
+Selected-display capture is a first-class compatibility path. The Windows
+experiment must also compare a documented DXGI Desktop Duplication display
+backend because an application's window surface and the composed monitor can
+behave differently, and OBS Display Capture is the practical parity baseline.
+If window capture is blank while one of the display paths returns useful pixels,
+Prollyglot should offer **Switch to Monitor capture** and crop the requested
+region from that display. If equivalent OBS Display Capture succeeds while both
+Prollyglot display backends fail, treat it as a Prollyglot compatibility defect.
+
+This is compatibility engineering, not a protected-content bypass. Microsoft
+documents that Desktop Duplication protects access to protected video and that
+protected swap chains can be excluded from desktop duplication. Protected or
+unavailable pixels therefore follow the same policy as audio: process whatever
+the documented API exposes, accept a black or excluded frame as an unavailable
+capture condition, do not classify a source as DRM from blank pixels alone, and
+do not add process injection, capture hooks, or a protection bypass.
 
 The initial pipeline should be specialized OCR rather than a general-purpose
 vision-language model:
@@ -1096,9 +1127,12 @@ Relevant primary references:
 
 - <https://learn.microsoft.com/en-us/windows/apps/develop/media-authoring-processing/screen-capture>
 - <https://learn.microsoft.com/en-us/windows/win32/api/windows.graphics.capture.interop/>
+- <https://learn.microsoft.com/en-us/windows-hardware/drivers/display/desktop-duplication-api>
+- <https://learn.microsoft.com/en-us/windows/win32/api/dxgi/ne-dxgi-dxgi_swap_chain_flag>
 - <https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwindowdisplayaffinity>
 - <https://learn.microsoft.com/en-us/uwp/api/windows.media.ocr.ocrengine>
 - <https://www.paddleocr.ai/latest/en/version3.x/algorithm/PP-OCRv6/PP-OCRv6.html>
+- <https://obsproject.com/kb/display-capture-sources>
 
 Continuous OCR must not mean running inference on every captured video frame.
 The visual worker should use a latest-frame-wins bounded queue, sample at a low

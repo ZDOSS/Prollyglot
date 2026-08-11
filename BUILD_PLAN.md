@@ -240,6 +240,8 @@ The feasibility direction is concrete enough for an experiment:
 
 - capture one user-selected display or application through
   `Windows.Graphics.Capture`, cropping a user-drawn region after display capture;
+- compare a documented DXGI Desktop Duplication backend for selected-display
+  capture and keep equivalent OBS Display Capture as the compatibility baseline;
 - compare Windows' installed-language `Windows.Media.Ocr` baseline with pinned
   PP-OCRv6 Small detection and recognition models;
 - run OCR on a bounded latest-frame queue with change detection instead of on
@@ -256,6 +258,9 @@ The feasibility direction is concrete enough for an experiment:
 - A separate **Translate Screen…** action and mutually exclusive audio/visual
   session state.
 - Region, selected-application-window, and selected-display visual sources.
+- A visible **Switch to Monitor capture** recovery when window capture is blank,
+  without claiming that blank pixels prove DRM or that monitor capture will
+  expose every protected surface.
 - Transient GPU/CPU frame handling with no screenshots persisted by default.
 - A replaceable OCR contract that returns text, confidence, language/script,
   and capture-space polygons without leaking Windows objects downstream.
@@ -271,6 +276,10 @@ The feasibility direction is concrete enough for an experiment:
 - Representative Japanese and Spanish video subtitles, game UI, menus, and
   signs produce useful translated text without saving frames or using a cloud
   service.
+- The Windows matrix records WGC window, WGC display, DXGI display, and
+  equivalent OBS Display Capture behavior for representative media. OBS-only
+  display success is a Prollyglot compatibility defect; an OS-protected blank
+  surface is reported without attempting injection or capture-control bypass.
 - Static text is not repeatedly recognized or translated, and scene changes
   cannot create an unbounded stale-work queue.
 - On the reference Windows machine, a stable changed text region normally

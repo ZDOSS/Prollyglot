@@ -11,6 +11,26 @@ Prollyglot is a free and open-source desktop utility that captures audio from a 
 > [!IMPORTANT]
 > Prollyglot is in active pre-release development. There is not yet a supported binary release. Windows 11 is the primary target; the first Windows owner smoke confirmed that **Everything I hear** captions audible output from the selected playback device, while broader application, lifecycle, and release validation remains in progress.
 
+## Why Prollyglot exists
+
+Prollyglot exists to give people more control over how they understand media
+across languages. Someone watching international news, a documentary, a
+livestream, or a game should not have to place blind trust in one opaque
+subtitle track. Keeping the original transcript visible beside its translation
+helps people compare the two, notice possible errors, and judge whether a
+translation is accurate and faithful. No model can guarantee perfection, so
+Prollyglot should preserve the source and expose uncertainty instead of
+presenting a machine's best guess as unquestionable truth.
+
+It should also make language immersion available without a subscription or
+metered service. Listening to speech while reading the original language and a
+translation can help someone learn through the media they already enjoy.
+
+The larger hope is that Prollyglot helps people understand and communicate with
+others they otherwise could not. Languages differ, but the people speaking them
+are still people; this project should help erase some of the lines language can
+draw between us.
+
 ## What it is building toward
 
 - **Everything I hear:** caption the mixed audio rendered through one selected playback device, with an option to follow the Windows system default.
@@ -18,7 +38,7 @@ Prollyglot is a free and open-source desktop utility that captures audio from a 
 - **Local by default:** no account, telemetry requirement, cloud transcription, audio upload, or transcript upload.
 - **Minimal and customizable:** one focused Start/Stop path plus an independent always-on-top overlay with readable appearance controls.
 - **Selectable local speech models:** three English choices; smaller dedicated streaming models for Chinese, French, Korean, and Bengali; and an optional higher-resource Nemotron model covering 28 languages plus automatic detection.
-- **Future visual text translation:** a scoped Windows experiment will translate text from a selected region, application, or display through documented screen capture and local OCR, independently from audio captions at first.
+- **Future visual text translation:** a scoped Windows experiment will translate text already visible in a selected region, application, or display—such as video subtitles, signs, menus, or Japanese text in a game HUD—through documented screen capture and local OCR, independently from audio captions at first.
 - **Ubuntu after Windows:** one Ubuntu LTS release using PipeWire and a native `.deb`, once the Windows MVP is reliable.
 
 ## Current status
@@ -47,7 +67,7 @@ Translation has its own **Translate to** control. Japanese-to-English (109.4 MiB
 
 Translated output is enabled explicitly under **Caption output**; downloading a translator only makes a route available offline. Translation begins from a coalesced live partial after about 420 ms and is throttled to at most one new request every 900 ms, so changing words update the pending text without postponing translation until silence. Each finalized caption is translated again for stability, and Nemotron now forces a boundary after four seconds of continuous pause-light speech as a fallback. The bounded final queue prioritizes the newest caption and skips stale backlog. Side-by-side source/translation columns wrap instead of ellipsizing, and **Appearance → Caption history** can retain zero to three complete, smaller, fading prior pairs without clipping either language independently. Appearance also controls how long a final caption remains after speech and how gently it fades; a late translation receives a fresh reading interval.
 
-Visual text translation is viable as a later separate mode, but it is not implemented yet. The planned Windows slice uses `Windows.Graphics.Capture`, change-gated local OCR, the existing translator, and position-aware labels near detected screen text. PP-OCRv6 Small is the leading benchmark candidate because its published detector and recognizer total roughly 30 MB and cover Japanese plus 49 other languages. Audio and visual modes will be mutually exclusive initially; simultaneous use remains an explicit performance gate rather than an assumption.
+Visual text translation is viable as a later separate mode, but it is not implemented yet. It means recognizing and translating text that is already rendered on screen: video subtitles, a sign inside a video, application menus, or text drawn into a game's HUD. The planned Windows slice uses `Windows.Graphics.Capture`, change-gated local OCR, the existing translator, and position-aware labels near detected screen text. PP-OCRv6 Small is the leading benchmark candidate because its published detector and recognizer total roughly 30 MB and cover Japanese plus 49 other languages. Audio and visual modes will be mutually exclusive initially; simultaneous use remains an explicit performance gate rather than an assumption.
 
 Installed recognition models are no longer all hashed before the app window appears. Model inspection runs in the background and records a small verification marker after a successful full SHA-256 pass; later launches use file size, modification metadata, and the pinned manifest to avoid re-hashing unchanged model files. Existing installations perform one background full check after this update. Only the selected recognition model is loaded when captions start, so the larger Nemotron choice can still take noticeably longer than an English model at that point; only the translator requested by the current source/output choice is loaded. Startup and translation timing are written to the privacy-safe diagnostic log without caption text. The custom Windows title bar also has the explicit Tauri permissions required for dragging and its minimize, maximize, and close controls; native Windows remains the final check for those operating-system interactions.
 
@@ -58,6 +78,23 @@ The English benchmark tooling and initial clean-reference results are documented
 Prollyglot uses documented operating-system capture paths. It does not classify applications by DRM status, maintain a protected-source blacklist, or refuse a source because of what it may be playing. If Windows exposes decoded PCM through its selected-device or process-loopback API, Prollyglot treats it like any other audio and attempts to caption it.
 
 The project does not strip DRM, weaken protected-media controls, or promise that Windows will expose audio from every source. Current OBS device/application capture is the practical compatibility baseline: if OBS receives meaningful audio through an equivalent documented path and Prollyglot does not, that is a Prollyglot defect to investigate. A virtual audio device is not required for normal operation, though an already-installed virtual endpoint can be selected like any other playback device.
+
+For visual text translation, **Monitor** is a first-class source rather than a
+last-minute workaround. The Windows experiment will compare application-window
+and display capture through `Windows.Graphics.Capture` with a documented DXGI
+Desktop Duplication display path, then crop a selected region from the display
+frame. Equivalent OBS **Display Capture** is the compatibility baseline (see the
+[OBS source documentation](https://obsproject.com/kb/display-capture-sources)).
+If OBS can see useful pixels from the same display while Prollyglot cannot, that
+is a compatibility defect; Prollyglot should offer the other documented display
+path and record privacy-safe frame diagnostics.
+
+Monitor capture is not guaranteed to expose every protected surface. Windows
+[documents protected-video handling in Desktop Duplication](https://learn.microsoft.com/en-us/windows-hardware/drivers/display/desktop-duplication-api)
+and allows protected swap chains or windows to be excluded from public capture
+APIs. Prollyglot will process whatever pixels Windows supplies, clearly report
+a blank or excluded region, and will not add process injection, capture hooks,
+or a protection bypass.
 
 ## Development
 

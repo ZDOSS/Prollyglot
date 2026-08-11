@@ -16,6 +16,8 @@
 - Keep audio and transcription local by default. Do not require accounts, cloud processing, virtual audio devices, or application plugins.
 - Use documented operating-system capture paths. Do not weaken or bypass DRM or protected-media controls.
 - Do not blacklist, pre-classify, or refuse a source because it may use protected media. Capture any PCM the documented OS path exposes; if equivalent current OBS capture succeeds and Prollyglot does not, treat that as a Prollyglot compatibility defect.
+- For visual text translation, treat selected-monitor capture as a first-class source. Compare `Windows.Graphics.Capture` display capture and DXGI Desktop Duplication with equivalent OBS Display Capture; an OBS-only success is a compatibility defect, but a protected blank surface does not authorize injection, hooks, or bypass work.
+- Preserve original text beside translations where the user asks for both. Prollyglot should help users assess faithfulness, not claim that any model guarantees a perfect translation.
 - Protect the focused subtitle utility described by the spec; avoid unrelated meeting-assistant, productivity-suite, or general AI features.
 
 ## Repository workflow — temporary direct-to-main policy
