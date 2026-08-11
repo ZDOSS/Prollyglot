@@ -1109,7 +1109,7 @@ selected crop + frame-change detection
         ↓
 text detection and OCR
         ↓
-two-frame text stabilization and region tracking
+spatial line grouping, profile-specific stabilization, and region ranking
         ↓
 existing local translation service
         ↓
@@ -1150,19 +1150,35 @@ at up to 12 FPS by default so movement and short-lived text remain current.
 Expensive OCR is independently capped at four changed-frame opportunities per
 second, and a capacity-one latest-frame queue replaces stale work if inference
 is slower. A 64 × 36 luminance fingerprint detects both broad scene movement
-and small localized text-like changes. The first detection receives one
-unchanged confirmation pass so static menus and signs can satisfy two-frame
-stabilization, after which unchanged content goes idle. The stabilizer retains
-region identity, tolerates a one-frame OCR miss, and retranslates only normalized
-text that changed. These defaults should be tuned from native Windows latency,
-CPU, and recall evidence rather than exposed as premature performance controls.
+and small localized text-like changes. The PP-OCR live configuration bounds the
+longest detector side to 1280 pixels, uses up to four local inference threads,
+limits detector candidates, and skips the direction classifier because desktop
+media text is expected to be upright. Nearby horizontally split or vertically
+stacked OCR lines are joined into one reading-order phrase before filtering and
+translation, so a sign containing three stacked title lines becomes one request.
+
+**Prominent text** promotes its first high-confidence OCR pass, ranks regions by
+confidence, size, area, and proximity to the source center, and keeps at most six
+current regions. This removes the previous requirement to wait for a second
+expensive inference before showing a useful result. **All detected text** keeps
+two-pass stabilization and the lower size/confidence thresholds because its
+purpose is deliberately broader. An unchanged confirmation pass is still
+allowed before static content goes idle. The translation controller preloads
+the selected local route during OCR startup and replaces pending work with the
+newest visible snapshot instead of draining a stale per-fragment backlog. These
+defaults should be tuned from native Windows latency, CPU, and recall evidence
+rather than exposed as premature performance controls.
 
 The translated visual layer is separate from the bottom audio-caption surface.
 Each result retains a capture-space bounding box mapped through crop and current
 source geometry into screen coordinates. The source text is not redrawn because
 it is already visible in the captured application or display. Translation
 appears just above the source box when space permits, moves below it when
-required, and clamps to the captured bounds.
+required, and clamps to the captured bounds. The overlay shows one immediate
+**Scanning for text…** state before the first OCR result. Once text is confirmed
+absent, its translation remains readable for at most eight seconds. If the same
+text had already remained continuously visible for twelve seconds or longer, it
+is removed immediately when absent rather than receiving another grace period.
 
 Prollyglot does not mark its app or overlays with
 `WDA_EXCLUDEFROMCAPTURE`. That affinity caused full-screen troubleshooting
@@ -1178,9 +1194,11 @@ to match a currently displayed translation.
 Visual OCR has two explicit recognition profiles. **Prominent text** is the
 default for media and filters low-confidence observations, tiny interface text,
 common URL/interface noise, and results whose dominant script conflicts with a
-forced source language. **All detected text** lowers the size and confidence
-thresholds for users who intentionally need small text. Neither profile silently
-changes the user's selected capture region.
+forced source language. It also groups nearby lines, prioritizes prominent
+regions, and caps the live result set so browser chrome cannot create an
+unbounded translation queue. **All detected text** lowers the size and
+confidence thresholds for users who intentionally need small text. Neither
+profile silently changes the user's selected capture region.
 
 The integrated slice is accepted only if representative Japanese and Spanish
 video subtitles, game UI, and signs remain positionally stable and useful on a
@@ -1353,10 +1371,13 @@ The full workspace should use the width available on a desktop. Caption setup
 pairs the source and language controls with a live transcript/status panel.
 Screen translation separates capture-source controls from language/output
 controls. Transcript and model management use dedicated pages rather than
-nested mobile-style sheets. Compact mode exposes only the decisions required to
-start useful captions, while the same secondary destinations open as contained
-dialogs. Visual customization and advanced engine controls remain easy to find
-without crowding either primary path.
+nested mobile-style sheets. Appearance is likewise a dedicated page with its
+controls and preview inside the full workspace; it must not open a second modal
+or utility window from full view. Compact mode exposes only the decisions
+required to start useful captions, while secondary destinations use contained
+dialogs and Appearance may use its focused utility window. Visual customization
+and advanced engine controls remain easy to find without crowding either
+primary path.
 
 Compact example:
 

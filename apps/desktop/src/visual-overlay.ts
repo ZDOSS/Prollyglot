@@ -21,6 +21,7 @@ let output: VisualOutputPayload = {
   sourceHeight: 1,
   sourceLanguage: "",
   targetLanguage: "",
+  scanning: false,
   regions: []
 };
 
@@ -45,6 +46,7 @@ function labelFor(region: VisualOutputRegion): HTMLElement {
   label.className = "visual-translation-label";
   label.dataset.trackId = String(region.trackId);
   label.dataset.pending = String(region.translationPending);
+  label.dataset.retained = String(Boolean(region.retained));
   label.title = region.original;
   label.setAttribute(
     "aria-label",
@@ -76,7 +78,15 @@ function labelFor(region: VisualOutputRegion): HTMLElement {
 }
 
 function render(): void {
-  layer.replaceChildren(...output.regions.map(labelFor));
+  const labels = output.regions.map(labelFor);
+  if (output.scanning && labels.length === 0) {
+    const scanning = document.createElement("div");
+    scanning.className = "visual-scanning-state";
+    scanning.setAttribute("role", "status");
+    scanning.textContent = "Scanning for text…";
+    labels.push(scanning);
+  }
+  layer.replaceChildren(...labels);
 }
 
 function setOutput(next: VisualOutputPayload): void {
@@ -85,7 +95,7 @@ function setOutput(next: VisualOutputPayload): void {
 }
 
 function clear(): void {
-  output = { ...output, regions: [] };
+  output = { ...output, scanning: false, regions: [] };
   render();
 }
 

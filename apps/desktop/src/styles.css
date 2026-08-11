@@ -185,6 +185,26 @@ body {
   transform: translate(-50%, 7px);
 }
 
+.visual-translation-label[data-retained="true"] {
+  opacity: 0.72;
+  transition: opacity 220ms ease;
+}
+
+.visual-scanning-state {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  padding: 8px 13px;
+  border: 1px solid rgb(255 255 255 / 18%);
+  border-radius: 999px;
+  background: rgb(7 12 15 / 86%);
+  box-shadow: 0 4px 18px rgb(0 0 0 / 35%);
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 650;
+  transform: translateX(-50%);
+}
+
 .visual-source-copy {
   overflow: hidden;
   color: rgb(244 246 245 / 68%);
@@ -686,6 +706,13 @@ input:focus-visible {
   overflow: hidden;
 }
 
+.utility-dialog[open][data-panel="appearance"] {
+  display: flex;
+  height: calc(100% - 32px);
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .utility-dialog[open][data-panel="transcript"] .dialog-title-row {
   flex: 0 0 auto;
 }
@@ -713,6 +740,12 @@ input:focus-visible {
   overscroll-behavior: contain;
   scrollbar-color: var(--color-border-strong) transparent;
   scrollbar-width: thin;
+}
+
+.utility-dialog[open][data-panel="appearance"] #dialog-content {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
 }
 
 .utility-dialog[data-panel="settings"][data-has-notice="true"] #dialog-content {
@@ -1976,6 +2009,14 @@ input:focus-visible {
   padding-top: var(--space-4);
 }
 
+.main-window[data-view-mode="full"] .utility-dialog[data-panel="appearance"] #dialog-content {
+  overflow: hidden;
+}
+
+.main-window[data-view-mode="full"] .utility-dialog[data-panel="appearance"] .appearance-layout {
+  padding: 0 0 var(--space-4);
+}
+
 /* Compact mode intentionally keeps the original focused utility shape. */
 
 .main-window[data-view-mode="compact"] {
@@ -2538,7 +2579,13 @@ input:focus-visible {
 
 .appearance-window {
   display: grid;
-  grid-template-rows: 56px minmax(0, 1fr) 76px;
+  grid-template-rows: 56px minmax(0, 1fr);
+}
+
+.appearance-panel-host {
+  display: grid;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr) 76px;
 }
 
 .compact-titlebar {
@@ -2843,6 +2890,12 @@ input[type="range"]::-moz-range-thumb {
   justify-content: space-between;
   border-top: 1px solid var(--color-border);
   padding: 0 var(--space-6);
+}
+
+.appearance-live-note {
+  margin-left: auto;
+  color: var(--color-text-muted);
+  font-size: 12px;
 }
 
 .compact-primary {

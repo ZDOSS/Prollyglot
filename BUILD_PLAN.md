@@ -92,7 +92,7 @@ through Windows Graphics Capture, and sends transient BGRA frames through a
 capacity-one latest-frame queue. The live source is sampled at up to 12 FPS,
 while localized frame-change detection caps expensive OCR opportunities at four
 per second and confirms static detections once before going idle. PP-OCRv6 Small
-and two-frame text stabilization feed positioned translated labels that reuse
+and profile-specific stabilization feed positioned translated labels that reuse
 the local translation worker; original text remains visible at its source. The
 default prominent-text profile filters low-confidence, tiny, wrong-script, and
 common interface-noise results, with an explicit all-detected-text option for
@@ -108,6 +108,24 @@ actual model initialization and platform-neutral pipeline tests pass on the
 development host. Native Windows capture, OCR usefulness on real media,
 multi-monitor/DPI movement, resource use, blank-frame recovery, DXGI comparison,
 and OBS display parity remain Milestone 7 gates.
+
+The first moving-media owner check found that the initial visual slice did not
+meet that gate. Full-frame OCR was inference-bound, a second pass delayed first
+output, stacked sign lines became fragments such as `YCORE`, and every fragment
+entered a serial translation backlog. Whole-display capture also elevated too
+much unrelated browser and taskbar text. The correction bounds live OCR to a
+1280-pixel longest side, uses up to four local inference threads, skips upright
+text classification, limits detector candidates, groups adjacent and stacked
+lines before filtering, and ranks only six prominent regions. Prominent mode now
+publishes its first high-confidence pass, preloads translation alongside OCR,
+and keeps only newest-snapshot pending work. The overlay reports scanning
+immediately and retains newly disappeared labels for up to eight seconds, while
+long-lived labels disappear immediately when absent. Full-view Appearance is
+also now an embedded workspace page, and Stop visibly enters **Stopping…** on
+the first click before native shutdown work begins. Local Rust, TypeScript,
+rendered interaction, and Windows cross-target checks pass; the same Spanish
+title/subtitle case still requires native owner re-testing before the correction
+is accepted.
 
 The first native-Windows start attempt exposed one shared interop defect rather
 than three source-specific failures: the TypeScript selection union sent
@@ -292,6 +310,9 @@ The experimental direction is now represented by an integrated first slice:
   instead of recognizing every video frame;
 - stabilize identical text across frames, track its bounding box, and route new
   text through the existing local translation service;
+- group nearby same-line and stacked fragments into one phrase, prioritize a
+  bounded live-media result set, and replace stale pending translation work with
+  the newest snapshot;
 - render translated labels above or below their original source text in a
   separate click-through overlay; and
 - keep the app screenshotable while filtering the bounded set of translations

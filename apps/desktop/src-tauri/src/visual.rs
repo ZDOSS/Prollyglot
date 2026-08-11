@@ -581,6 +581,7 @@ pub async fn start_visual_translation(
             inner: engine,
             overlay_echoes: Arc::clone(&state.visual.overlay_echoes),
         },
+        detection_mode,
     )
     .inspect_err(|message| {
         publish_start_failure(&app, &state.visual.status, message.clone());
@@ -703,19 +704,31 @@ fn spawn_processor(
     source: Arc<Mutex<PickedVisualSource>>,
     frames: crossbeam_channel::Receiver<prollyglot_visual_pipeline::VisualFrame>,
     engine: EchoFilteringEngine,
+    detection_mode: VisualDetectionMode,
 ) -> Result<JoinHandle<()>, String> {
     thread::Builder::new()
         .name("visual-ocr".into())
         .spawn(move || {
+            let stabilizer_config = match detection_mode {
+                VisualDetectionMode::Focused => TextStabilizerConfig {
+                    required_consecutive_frames: 1,
+                    ..TextStabilizerConfig::default()
+                },
+                VisualDetectionMode::AllText => TextStabilizerConfig::default(),
+            };
             let mut pipeline = VisualPipeline::new(
                 FrameGate::new(FrameGateConfig::default()),
                 engine,
-                TextStabilizer::new(TextStabilizerConfig::default()),
+                TextStabilizer::new(stabilizer_config),
             );
             let mut last_status_publish = Instant::now()
                 .checked_sub(VISUAL_STATUS_INTERVAL)
                 .unwrap_or_else(Instant::now);
+            let mut last_slow_pass_log = Instant::now()
+                .checked_sub(Duration::from_secs(5))
+                .unwrap_or_else(Instant::now);
             while let Ok(frame) = frames.recv() {
+                let pass_started = Instant::now();
                 let outcome = match pipeline.process(&frame) {
                     Ok(outcome) => outcome,
                     Err(error) => {
@@ -725,6 +738,20 @@ fn spawn_processor(
                         break;
                     }
                 };
+                let pass_elapsed = pass_started.elapsed();
+                if outcome.update.is_some()
+                    && pass_elapsed >= Duration::from_millis(750)
+                    && last_slow_pass_log.elapsed() >= Duration::from_secs(5)
+                {
+                    tracing::warn!(
+                        elapsed_ms = pass_elapsed.as_millis(),
+                        frames_received = outcome.stats.frames_received,
+                        frames_analyzed = outcome.stats.frames_analyzed,
+                        stable_regions = outcome.stats.stable_regions,
+                        "visual OCR pass is slower than the live-media target"
+                    );
+                    last_slow_pass_log = Instant::now();
+                }
                 if let Some(update) = outcome.update {
                     let payload = VisualTextUpdate {
                         source: source.lock().clone(),

@@ -38,6 +38,7 @@ import {
   windowAction
 } from "./bridge";
 import { CaptionOutputController, supportedSourceLanguage } from "./caption-output";
+import { AppearancePanel } from "./appearance-panel";
 import { icons } from "./icons";
 import {
   SPOKEN_LANGUAGES,
@@ -97,7 +98,7 @@ root.innerHTML = `
           <button type="button" class="desktop-nav-action" data-panel="visual">${icons.screen}<span>Screen translation</span></button>
           <button type="button" class="desktop-nav-action" data-panel="transcript">${icons.transcript}<span>Transcript</span></button>
           <button type="button" class="desktop-nav-action" data-panel="models">${icons.models}<span>Models</span></button>
-          <button type="button" class="desktop-nav-action" data-appearance>${icons.appearance}<span>Appearance</span></button>
+          <button type="button" class="desktop-nav-action" data-panel="appearance">${icons.appearance}<span>Appearance</span></button>
           <button type="button" class="desktop-nav-action" data-panel="settings">${icons.settings}<span>Settings</span></button>
         </div>
         <div class="desktop-nav-footer">
@@ -263,7 +264,7 @@ const TRANSLATION_TARGET_STORAGE_KEY = "prollyglot.translation-target";
 const VIEW_MODE_STORAGE_KEY = "prollyglot.view-mode";
 
 type AppViewMode = "full" | "compact";
-type DialogPanel = "transcript" | "models" | "settings" | "visual";
+type DialogPanel = "transcript" | "models" | "settings" | "visual" | "appearance";
 
 let currentViewMode: AppViewMode = storedViewMode();
 
@@ -315,6 +316,7 @@ const FOLLOW_SYSTEM_DEFAULT = "__follow-system-default__";
 const TRANSCRIPT_BOTTOM_THRESHOLD = 48;
 const settingsPanel = new SettingsPanel();
 const visualPanel = new VisualPanel();
+const appearancePanel = new AppearancePanel();
 const captionOutput = new CaptionOutputController(
   translationService,
   (payload) => {
@@ -1138,17 +1140,26 @@ function renderVisualPanel(): void {
     installVisualModel,
     installTranslationModel: (modelId) => translationService.install(modelId),
     start: async (selection, sourceLanguage, targetLanguage, detectionMode) => {
-      visualTranslation.begin(sourceLanguage, targetLanguage);
+      const supportedSource = supportedTranslationLanguage(sourceLanguage);
+      const supportedTarget = supportedTranslationLanguage(targetLanguage);
+      if (!supportedSource || !supportedTarget) {
+        throw new Error("Visual translation requires a supported source and target language.");
+      }
+      visualTranslation.begin(sourceLanguage, targetLanguage, detectionMode);
       try {
-        await startVisualTranslation(selection, sourceLanguage, targetLanguage, detectionMode);
+        await Promise.all([
+          translationService.prepare(supportedSource, supportedTarget),
+          startVisualTranslation(selection, sourceLanguage, targetLanguage, detectionMode)
+        ]);
       } catch (error) {
         visualTranslation.clear();
+        void stopVisualTranslation().catch(() => undefined);
         throw error;
       }
     },
     stop: async () => {
-      await stopVisualTranslation();
       visualTranslation.clear();
+      await stopVisualTranslation();
     },
     stopAudio: stopCapture,
     openSettings: () => openDialogPanel("models"),
@@ -1156,6 +1167,10 @@ function renderVisualPanel(): void {
       void reportFrontendDiagnostic("visual-translation", message);
     }
   });
+}
+
+function renderAppearancePanel(): void {
+  appearancePanel.render(dialogContent());
 }
 
 function renderSettingsNotice() {
@@ -1323,6 +1338,10 @@ function openDialogPanel(panel: DialogPanel): void {
     visual: {
       title: "Screen translation",
       subtitle: "Continuously recognize and translate text in a window, display, or selected region."
+    },
+    appearance: {
+      title: "Appearance",
+      subtitle: "Customize readable captions and preview changes as you make them."
     }
   };
   dialog.dataset.panel = panel;
@@ -1344,6 +1363,7 @@ function openDialogPanel(panel: DialogPanel): void {
   if (panel === "models") renderSettingsPanel();
   else if (panel === "settings") renderGeneralSettingsPanel();
   else if (panel === "visual") renderVisualPanel();
+  else if (panel === "appearance") renderAppearancePanel();
   else renderTranscriptPanel(true);
 }
 
@@ -1361,7 +1381,7 @@ function setActiveNavigation(destination: DialogPanel | "captions"): void {
 for (const button of document.querySelectorAll<HTMLButtonElement>("[data-panel]")) {
   button.addEventListener("click", () => {
     const panel = button.dataset.panel;
-    if (panel === "transcript" || panel === "models" || panel === "settings" || panel === "visual") {
+    if (panel === "transcript" || panel === "models" || panel === "settings" || panel === "visual" || panel === "appearance") {
       openDialogPanel(panel);
     }
   });

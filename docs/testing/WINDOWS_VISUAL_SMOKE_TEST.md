@@ -39,12 +39,16 @@ installing the OCR pack does not install every translator.
    screen** and **Translate to**, then choose **Start Screen Translation**.
 4. Continue normal playback. The selected source is watched continuously; the
    region selector is only a live crop, not a screenshot. Leave **Detection** on
-   **Prominent text** for the first pass. When readable text remains visible
-   across two samples, confirm its translation appears near the original text
-   already present in the selected source. The overlay should not repeatedly
-   recognize its own labels or fill the screen with unrelated interface text.
-5. Change scenes or move the selected window. Confirm stale labels disappear and
-   current labels follow the source rather than creating an ever-growing queue.
+   **Prominent text** for the first pass. Confirm **Scanning for text…** appears
+   promptly, then a high-confidence first OCR pass can translate near the
+   original text without waiting for a second full inference. Stacked title or
+   sign lines should become one phrase rather than overlapping word fragments.
+   The overlay should not repeatedly recognize its own labels or fill the screen
+   with unrelated interface text.
+5. Change scenes or move the selected window. Confirm current labels follow the
+   source rather than creating an ever-growing queue. Newly disappeared text may
+   remain readable for up to eight seconds; text that was already visible for
+   twelve seconds or longer should clear as soon as its absence is recognized.
 6. Choose **Stop Screen Translation**. The app should return to setup
    immediately and remain responsive even if recognition was in progress.
 

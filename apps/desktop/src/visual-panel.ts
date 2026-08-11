@@ -565,6 +565,7 @@ export class VisualPanel {
     this.notice = "";
     this.rerender();
     try {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       await operation();
     } catch (error) {
       this.notice = error instanceof Error

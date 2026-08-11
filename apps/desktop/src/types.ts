@@ -157,6 +157,7 @@ export interface VisualOutputRegion {
   original: string;
   translation?: string;
   translationPending: boolean;
+  retained?: boolean;
   bounds: VisualRect;
 }
 
@@ -165,6 +166,7 @@ export interface VisualOutputPayload {
   sourceHeight: number;
   sourceLanguage: string;
   targetLanguage: string;
+  scanning: boolean;
   regions: VisualOutputRegion[];
 }
 

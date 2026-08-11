@@ -18,7 +18,7 @@ Run `pnpm --dir apps/desktop install --frozen-lockfile` first only when dependen
 
 The app should open without a UAC prompt or blank window. No subtitle preview should appear merely because the app launched. **Checking local models…** may appear briefly without holding the window closed. The first launch after this update may fully verify existing model files in the background; later launches should reuse that verification while those files remain unchanged.
 
-Open **Appearance** once. Its sample stays inside the Appearance window rather than opening a second always-on-top preview over the controls. Confirm both **Done** and the title-bar **Close** return to the main window; no screenshot is required.
+Open **Appearance** once in full view. It should remain inside the desktop workspace as a dedicated page with an immediate preview, not open a modal or second window. In compact view, Appearance may use its focused utility window; **Done** and the title-bar **Close** should return normally. No screenshot is required.
 
 If the selected model is missing, open **Models**, download it normally, and wait for it to finish. Fast is the smallest English default; Balanced and Enhanced are optional English choices under **Models → Speech recognition**. Smaller Chinese, French, Korean, and Bengali streaming models are also optional. Nemotron is the much larger 28-language option and does not need to be downloaded for an ordinary English smoke. Interrupted-download recovery is deferred to a later hardening pass and is not part of this smoke test.
 
