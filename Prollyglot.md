@@ -749,6 +749,8 @@ The overlay should support:
 - independent original and translated text colors,
 - stacked or side-by-side bilingual layout,
 - zero to three fading prior caption rows,
+- a selectable post-speech reading interval,
+- a selectable fade-out duration,
 - multi-monitor placement,
 - temporary hiding,
 - fullscreen applications where possible.
@@ -789,6 +791,15 @@ half of an older pair, or allow one language to be clipped independently.
 Both columns wrap in full. Prior pairs may use a smaller faded type size and the
 oldest complete pair may be removed when space is exhausted, but neither column
 may be independently ellipsized or truncated.
+
+The default final-caption reading interval is 15 seconds, followed by an 800ms
+fade. Appearance should offer 6, 10, 15, and 30 second reading choices plus an
+instant or graduated fade. The interval is measured from the newest readable
+source or translation result, not merely from the end of captured speech. A
+translation that arrives after its source therefore receives a fresh full
+reading interval. While a newer raw recognition event briefly outruns its
+structured bilingual payload, the overlay must retain the last complete
+bilingual frame and must not collapse into a full-width original-only frame.
 
 ### Minimal
 
@@ -1017,6 +1028,103 @@ ASR should run once.
 Translations can then branch from the recognized text.
 
 This is not required for MVP.
+
+---
+
+# 28.1 Visual text translation
+
+Visual text translation is a viable future extension of Prollyglot when it is
+kept focused on the same media-accessibility job: recognize text already shown
+by another application, translate it locally, and place the result near that
+text. It is not a mandate to become a general screen recorder, OBS replacement,
+or open-ended visual assistant.
+
+The first Windows experiment should be a separate mode with its own action:
+
+```text
+[ Start Audio Captions ]
+[ Translate Screen… ]
+```
+
+Audio captions and visual translation are initially mutually exclusive. The
+architecture should permit both later, but concurrent mode is enabled only
+after CPU, GPU, memory, and overlay-behavior evidence shows that neither path
+starves the other.
+
+Visual sources:
+
+- a user-drawn region on one display;
+- one selected application window; or
+- one selected display.
+
+Windows capture should use the documented `Windows.Graphics.Capture` path. A
+region is a crop of a captured display rather than a separate injection or
+application hook. The system picker is the ordinary consent path, while Win32
+interop can create capture items for a known `HWND` or `HMONITOR` on supported
+Windows versions. Protected or unavailable pixels follow the same policy as
+audio: process whatever the documented API exposes, accept a black or excluded
+frame as an unavailable capture condition, and do not build a bypass.
+
+The initial pipeline should be specialized OCR rather than a general-purpose
+vision-language model:
+
+```text
+Windows.Graphics.Capture frame
+        ↓
+selected crop + frame-change detection
+        ↓
+text detection and OCR
+        ↓
+two-frame text stabilization and region tracking
+        ↓
+existing local translation service
+        ↓
+translated label anchored above or beside the source text
+```
+
+`PP-OCRv6_small` is the leading experiment candidate. Its published small
+detection and recognition models total about 30 MB, the unified recognizer
+covers 50 languages including Japanese, and PaddleOCR documents Windows and
+ONNX Runtime deployment under an Apache-2.0 project license. Exact model-weight
+provenance, revisions, artifact hashes, and redistribution terms still need to
+be pinned before distribution. Windows' built-in `Windows.Media.Ocr` is useful
+as a zero-download baseline because it returns word positions, but its language
+availability depends on recognizers installed on the user's machine and it does
+not provide the later Linux path.
+
+Relevant primary references:
+
+- <https://learn.microsoft.com/en-us/windows/apps/develop/media-authoring-processing/screen-capture>
+- <https://learn.microsoft.com/en-us/windows/win32/api/windows.graphics.capture.interop/>
+- <https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwindowdisplayaffinity>
+- <https://learn.microsoft.com/en-us/uwp/api/windows.media.ocr.ocrengine>
+- <https://www.paddleocr.ai/latest/en/version3.x/algorithm/PP-OCRv6/PP-OCRv6.html>
+
+Continuous OCR must not mean running inference on every captured video frame.
+The visual worker should use a latest-frame-wins bounded queue, sample at a low
+rate, skip unchanged regions, and retranslate only normalized text that has
+changed. This keeps a static subtitle or menu from consuming resources 60 times
+per second and prevents an OCR backlog from showing translations for scenes
+that are no longer visible.
+
+The translated visual layer is separate from the bottom audio-caption surface.
+Each result retains a capture-space bounding box mapped through DPI, crop, and
+window movement into screen coordinates. Translation appears just above the
+source box when space permits, moves below it when required, and clamps to the
+captured bounds. Prollyglot's own control and overlay windows should use
+`WDA_EXCLUDEFROMCAPTURE` where supported, with explicit masking as a fallback,
+so monitor capture does not repeatedly OCR its own translations.
+
+The first experiment is successful only if representative Japanese and Spanish
+video subtitles, game UI, and signs remain positionally stable and useful on a
+midrange Windows machine. Measure capture-to-OCR latency, translation latency,
+text accuracy, box jitter, CPU/GPU load, and memory. A context-aware visual model
+may later help ambiguous text or non-text scene understanding, but it is a
+separate heavy option; the first useful version should not pay that cost merely
+to read visible words.
+
+Frames remain transient and are not saved by default. Visual text and its
+translation follow the same transcript/privacy rules as audio captions.
 
 ---
 

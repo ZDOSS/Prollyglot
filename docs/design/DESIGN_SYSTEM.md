@@ -69,6 +69,7 @@ The concepts use a true dark-neutral palette, not navy, brown, or softened off-w
 - Utility action: 14px, 550 weight.
 - Status: 14px, 600 weight; mint only for healthy Ready/Live states.
 - Default overlay caption: 36px, 600 weight, 1.25 line height.
+- Default post-speech reading time: 15 seconds after the newest final or translated text, followed by an 800ms fade.
 
 App chrome uses the Windows system UI font. Caption font is user-selectable later and must never change the app chrome font.
 
@@ -154,6 +155,10 @@ Appearance screen copy:
 - 720 px
 - Maximum lines
 - 2
+- Keep after speech
+- 15 seconds
+- Fade out
+- Gentle · 0.8 sec
 - Position
 - Bottom center
 - Click-through

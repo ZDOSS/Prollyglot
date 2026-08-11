@@ -118,6 +118,8 @@ struct OverlaySettings {
     background_opacity: f32,
     width: u32,
     maximum_lines: u8,
+    reading_time_seconds: u16,
+    fade_duration_ms: u16,
     position: OverlayPosition,
     click_through: bool,
 }
@@ -149,6 +151,8 @@ impl Default for OverlaySettings {
             background_opacity: 0.75,
             width: 720,
             maximum_lines: 3,
+            reading_time_seconds: 15,
+            fade_duration_ms: 800,
             position: OverlayPosition::BottomCenter,
             click_through: true,
         }
@@ -712,6 +716,12 @@ fn validated_settings(settings: OverlaySettings) -> Result<OverlaySettings, Stri
     if !(1..=4).contains(&settings.maximum_lines) {
         return Err("Maximum lines must be between 1 and 4.".into());
     }
+    if !(3..=60).contains(&settings.reading_time_seconds) {
+        return Err("Caption reading time must be between 3 and 60 seconds.".into());
+    }
+    if settings.fade_duration_ms > 5_000 {
+        return Err("Caption fade duration must be at most 5 seconds.".into());
+    }
     if !(0.0..=1.0).contains(&settings.background_opacity) {
         return Err("Background opacity must be between 0 and 1.".into());
     }
@@ -921,6 +931,18 @@ mod tests {
     fn overlay_settings_reject_unsafe_ranges() {
         let settings = OverlaySettings {
             background_opacity: 1.5,
+            ..OverlaySettings::default()
+        };
+        assert!(validated_settings(settings).is_err());
+
+        let settings = OverlaySettings {
+            reading_time_seconds: 2,
+            ..OverlaySettings::default()
+        };
+        assert!(validated_settings(settings).is_err());
+
+        let settings = OverlaySettings {
+            fade_duration_ms: 5_001,
             ..OverlaySettings::default()
         };
         assert!(validated_settings(settings).is_err());

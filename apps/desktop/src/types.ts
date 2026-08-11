@@ -128,6 +128,8 @@ export interface OverlaySettings {
   backgroundOpacity: number;
   width: number;
   maximumLines: number;
+  readingTimeSeconds: number;
+  fadeDurationMs: number;
   position: "topCenter" | "bottomCenter" | "bottomLeft" | "bottomRight";
   clickThrough: boolean;
 }
@@ -141,6 +143,8 @@ export const DEFAULT_OVERLAY_SETTINGS: OverlaySettings = {
   backgroundOpacity: 0.75,
   width: 720,
   maximumLines: 3,
+  readingTimeSeconds: 15,
+  fadeDurationMs: 800,
   position: "bottomCenter",
   clickThrough: true
 };

@@ -29,13 +29,15 @@ function requireElement<T extends Element>(selector: string): T {
 const surface = requireElement<HTMLElement>("#caption-surface");
 const captionText = requireElement<HTMLElement>("#caption-text");
 const TRANSLATION_MAX_WAIT_MS = 30_000;
-const TRANSLATION_RESULT_HOLD_MS = 6_000;
 let rawCaption = "";
 let captionActive = false;
 let output: CaptionOutputPayload = { mode: "original", originalCaption: "", entries: [] };
 let overlaySettings: OverlaySettings = { ...DEFAULT_OVERLAY_SETTINGS };
-let deferredClear = false;
+let clearRequestedAtMs: number | undefined;
+let lastReadableUpdateAtMs = 0;
+let readableSignature = "";
 let clearTimer: number | undefined;
+let fadeTimer: number | undefined;
 
 declare global {
   interface Window {
@@ -47,14 +49,16 @@ declare global {
 }
 
 function fallbackEntries(caption: string): CaptionOutputEntry[] {
+  const sourceLanguage = output.entries.at(-1)?.sourceLanguage ?? "auto";
   return caption
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean)
     .map((original, index) => ({
       key: `fallback:${index}`,
-      sourceLanguage: "auto",
+      sourceLanguage,
       original,
+      translationPending: output.mode !== "original",
       isFinal: false
     }));
 }
@@ -104,10 +108,14 @@ function fitHistoryWithoutClipping(): void {
 }
 
 function renderCaption(): void {
-  const entries = output.originalCaption === rawCaption
+  // Raw overlay events arrive directly from the transcription worker while
+  // structured bilingual output takes a short trip through the control
+  // window. Keep the last complete structured frame during that gap instead
+  // of collapsing to a full-size original-only layout for one paint.
+  const entries = !rawCaption.trim() || output.originalCaption === rawCaption
     ? output.entries
-    : fallbackEntries(rawCaption);
-  const mode = output.originalCaption === rawCaption ? output.mode : "original";
+    : output.entries.length > 0 ? output.entries : fallbackEntries(rawCaption);
+  const mode = output.mode;
   captionText.dataset.mode = mode;
   const visibleEntries = entries.slice(-overlaySettings.maximumLines);
   const rendered = visibleEntries.map((entry, index) => {
@@ -168,55 +176,104 @@ function renderCaption(): void {
   if (!surface.hidden) fitHistoryWithoutClipping();
 }
 
-function cancelCaptionClear(): void {
+function cancelScheduledClear(): void {
   if (clearTimer !== undefined) window.clearTimeout(clearTimer);
+  if (fadeTimer !== undefined) window.clearTimeout(fadeTimer);
   clearTimer = undefined;
+  fadeTimer = undefined;
+  surface.classList.remove("caption-fading");
 }
 
 function clearCaption(): void {
-  cancelCaptionClear();
-  deferredClear = false;
+  cancelScheduledClear();
+  clearRequestedAtMs = undefined;
   rawCaption = "";
   captionActive = false;
   renderCaption();
 }
 
 function matchingTranslationPending(): boolean {
-  return output.originalCaption === rawCaption
+  return output.mode !== "original"
     && output.entries.some((entry) => entry.translationPending);
+}
+
+function beginCaptionFade(): void {
+  if (clearRequestedAtMs === undefined) return;
+  if (overlaySettings.fadeDurationMs <= 0) {
+    clearCaption();
+    return;
+  }
+  surface.classList.add("caption-fading");
+  fadeTimer = window.setTimeout(clearCaption, overlaySettings.fadeDurationMs);
+}
+
+function scheduleCaptionClear(): void {
+  if (clearRequestedAtMs === undefined) return;
+  cancelScheduledClear();
+  const now = Date.now();
+  const translationDeadline = clearRequestedAtMs + TRANSLATION_MAX_WAIT_MS;
+  if (matchingTranslationPending() && now < translationDeadline) {
+    clearTimer = window.setTimeout(scheduleCaptionClear, translationDeadline - now);
+    return;
+  }
+
+  const readableAt = lastReadableUpdateAtMs || clearRequestedAtMs;
+  const readingDeadline = Math.max(
+    clearRequestedAtMs,
+    readableAt + overlaySettings.readingTimeSeconds * 1_000
+  );
+  const remaining = readingDeadline - now;
+  if (remaining > 0) {
+    clearTimer = window.setTimeout(beginCaptionFade, remaining);
+  } else {
+    beginCaptionFade();
+  }
 }
 
 function handleRawCaption(caption: string): void {
   if (caption.trim()) {
-    cancelCaptionClear();
-    deferredClear = false;
+    cancelScheduledClear();
+    clearRequestedAtMs = undefined;
     rawCaption = caption;
     captionActive = true;
     renderCaption();
     return;
   }
 
-  if (captionActive && rawCaption.trim() && matchingTranslationPending()) {
-    deferredClear = true;
-    cancelCaptionClear();
-    clearTimer = window.setTimeout(clearCaption, TRANSLATION_MAX_WAIT_MS);
-    return;
-  }
-  clearCaption();
-}
-
-function handleCaptionOutput(payload: CaptionOutputPayload): void {
-  output = payload;
-  renderCaption();
-  if (!deferredClear) return;
-  if (output.originalCaption !== rawCaption) {
+  rawCaption = "";
+  if (!captionActive || output.entries.length === 0) {
     clearCaption();
     return;
   }
-  if (output.entries.some((entry) => entry.translationPending)) return;
-  deferredClear = false;
-  cancelCaptionClear();
-  clearTimer = window.setTimeout(clearCaption, TRANSLATION_RESULT_HOLD_MS);
+  clearRequestedAtMs ??= Date.now();
+  renderCaption();
+  scheduleCaptionClear();
+}
+
+function handleCaptionOutput(payload: CaptionOutputPayload): void {
+  const nextSignature = JSON.stringify([
+    payload.mode,
+    payload.targetLanguage,
+    payload.entries.map((entry) => [
+      entry.key,
+      entry.original,
+      entry.translation,
+      entry.translationPending,
+      entry.isFinal
+    ])
+  ]);
+  if (nextSignature !== readableSignature && payload.entries.length > 0) {
+    readableSignature = nextSignature;
+    lastReadableUpdateAtMs = Date.now();
+  }
+  output = payload;
+  renderCaption();
+  if (clearRequestedAtMs === undefined) return;
+  if (!output.originalCaption.trim() || output.entries.length === 0) {
+    clearCaption();
+    return;
+  }
+  scheduleCaptionClear();
 }
 
 function applySettings(settings: OverlaySettings) {
@@ -228,10 +285,12 @@ function applySettings(settings: OverlaySettings) {
   surface.style.backgroundColor = `rgba(11, 15, 18, ${settings.backgroundOpacity})`;
   surface.style.maxWidth = `${settings.width}px`;
   surface.style.setProperty("--maximum-lines", String(settings.maximumLines));
+  surface.style.setProperty("--caption-fade-duration", `${settings.fadeDurationMs}ms`);
   surface.dataset.clickThrough = String(settings.clickThrough);
   surface.dataset.bilingualLayout = settings.bilingualLayout;
   requireElement<HTMLElement>("#overlay-app").dataset.position = settings.position;
   renderCaption();
+  if (clearRequestedAtMs !== undefined) scheduleCaptionClear();
 }
 
 function storedSettings(): OverlaySettings {

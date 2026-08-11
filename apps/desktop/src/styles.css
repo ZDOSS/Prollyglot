@@ -1168,7 +1168,13 @@ input[type="range"]::-moz-range-thumb {
   contain: layout paint;
   isolation: isolate;
   transform: translateZ(0);
+  opacity: 1;
+  transition: opacity var(--caption-fade-duration, 800ms) ease;
   user-select: none;
+}
+
+.caption-surface.caption-fading {
+  opacity: 0;
 }
 
 .caption-surface[hidden] {
@@ -1254,6 +1260,12 @@ input[type="range"]::-moz-range-thumb {
 
 .caption-surface[data-click-through="false"] {
   cursor: move;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .caption-surface {
+    transition-duration: 0ms;
+  }
 }
 
 @media (max-width: 720px) {

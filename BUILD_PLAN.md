@@ -42,6 +42,7 @@ Why this direction:
 | 4. Windows MVP release | A reliable installable Windows build is ready for outside testing | Pending |
 | 5. Ubuntu port | The Windows-proven core runs on one supported Ubuntu LTS release through PipeWire | Pending |
 | 6. Multilingual captions and translation | Downloadable language support, local translation, and dual captions are production-ready | 29 forced spoken languages, four compact language models, compact-to-English and 29-language many-to-many routes integrated; Windows quality, latency, and automatic-language constraints remain pending |
+| 7. Visual text translation | A selected region, application, or display becomes locally translated positioned text | Architecture is viable and scoped; Windows capture/OCR benchmark and implementation are pending |
 
 ### Windows smoke checkpoint — 2026-08-10
 
@@ -66,6 +67,14 @@ Long Japanese media then exposed a second translation-latency and layout failure
 The same owner run showed that more installed recognition models made the control window appear slower. The cause was a synchronous full SHA-256 pass over every installed artifact at every launch, including Nemotron's 650.6 MiB files. Catalog inspection now runs after the window opens and writes a verification marker following a successful full pass; unchanged artifacts use manifest, size, and modification metadata on later launches, while any mismatch falls back to full hashing. Existing models receive one background full verification after upgrading. Only the selected recognition model still incurs its actual runtime load when captions start.
 
 The language/translation catalog is now expanded as one integrated pre-release slice. Chinese, French, Korean, and Bengali have smaller dedicated streaming downloads; Nemotron exposes its 28 supported forced languages with ready versus broad-coverage guidance; and the UI offers 29 spoken-language choices in total. Translation has a separate target selector, preferring compact Japanese/Spanish-to-English routes, then a compact multilingual-to-English route, with a larger optional M2M100 model for direct translation among all 29 choices. The rendered-app pass verified changing provisional translation before finalization, three complete wrapped side-by-side history pairs, a real compact French-to-English graph, and a real universal Japanese-to-Spanish graph after full artifact verification. Native Windows media, broader language quality, cold-load timing, and sustained resource use remain the gates.
+
+The next media run exposed an overlay ordering race: a direct raw-caption event
+could arrive just before the structured bilingual payload and temporarily turn
+the original language into a full-width replacement for its translation. The
+overlay now retains the last complete bilingual frame across that gap. Appearance
+also offers 6, 10, 15, or 30 seconds of post-speech reading time plus four fade
+speeds; the default is 15 seconds and an 800ms fade, and a delayed translation
+restarts the reading interval. Native Windows timing remains the owner check.
 
 Routine development now uses [`docs/testing/WINDOWS_SMOKE_TEST.md`](docs/testing/WINDOWS_SMOKE_TEST.md). Interrupted-download recovery, formal latency measurement, screenshots, OBS parity, and sustained-resource evidence are intentionally deferred to milestone hardening or release boundaries rather than imposed on every pre-release build.
 
@@ -138,7 +147,7 @@ The application is minimal by default and customizable by choice. A user should 
 
 - A compact main window for source selection, language, live state, Start/Stop, transcript access, and settings.
 - A restrained visual system with strong typography, generous spacing, clear hierarchy, light and dark modes, and no decorative clutter.
-- Overlay controls for font family, font size, weight, line height, text color, outline or shadow, background color and opacity, width, maximum lines, alignment, screen position, monitor, and click-through.
+- Overlay controls for font family, font size, weight, line height, text color, outline or shadow, background color and opacity, width, maximum lines, post-speech reading time, fade duration, alignment, screen position, monitor, and click-through.
 - Readable built-in presets, a reset-to-default action, and persistent local settings.
 - Drag-to-position with a lock mode, plus keyboard-accessible positioning where direct dragging is unsuitable.
 - A transcript view with copy, clear, search, and `.txt`, `.srt`, and `.vtt` export.
@@ -219,6 +228,62 @@ The current integration slices are present for owner evaluation: four dedicated 
 - Original captions render without waiting for translation, and translated lines update without destabilizing committed source text.
 - English-only users do not download or load multilingual or translation models.
 - Failure of translation leaves original-language transcription fully usable.
+
+## Milestone 7 — Visual text translation
+
+Add visual translation as a separate Windows-first media mode without turning
+Prollyglot into a screen recorder or general visual assistant. The first slice
+does not run simultaneously with audio captions; the contracts and resource
+ownership must leave that end state possible.
+
+The feasibility direction is concrete enough for an experiment:
+
+- capture one user-selected display or application through
+  `Windows.Graphics.Capture`, cropping a user-drawn region after display capture;
+- compare Windows' installed-language `Windows.Media.Ocr` baseline with pinned
+  PP-OCRv6 Small detection and recognition models;
+- run OCR on a bounded latest-frame queue with change detection instead of on
+  every video frame;
+- stabilize identical text across frames, track its bounding box, and route new
+  text through the existing local translation service;
+- render translated labels just above or beside their source regions in a
+  separate click-through overlay; and
+- exclude or mask Prollyglot's own windows from monitor capture to prevent an
+  OCR feedback loop.
+
+### Included outcome
+
+- A separate **Translate Screen…** action and mutually exclusive audio/visual
+  session state.
+- Region, selected-application-window, and selected-display visual sources.
+- Transient GPU/CPU frame handling with no screenshots persisted by default.
+- A replaceable OCR contract that returns text, confidence, language/script,
+  and capture-space polygons without leaking Windows objects downstream.
+- Pinned model provenance, explicit downloads, integrity checking, and a
+  zero-download Windows OCR comparison path.
+- Position-stable translated overlays that follow crop, DPI, monitor, and
+  selected-window geometry changes.
+- Privacy-safe timing and backlog diagnostics without captured pixels or OCR
+  text.
+
+### Acceptance boundary
+
+- Representative Japanese and Spanish video subtitles, game UI, menus, and
+  signs produce useful translated text without saving frames or using a cloud
+  service.
+- Static text is not repeatedly recognized or translated, and scene changes
+  cannot create an unbounded stale-work queue.
+- On the reference Windows machine, a stable changed text region normally
+  reaches the overlay within two seconds for a compact-to-English route;
+  universal translation is measured separately and may have a higher profile.
+- Positioned labels remain attached to their source regions through ordinary
+  window movement, resize, DPI, and display changes without covering the source
+  text by default.
+- Starting visual translation while audio captions run offers to switch modes;
+  it does not silently run both. Simultaneous mode remains disabled until a
+  later resource and responsiveness gate passes.
+- Protected or excluded frames fail clearly and remain within documented OS
+  capture behavior; no capture-control bypass is introduced.
 
 ## Cross-milestone quality rules
 

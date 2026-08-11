@@ -106,6 +106,31 @@ root.innerHTML = `
         <p class="appearance-help">Recent finalized captions fade above the current line. Long current captions may use the extra wrapping space first.</p>
 
         <label class="setting-row">
+          <span>Keep after speech</span>
+          <span class="compact-select-wrap">
+            <select id="reading-time">
+              <option value="6">6 seconds</option>
+              <option value="10">10 seconds</option>
+              <option value="15">15 seconds</option>
+              <option value="30">30 seconds</option>
+            </select>${icons.chevronDown}
+          </span>
+        </label>
+
+        <label class="setting-row">
+          <span>Fade out</span>
+          <span class="compact-select-wrap">
+            <select id="fade-duration">
+              <option value="0">Instant</option>
+              <option value="400">Quick · 0.4 sec</option>
+              <option value="800">Gentle · 0.8 sec</option>
+              <option value="1500">Slow · 1.5 sec</option>
+            </select>${icons.chevronDown}
+          </span>
+        </label>
+        <p class="appearance-help">Reading time restarts when a delayed translation arrives, so it receives the full selected time on screen.</p>
+
+        <label class="setting-row">
           <span>Position</span>
           <span class="compact-select-wrap">
             <select id="overlay-position">
@@ -185,23 +210,37 @@ function readSettings(): OverlaySettings {
     backgroundOpacity: Number(requireElement<HTMLInputElement>("#background-opacity").value) / 100,
     width: Number(requireElement<HTMLSelectElement>("#overlay-width").value),
     maximumLines: Number(requireElement<HTMLSelectElement>("#maximum-lines").value),
+    readingTimeSeconds: Number(requireElement<HTMLSelectElement>("#reading-time").value),
+    fadeDurationMs: Number(requireElement<HTMLSelectElement>("#fade-duration").value),
     position: requireElement<HTMLSelectElement>("#overlay-position").value as OverlaySettings["position"],
     clickThrough: requireElement<HTMLInputElement>("#click-through").checked
   };
 }
 
+function writeSelectValue(
+  selector: string,
+  value: string | number,
+  fallback: string | number
+): void {
+  const select = requireElement<HTMLSelectElement>(selector);
+  select.value = String(value);
+  if (!select.value) select.value = String(fallback);
+}
+
 function writeSettings(settings: OverlaySettings) {
-  requireElement<HTMLSelectElement>("#font-family").value = settings.fontFamily;
-  requireElement<HTMLSelectElement>("#font-size").value = String(settings.fontSize);
+  writeSelectValue("#font-family", settings.fontFamily, DEFAULT_OVERLAY_SETTINGS.fontFamily);
+  writeSelectValue("#font-size", settings.fontSize, DEFAULT_OVERLAY_SETTINGS.fontSize);
   requireElement<HTMLInputElement>("#text-color").value = settings.textColor;
   requireElement<HTMLInputElement>("#translated-text-color").value = settings.translatedTextColor;
-  requireElement<HTMLSelectElement>("#bilingual-layout").value = settings.bilingualLayout;
+  writeSelectValue("#bilingual-layout", settings.bilingualLayout, DEFAULT_OVERLAY_SETTINGS.bilingualLayout);
   requireElement<HTMLInputElement>("#background-opacity").value = String(settings.backgroundOpacity * 100);
-  requireElement<HTMLSelectElement>("#overlay-width").value = String(settings.width);
-  requireElement<HTMLSelectElement>("#maximum-lines").value = String(settings.maximumLines);
-  requireElement<HTMLSelectElement>("#overlay-position").value = settings.position;
+  writeSelectValue("#overlay-width", settings.width, DEFAULT_OVERLAY_SETTINGS.width);
+  writeSelectValue("#maximum-lines", settings.maximumLines, DEFAULT_OVERLAY_SETTINGS.maximumLines);
+  writeSelectValue("#reading-time", settings.readingTimeSeconds, DEFAULT_OVERLAY_SETTINGS.readingTimeSeconds);
+  writeSelectValue("#fade-duration", settings.fadeDurationMs, DEFAULT_OVERLAY_SETTINGS.fadeDurationMs);
+  writeSelectValue("#overlay-position", settings.position, DEFAULT_OVERLAY_SETTINGS.position);
   requireElement<HTMLInputElement>("#click-through").checked = settings.clickThrough;
-  renderPreview(settings);
+  renderPreview(readSettings());
 }
 
 function renderPreview(settings: OverlaySettings) {
