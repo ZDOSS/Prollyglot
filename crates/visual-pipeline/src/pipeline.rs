@@ -80,8 +80,8 @@ impl<E: OcrEngine> VisualPipeline<E> {
         })
     }
 
-    pub fn source_changed_since_last_analysis(&self, frame: &VisualFrame) -> bool {
-        self.gate.is_meaningfully_different(frame)
+    pub fn source_substantially_changed_since_last_analysis(&self, frame: &VisualFrame) -> bool {
+        self.gate.is_substantially_different(frame)
     }
 
     pub fn reset_text_tracks(&mut self) {

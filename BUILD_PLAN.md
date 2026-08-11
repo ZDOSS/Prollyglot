@@ -137,12 +137,23 @@ then published that old result over a newer scene. Status-only updates now patch
 the four counters without replacing the Stop node, Stop cooperatively terminates
 the active ONNX run, and capture status is throttled to two updates per second.
 The worker drains to the newest frame before each pass and rejects results over
-1.5 seconds old when the watched source changed, while retaining a slow result
-for text that is still static. Targeted development-profile optimization covers
-only the CPU-heavy visual OCR path so `tauri dev` remains a useful performance
-loop without making ordinary UI crates expensive to rebuild. Local model,
-pipeline, TypeScript, rendered one-click Stop, and Windows cross-target checks
-pass; the same moving Spanish clip remains the native acceptance check.
+three seconds old only after a broad scene change, while retaining a slow result
+for text that is still static or changed only in a small region. Targeted
+development-profile optimization covers only the CPU-heavy visual OCR path so
+`tauri dev` remains a useful performance loop without making ordinary UI crates
+expensive to rebuild. Local model, pipeline, TypeScript, rendered one-click
+Stop, and Windows cross-target checks pass; the same moving Spanish clip remains
+the native acceptance check.
+
+A following Japanese monitor and static-region run showed nonzero OCR passes
+and recognized regions but no translated labels, isolating the defect after
+capture and recognition. Visual output had been broadcast alongside a raw clear
+event that the main and overlay WebViews handled independently; delivery order
+could therefore clear a newer rescan result. Native code now caches and emits
+the newest visual output directly to the overlay, the main translation
+controller exclusively owns clear/rescan state, and status separates OCR
+regions from overlay labels. This correction is published as pre-release
+`0.1.1`; the same Japanese video and NHK page are the native acceptance cases.
 
 The first native-Windows start attempt exposed one shared interop defect rather
 than three source-specific failures: the TypeScript selection union sent

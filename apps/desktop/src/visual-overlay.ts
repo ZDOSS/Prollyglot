@@ -94,14 +94,8 @@ function setOutput(next: VisualOutputPayload): void {
   render();
 }
 
-function clear(): void {
-  output = { ...output, scanning: false, regions: [] };
-  render();
-}
-
 if (isTauri()) {
   void listen<VisualOutputPayload>("visual-overlay-output", ({ payload }) => setOutput(payload));
-  void listen("visual-text-clear", clear);
 } else {
   window.__PROLLYGLOT_VISUAL_OVERLAY_PREVIEW__ = { setOutput };
 }

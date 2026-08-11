@@ -1,12 +1,19 @@
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 
 const desktopRoot = fileURLToPath(new URL(".", import.meta.url));
+const desktopPackage = JSON.parse(
+  readFileSync(resolve(desktopRoot, "package.json"), "utf8")
+) as { version: string };
 
 export default defineConfig({
   clearScreen: false,
   envPrefix: ["VITE_", "TAURI_"],
+  define: {
+    __PROLLYGLOT_VERSION__: JSON.stringify(desktopPackage.version)
+  },
   build: {
     target: "es2022",
     rollupOptions: {

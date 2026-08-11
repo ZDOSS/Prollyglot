@@ -199,7 +199,8 @@ let mockVisualStatus: VisualStatus = {
   framesAnalyzed: 0,
   framesUnchanged: 0,
   replacedFrames: 0,
-  visibleRegions: 0
+  visibleRegions: 0,
+  overlayRegions: 0
 };
 const mockVisualStatusListeners = new Set<(status: VisualStatus) => void>();
 const mockVisualTextListeners = new Set<(update: VisualTextUpdate) => void>();
@@ -537,6 +538,7 @@ export async function startVisualTranslation(
     framesUnchanged: 0,
     replacedFrames: 0,
     visibleRegions: 0,
+    overlayRegions: 0,
     message: "Loading local visual text recognition…"
   };
   publishMockVisualStatus();
@@ -590,7 +592,8 @@ export async function stopVisualTranslation(): Promise<void> {
     framesAnalyzed: 0,
     framesUnchanged: 0,
     replacedFrames: 0,
-    visibleRegions: 0
+    visibleRegions: 0,
+    overlayRegions: 0
   };
   publishMockVisualStatus();
   for (const listener of mockVisualClearListeners) listener();
@@ -623,11 +626,15 @@ export async function updateVisualOutput(output: VisualOutputPayload): Promise<v
     window.__PROLLYGLOT_PREVIEW__.visualOutput = structuredClone(output);
   }
   if (isTauri()) {
-    const texts = [...new Set(output.regions
-      .map(({ translation }) => translation?.trim())
-      .filter((translation): translation is string => Boolean(translation)))];
-    await invoke("update_visual_overlay_echoes", { texts });
-    await emit("visual-overlay-output", output);
+    await invoke("update_visual_overlay_output", { output });
+    return;
+  }
+  if (mockVisualStatus.active && mockVisualStatus.state === "capturing") {
+    mockVisualStatus = {
+      ...mockVisualStatus,
+      overlayRegions: output.regions.length
+    };
+    publishMockVisualStatus();
   }
 }
 

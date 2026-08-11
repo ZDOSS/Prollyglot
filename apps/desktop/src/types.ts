@@ -124,6 +124,7 @@ export interface VisualStatus {
   framesUnchanged: number;
   replacedFrames: number;
   visibleRegions: number;
+  overlayRegions: number;
   message?: string;
 }
 

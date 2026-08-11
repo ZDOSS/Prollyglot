@@ -1,11 +1,12 @@
 {
   "name": "prollyglot-desktop-ui",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 1420",
-    "build": "tsc && vite build",
+    "version:check": "node ../../scripts/check-version.mjs",
+    "build": "pnpm version:check && tsc && vite build",
     "preview": "vite preview --host 0.0.0.0 --port 4173",
     "tauri": "tauri"
   },

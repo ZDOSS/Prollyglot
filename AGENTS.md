@@ -39,6 +39,18 @@ Until the repository owner changes this policy:
 - Never force-push, rewrite published history, or discard local changes to resolve a rejected push. Fetch, inspect the divergence, and reconcile it safely.
 - Report the commit hash, pushed branch, and validation performed at handoff.
 
+## Versioning and release hygiene
+
+- Follow `docs/VERSIONING.md` and keep the project on a synchronized SemVer
+  pre-release line until the supported-release boundaries are met.
+- A substantial user-visible integration or fix published to `main` should
+  receive the appropriate patch or minor increment. Documentation-only edits
+  and internal checkpoints do not need a bump.
+- Keep `Cargo.toml`, `apps/desktop/package.json`, `CHANGELOG.md`, and the README
+  current-version statement aligned. Leave `tauri.conf.json` without a separate
+  version so the native bundle inherits the Cargo source of truth.
+- Run `node scripts/check-version.mjs` before publishing a bumped milestone.
+
 ## Implementation priorities
 
 - Resolve the Windows technical risks first: selected-device WASAPI loopback, per-process capture, stable buffering, streaming transcription, and overlay reliability.

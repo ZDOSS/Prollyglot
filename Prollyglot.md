@@ -1157,14 +1157,22 @@ media text is expected to be upright. Nearby horizontally split or vertically
 stacked OCR lines are joined into one reading-order phrase before filtering and
 translation, so a sign containing three stacked title lines becomes one request.
 Before every recognition pass the worker drains the queue to its newest frame.
-If a completed pass is already more than 1.5 seconds behind and the live source
-has materially changed, its text is discarded instead of being placed over a
-later scene; an unchanged source may still use the result. Discarding an old
-result clears its text tracks, cancels pending translation for that generation,
-and returns the overlay to **Scanning for text…** while the newest frame is
-processed. The CPU-heavy image, ndarray, OCR post-processing, and visual-pipeline
-crates use optimized development profiles so the owner's normal `tauri dev`
-loop exercises representative OCR code rather than debug-speed pixel loops.
+If a completed pass is already more than three seconds behind and the live
+source has undergone a broad scene change, its text is discarded instead of
+being placed over a later scene; an unchanged source or small localized update
+may still use the result. The ordinary gate remains sensitive to subtitle-sized
+changes, while stale-result rejection uses a deliberately stronger threshold so
+cursor movement, controls, clocks, and counters do not repeatedly clear useful
+translations. Discarding an old result clears its text tracks, cancels pending
+translation for that generation, and returns the overlay to **Scanning for
+text…** while the newest frame is processed. The latest visual output is cached
+by native code and delivered directly to the overlay window. Only the main
+translation controller owns clear/rescan events, preventing a late broadcast
+clear from erasing newer labels. Runtime status reports recognized OCR regions
+and delivered overlay labels separately. The CPU-heavy image, ndarray, OCR
+post-processing, and visual-pipeline crates use optimized development profiles
+so the owner's normal `tauri dev` loop exercises representative OCR code rather
+than debug-speed pixel loops.
 
 **Prominent text** promotes its first high-confidence OCR pass, ranks regions by
 confidence, size, area, and proximity to the source center, and keeps at most six
@@ -1568,6 +1576,16 @@ Application updates and model updates should be separate.
 Model changes should not require reinstalling Prollyglot.
 
 Future engine plugins should ideally be independently versioned.
+
+Application builds follow Semantic Versioning. `0.x` identifies the active
+pre-release development line: substantial integrated fixes increment the patch
+version, new product milestones or compatibility promises increment the minor
+version, and `1.0.0` is reserved for the supported Windows release boundary.
+`[workspace.package].version` in `Cargo.toml` is the native source of truth;
+the desktop package must match it, the Tauri bundle inherits it, and the UI
+receives it at build time rather than hard-coding a second display version.
+Every published version has a changelog entry. Documentation-only corrections
+and internal checkpoints do not require an application bump.
 
 ---
 

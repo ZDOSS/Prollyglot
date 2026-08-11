@@ -47,11 +47,16 @@ installing the OCR pack does not install every translator.
    original text without waiting for a second full inference. Stacked title or
    sign lines should become one phrase rather than overlapping word fragments.
    The overlay should not repeatedly recognize its own labels or fill the screen
-   with unrelated interface text.
+   with unrelated interface text. The active card separates **OCR regions** from
+   **Overlay labels**: once text is visible, both should be nonzero. OCR regions
+   above zero with Overlay labels stuck at zero is an overlay-delivery defect;
+   both at zero means recognition did not produce a stable region.
 5. Change scenes or move the selected window. Confirm current labels follow the
    source rather than creating an ever-growing queue. A recognition result that
-   is already more than 1.5 seconds behind a changed scene should be discarded;
-   the scanning indicator may return while the newest frame is processed. Newly
+   is already more than three seconds behind after a broad scene change should
+   be discarded; a cursor, clock, video control, or small localized text change
+   should not clear an otherwise useful result. The scanning indicator may
+   return while the newest frame is processed. Newly
    disappeared text may remain readable for up to eight seconds; text that was
    already visible for twelve seconds or longer should clear as soon as its
    absence is recognized.

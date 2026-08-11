@@ -17,6 +17,7 @@ use prollyglot_visual_ocr_rapid::{RapidOcrCancellation, RapidOcrEngine, Recognit
 use prollyglot_visual_pipeline::{
     FrameGate, FrameGateConfig, OcrEngine, OcrError, OcrObservation, PixelRect, StabilizerUpdate,
     TextStabilizer, TextStabilizerConfig, VisualFrame, VisualPipeline, VisualPipelineStats,
+    VisualRect,
 };
 use prollyglot_visual_windows::{
     PickedVisualSource, StartedVisualCapture, VisualCaptureCapabilities, VisualCaptureEvent,
@@ -32,7 +33,7 @@ const VISUAL_STATUS_EVENT: &str = "visual-status";
 const VISUAL_TEXT_EVENT: &str = "visual-text-update";
 const VISUAL_CLEAR_EVENT: &str = "visual-text-clear";
 const VISUAL_STATUS_INTERVAL: Duration = Duration::from_millis(500);
-const MAX_VISUAL_RESULT_AGE_MICROS: u64 = 1_500_000;
+const MAX_VISUAL_RESULT_AGE_MICROS: u64 = 3_000_000;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -125,6 +126,7 @@ pub struct VisualStatus {
     pub frames_unchanged: u64,
     pub replaced_frames: u64,
     pub visible_regions: u64,
+    pub overlay_regions: u64,
     pub message: Option<String>,
 }
 
@@ -134,6 +136,43 @@ struct VisualTextUpdate {
     source: PickedVisualSource,
     #[serde(flatten)]
     update: StabilizerUpdate,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VisualOverlayRegion {
+    track_id: u64,
+    text_revision: u64,
+    original: String,
+    translation: Option<String>,
+    translation_pending: bool,
+    #[serde(default)]
+    retained: bool,
+    bounds: VisualRect,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VisualOverlayOutput {
+    source_width: u32,
+    source_height: u32,
+    source_language: String,
+    target_language: String,
+    scanning: bool,
+    regions: Vec<VisualOverlayRegion>,
+}
+
+impl Default for VisualOverlayOutput {
+    fn default() -> Self {
+        Self {
+            source_width: 1,
+            source_height: 1,
+            source_language: String::new(),
+            target_language: String::new(),
+            scanning: false,
+            regions: Vec::new(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -213,6 +252,7 @@ pub struct VisualRuntime {
     status: Arc<Mutex<VisualStatus>>,
     session: Mutex<Option<ActiveVisualSession>>,
     overlay_echoes: Arc<Mutex<Vec<String>>>,
+    overlay_output: Arc<Mutex<VisualOverlayOutput>>,
 }
 
 pub fn initialize(app: &AppHandle, runtime: &VisualRuntime) {
@@ -296,16 +336,55 @@ pub fn visual_model_status(state: State<'_, RuntimeState>) -> VisualModelCatalog
 }
 
 #[tauri::command]
-pub fn update_visual_overlay_echoes(state: State<'_, RuntimeState>, texts: Vec<String>) {
-    let echoes = texts
-        .into_iter()
+pub fn update_visual_overlay_output(
+    app: AppHandle,
+    state: State<'_, RuntimeState>,
+    output: VisualOverlayOutput,
+) -> Result<(), String> {
+    validate_visual_overlay_output(&output)?;
+    let region_count = output.regions.len() as u64;
+    let echoes = output
+        .regions
+        .iter()
+        .filter_map(|region| region.translation.as_deref())
         .take(48)
         .filter_map(|text| {
-            let normalized = normalize_overlay_text(&text);
+            let normalized = normalize_overlay_text(text);
             (normalized.chars().count() >= 4).then_some(normalized)
         })
         .collect();
     *state.visual.overlay_echoes.lock() = echoes;
+
+    let changed = {
+        let mut current = state.visual.overlay_output.lock();
+        let changed =
+            current.regions.len() != output.regions.len() || current.scanning != output.scanning;
+        *current = output.clone();
+        changed
+    };
+    let overlay = app
+        .get_webview_window("visual-overlay")
+        .ok_or("Visual translation overlay is unavailable.")?;
+    overlay
+        .emit("visual-overlay-output", &output)
+        .map_err(|error| error.to_string())?;
+
+    let active = matches!(state.visual.status.lock().state, VisualState::Capturing);
+    if active {
+        overlay
+            .set_always_on_top(true)
+            .map_err(|error| error.to_string())?;
+        overlay.show().map_err(|error| error.to_string())?;
+        publish_overlay_region_count(&app, &state.visual.status, region_count);
+    }
+    if changed {
+        tracing::info!(
+            overlay_regions = region_count,
+            scanning = output.scanning,
+            "visual overlay output delivered"
+        );
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -527,6 +606,12 @@ pub async fn start_visual_translation(
             },
         );
         state.visual.overlay_echoes.lock().clear();
+        *state.visual.overlay_output.lock() = VisualOverlayOutput {
+            source_language: source_language.clone(),
+            target_language: target_language.clone(),
+            scanning: true,
+            ..VisualOverlayOutput::default()
+        };
     }
 
     let model_directory =
@@ -572,9 +657,11 @@ pub async fn start_visual_translation(
         message
     })?;
     let source = Arc::new(Mutex::new(capture.source.clone()));
-    configure_visual_overlay(&app, &capture.source).inspect_err(|message| {
-        publish_start_failure(&app, &state.visual.status, message.clone());
-    })?;
+    configure_visual_overlay(&app, &capture.source, &state.visual.overlay_output).inspect_err(
+        |message| {
+            publish_start_failure(&app, &state.visual.status, message.clone());
+        },
+    )?;
 
     let processor = spawn_processor(
         app.clone(),
@@ -594,6 +681,7 @@ pub async fn start_visual_translation(
         app.clone(),
         Arc::clone(&state.visual.status),
         Arc::clone(&source),
+        Arc::clone(&state.visual.overlay_output),
         capture.events.clone(),
     ) {
         Ok(worker) => worker,
@@ -618,6 +706,7 @@ pub async fn start_visual_translation(
             active: true,
             state: VisualState::Capturing,
             source_label: Some(source_label),
+            overlay_regions: state.visual.overlay_output.lock().regions.len() as u64,
             message: Some(format!(
                 "Watching the live source, recognizing {source_language} text, and translating to {target_language}."
             )),
@@ -647,10 +736,13 @@ pub fn stop_visual_translation(
             ..previous
         },
     );
+    let cleared_output = VisualOverlayOutput::default();
+    *state.visual.overlay_output.lock() = cleared_output.clone();
     if let Some(overlay) = app.get_webview_window("visual-overlay") {
+        let _ = overlay.emit("visual-overlay-output", &cleared_output);
         let _ = overlay.hide();
     }
-    let _ = app.emit(VISUAL_CLEAR_EVENT, ());
+    emit_visual_clear(&app);
     state.visual.overlay_echoes.lock().clear();
 
     let app_for_worker = app.clone();
@@ -767,9 +859,9 @@ fn spawn_processor(
                 });
                 let stale_for_changed_source = outcome.update.is_some()
                     && result_age_micros > MAX_VISUAL_RESULT_AGE_MICROS
-                    && newest_frame
-                        .as_ref()
-                        .is_some_and(|newest| pipeline.source_changed_since_last_analysis(newest));
+                    && newest_frame.as_ref().is_some_and(|newest| {
+                        pipeline.source_substantially_changed_since_last_analysis(newest)
+                    });
                 if outcome.update.is_some()
                     && pass_elapsed >= Duration::from_millis(750)
                     && last_slow_pass_log.elapsed() >= Duration::from_secs(5)
@@ -785,13 +877,16 @@ fn spawn_processor(
                 }
                 if stale_for_changed_source || outcome.update.is_some() {
                     let current_status = status.lock();
-                    if current_status.state != VisualState::Capturing || !current_status.active {
+                    if !matches!(
+                        current_status.state,
+                        VisualState::Starting | VisualState::Capturing
+                    ) {
                         break;
                     }
                     if stale_for_changed_source {
                         pipeline.reset_text_tracks();
                         outcome.stats.stable_regions = 0;
-                        let _ = app.emit(VISUAL_CLEAR_EVENT, ());
+                        emit_visual_clear(&app);
                         tracing::warn!(
                             result_age_ms = result_age_micros / 1_000,
                             "discarded stale visual OCR output after the source changed"
@@ -801,7 +896,7 @@ fn spawn_processor(
                             source: source.lock().clone(),
                             update,
                         };
-                        if let Err(error) = app.emit(VISUAL_TEXT_EVENT, payload) {
+                        if let Err(error) = app.emit_to("main", VISUAL_TEXT_EVENT, payload) {
                             tracing::warn!(%error, "could not emit visual text update");
                         }
                     }
@@ -820,6 +915,7 @@ fn spawn_capture_events(
     app: AppHandle,
     status: Arc<Mutex<VisualStatus>>,
     source: Arc<Mutex<PickedVisualSource>>,
+    overlay_output: Arc<Mutex<VisualOverlayOutput>>,
     events: crossbeam_channel::Receiver<VisualCaptureEvent>,
 ) -> Result<JoinHandle<()>, String> {
     thread::Builder::new()
@@ -839,7 +935,9 @@ fn spawn_capture_events(
                             break;
                         }
                         *source.lock() = next_source.clone();
-                        if let Err(error) = configure_visual_overlay(&app, &next_source) {
+                        if let Err(error) =
+                            configure_visual_overlay(&app, &next_source, &overlay_output)
+                        {
                             tracing::warn!(%error, "could not configure visual overlay");
                         }
                     }
@@ -872,7 +970,9 @@ fn spawn_capture_events(
                         };
                         if changed {
                             let next_source = source.lock().clone();
-                            if let Err(error) = configure_visual_overlay(&app, &next_source) {
+                            if let Err(error) =
+                                configure_visual_overlay(&app, &next_source, &overlay_output)
+                            {
                                 tracing::warn!(%error, "could not follow visual source geometry");
                             }
                         }
@@ -924,7 +1024,30 @@ fn publish_pipeline_stats(
     emit_status(app, next);
 }
 
-fn configure_visual_overlay(app: &AppHandle, source: &PickedVisualSource) -> Result<(), String> {
+fn publish_overlay_region_count(
+    app: &AppHandle,
+    status: &Arc<Mutex<VisualStatus>>,
+    region_count: u64,
+) {
+    let next = {
+        let mut current = status.lock();
+        if current.state != VisualState::Capturing
+            || !current.active
+            || current.overlay_regions == region_count
+        {
+            return;
+        }
+        current.overlay_regions = region_count;
+        current.clone()
+    };
+    emit_status(app, next);
+}
+
+fn configure_visual_overlay(
+    app: &AppHandle,
+    source: &PickedVisualSource,
+    output: &Arc<Mutex<VisualOverlayOutput>>,
+) -> Result<(), String> {
     let overlay = app
         .get_webview_window("visual-overlay")
         .ok_or("Visual translation overlay is unavailable.")?;
@@ -935,12 +1058,44 @@ fn configure_visual_overlay(app: &AppHandle, source: &PickedVisualSource) -> Res
         .set_focusable(false)
         .map_err(|error| error.to_string())?;
     overlay
+        .set_always_on_top(true)
+        .map_err(|error| error.to_string())?;
+    overlay
         .set_position(PhysicalPosition::new(source.x, source.y))
         .map_err(|error| error.to_string())?;
     overlay
         .set_size(PhysicalSize::new(source.width, source.height))
         .map_err(|error| error.to_string())?;
+    overlay
+        .emit("visual-overlay-output", output.lock().clone())
+        .map_err(|error| error.to_string())?;
     overlay.show().map_err(|error| error.to_string())
+}
+
+fn validate_visual_overlay_output(output: &VisualOverlayOutput) -> Result<(), String> {
+    if output.source_width == 0 || output.source_height == 0 {
+        return Err("Visual overlay source dimensions must be non-zero.".into());
+    }
+    if output.source_language.chars().count() > 16 || output.target_language.chars().count() > 16 {
+        return Err("Visual overlay language identifiers are invalid.".into());
+    }
+    if output.regions.len() > 48 {
+        return Err("Visual overlay output contains too many regions.".into());
+    }
+    if output.regions.iter().any(|region| {
+        region.track_id == 0
+            || region.text_revision == 0
+            || region.original.chars().count() > 2_000
+            || region
+                .translation
+                .as_ref()
+                .is_some_and(|translation| translation.chars().count() > 2_000)
+            || !region.bounds.is_valid()
+            || (region.translation_pending && region.translation.is_some())
+    }) {
+        return Err("Visual overlay output contains an invalid region.".into());
+    }
+    Ok(())
 }
 
 fn normalize_overlay_text(text: &str) -> String {
@@ -1137,6 +1292,12 @@ fn emit_status(app: &AppHandle, next: VisualStatus) {
     }
 }
 
+fn emit_visual_clear(app: &AppHandle) {
+    if let Err(error) = app.emit_to("main", VISUAL_CLEAR_EVENT, ()) {
+        tracing::warn!(%error, "could not clear visual text state");
+    }
+}
+
 fn publish_failure(app: &AppHandle, status: &Arc<Mutex<VisualStatus>>, message: String) {
     tracing::error!(%message, "visual translation failed");
     let previous = status.lock().clone();
@@ -1155,7 +1316,7 @@ fn publish_start_failure(app: &AppHandle, status: &Arc<Mutex<VisualStatus>>, mes
     if let Some(overlay) = app.get_webview_window("visual-overlay") {
         let _ = overlay.hide();
     }
-    let _ = app.emit(VISUAL_CLEAR_EVENT, ());
+    emit_visual_clear(app);
     publish_failure(app, status, message);
 }
 
@@ -1175,5 +1336,59 @@ mod tests {
         let echoes = vec![normalize_overlay_text("No")];
         assert!(!matches_overlay_echo("No", &echoes));
         assert!(!matches_overlay_echo("News update", &echoes));
+    }
+
+    #[test]
+    fn overlay_output_validation_allows_retained_pending_text() {
+        let output = VisualOverlayOutput {
+            source_width: 1920,
+            source_height: 1080,
+            source_language: "ja".into(),
+            target_language: "en".into(),
+            scanning: false,
+            regions: vec![VisualOverlayRegion {
+                track_id: 1,
+                text_revision: 1,
+                original: "日本語".into(),
+                translation: None,
+                translation_pending: true,
+                retained: true,
+                bounds: VisualRect {
+                    x: 100.0,
+                    y: 200.0,
+                    width: 300.0,
+                    height: 40.0,
+                },
+            }],
+        };
+
+        assert!(validate_visual_overlay_output(&output).is_ok());
+    }
+
+    #[test]
+    fn overlay_output_validation_rejects_inconsistent_translation_state() {
+        let output = VisualOverlayOutput {
+            source_width: 1920,
+            source_height: 1080,
+            source_language: "ja".into(),
+            target_language: "en".into(),
+            scanning: false,
+            regions: vec![VisualOverlayRegion {
+                track_id: 1,
+                text_revision: 1,
+                original: "日本語".into(),
+                translation: Some("Japanese".into()),
+                translation_pending: true,
+                retained: false,
+                bounds: VisualRect {
+                    x: 100.0,
+                    y: 200.0,
+                    width: 300.0,
+                    height: 40.0,
+                },
+            }],
+        };
+
+        assert!(validate_visual_overlay_output(&output).is_err());
     }
 }

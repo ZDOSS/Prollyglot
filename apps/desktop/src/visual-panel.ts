@@ -155,6 +155,7 @@ export class VisualPanel {
       received: status.framesReceived,
       analyzed: status.framesAnalyzed,
       visible: status.visibleRegions,
+      overlay: status.overlayRegions,
       replaced: status.replacedFrames
     };
     for (const [key, value] of Object.entries(values)) {
@@ -187,8 +188,9 @@ export class VisualPanel {
     const stats = create("dl", "visual-stats");
     this.appendStat(stats, "Live samples", String(state.status.framesReceived), "received");
     this.appendStat(stats, "OCR passes", String(state.status.framesAnalyzed), "analyzed");
-    this.appendStat(stats, "Visible labels", String(state.status.visibleRegions), "visible");
-    this.appendStat(stats, "Stale frames skipped", String(state.status.replacedFrames), "replaced");
+    this.appendStat(stats, "OCR regions", String(state.status.visibleRegions), "visible");
+    this.appendStat(stats, "Overlay labels", String(state.status.overlayRegions), "overlay");
+    this.appendStat(stats, "Live-edge skips", String(state.status.replacedFrames), "replaced");
     hero.append(stats);
 
     const stop = create("button", "primary-button stop visual-stop-button");

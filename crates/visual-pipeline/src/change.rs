@@ -7,6 +7,8 @@ pub const DEFAULT_LIVE_CAPTURE_FPS: u32 = 12;
 pub const DEFAULT_CAPTURE_FRAME_INTERVAL_MICROS: u64 = 1_000_000 / DEFAULT_LIVE_CAPTURE_FPS as u64;
 /// The maximum default cadence for expensive OCR work on changed frames.
 pub const DEFAULT_OCR_INTERVAL_MICROS: u64 = 250_000;
+const SUBSTANTIAL_CHANGE_THRESHOLD: f32 = 0.10;
+const SUBSTANTIAL_CHANGED_SAMPLE_RATIO: f32 = 0.30;
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
@@ -109,6 +111,26 @@ impl FrameGate {
             self.config.sample_delta_threshold,
         );
         self.is_changed(mean_difference, changed_ratio)
+    }
+
+    /// Returns true only when a newer frame represents a broad scene change.
+    ///
+    /// The ordinary change gate is intentionally sensitive enough to notice a
+    /// small subtitle. Reusing that threshold to reject a slow OCR result would
+    /// classify cursor movement, counters, and video controls as a new scene
+    /// and repeatedly clear otherwise useful translations.
+    pub fn is_substantially_different(&self, frame: &VisualFrame) -> bool {
+        let next = fingerprint(frame, self.config.sample_columns, self.config.sample_rows);
+        if self.accepted_fingerprint.is_empty() || self.accepted_fingerprint.len() != next.len() {
+            return true;
+        }
+        let (mean_difference, changed_ratio) = change_metrics(
+            &self.accepted_fingerprint,
+            &next,
+            self.config.sample_delta_threshold,
+        );
+        mean_difference >= SUBSTANTIAL_CHANGE_THRESHOLD
+            || changed_ratio >= SUBSTANTIAL_CHANGED_SAMPLE_RATIO
     }
 
     fn is_changed(&self, mean_difference: f32, changed_ratio: f32) -> bool {
@@ -243,5 +265,42 @@ mod tests {
             gate.evaluate(&solid(4, 900_000, 22)),
             FrameGateDecision::Confirmation { .. }
         ));
+    }
+
+    #[test]
+    fn substantial_change_ignores_small_text_like_updates_but_detects_a_new_scene() {
+        let width = 64_u32;
+        let height = 36_u32;
+        let base = [16, 16, 16, 255].repeat((width * height) as usize);
+        let mut localized = base.clone();
+        for y in 16_usize..20 {
+            for x in 10_usize..30 {
+                let offset = (y * width as usize + x) * 4;
+                localized[offset..offset + 3].fill(240);
+            }
+        }
+        let frame = |sequence, captured_at_micros, pixels| {
+            VisualFrame::new(
+                sequence,
+                captured_at_micros,
+                width,
+                height,
+                width as usize * 4,
+                PixelFormat::Bgra8,
+                pixels,
+            )
+            .expect("frame")
+        };
+        let mut gate = FrameGate::new(FrameGateConfig::default());
+        gate.evaluate(&frame(1, 0, base));
+
+        let localized = frame(2, 300_000, localized);
+        assert!(gate.is_meaningfully_different(&localized));
+        assert!(!gate.is_substantially_different(&localized));
+        assert!(gate.is_substantially_different(&frame(
+            3,
+            600_000,
+            [240, 240, 240, 255].repeat((width * height) as usize)
+        )));
     }
 }

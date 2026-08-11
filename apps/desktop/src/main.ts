@@ -103,7 +103,7 @@ root.innerHTML = `
         </div>
         <div class="desktop-nav-footer">
           <span class="privacy-state"><span class="status-dot"></span>Local processing</span>
-          <span class="version-state">Pre-release · 0.1.0</span>
+          <span class="version-state">Pre-release · ${__PROLLYGLOT_VERSION__}</span>
         </div>
       </nav>
 
@@ -300,7 +300,8 @@ let currentVisualStatus: VisualStatus = {
   framesAnalyzed: 0,
   framesUnchanged: 0,
   replacedFrames: 0,
-  visibleRegions: 0
+  visibleRegions: 0,
+  overlayRegions: 0
 };
 const useMockTranslation = !isTauri()
   && !new URLSearchParams(window.location.search).has("realTranslation");
