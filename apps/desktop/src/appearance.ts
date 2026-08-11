@@ -93,16 +93,17 @@ root.innerHTML = `
         </label>
 
         <label class="setting-row">
-          <span>Maximum lines</span>
+          <span>Caption history</span>
           <span class="compact-select-wrap">
             <select id="maximum-lines">
-              <option value="1">1</option>
-              <option value="2">2</option>
-              <option value="3">3</option>
-              <option value="4">4</option>
+              <option value="1">Current only</option>
+              <option value="2">1 previous line</option>
+              <option value="3">2 previous lines</option>
+              <option value="4">3 previous lines</option>
             </select>${icons.chevronDown}
           </span>
         </label>
+        <p class="appearance-help">Recent finalized captions fade above the current line. Long current captions may use the extra wrapping space first.</p>
 
         <label class="setting-row">
           <span>Position</span>
@@ -126,8 +127,22 @@ root.innerHTML = `
       <section class="preview-canvas" aria-label="Original and English caption appearance preview">
         <div class="preview-desktop" id="preview-desktop">
           <div class="preview-caption" id="preview-caption">
-            <span class="preview-caption-original" lang="ja">今日は何をする予定ですか？</span>
-            <span class="preview-caption-translation" lang="en">What are you planning to do today?</span>
+            <span class="preview-caption-entry">
+              <span class="preview-caption-original" lang="ja">昨日から雨が続いています。</span>
+              <span class="preview-caption-translation" lang="en">It has been raining since yesterday.</span>
+            </span>
+            <span class="preview-caption-entry">
+              <span class="preview-caption-original" lang="ja">午後には晴れる見込みです。</span>
+              <span class="preview-caption-translation" lang="en">It should clear this afternoon.</span>
+            </span>
+            <span class="preview-caption-entry">
+              <span class="preview-caption-original" lang="ja">電車は通常どおり運行しています。</span>
+              <span class="preview-caption-translation" lang="en">Trains are running normally.</span>
+            </span>
+            <span class="preview-caption-entry">
+              <span class="preview-caption-original" lang="ja">今日は何をする予定ですか？</span>
+              <span class="preview-caption-translation" lang="en">What are you planning to do today?</span>
+            </span>
           </div>
           <div class="preview-taskbar" aria-hidden="true"><span class="windows-mark">⊞</span><span class="taskbar-spacer"></span><span>10:28 AM</span></div>
         </div>
@@ -199,6 +214,12 @@ function renderPreview(settings: OverlaySettings) {
   preview.style.setProperty("--source-caption-color", settings.textColor);
   preview.style.setProperty("--translated-caption-color", settings.translatedTextColor);
   preview.dataset.bilingualLayout = settings.bilingualLayout;
+  const previewEntries = [...preview.querySelectorAll<HTMLElement>(".preview-caption-entry")];
+  const firstVisible = Math.max(0, previewEntries.length - settings.maximumLines);
+  previewEntries.forEach((entry, index) => {
+    entry.hidden = index < firstVisible;
+    entry.dataset.historyDepth = String(previewEntries.length - index - 1);
+  });
 
   const desktop = requireElement<HTMLElement>("#preview-desktop");
   desktop.dataset.position = settings.position;

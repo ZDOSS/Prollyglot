@@ -9,9 +9,10 @@ import type {
 } from "./types";
 
 const MAX_OVERLAY_SEGMENTS = 4;
-const OVERLAY_CONTEXT_GAP_MICROS = 2_000_000;
-const MAX_TRANSLATION_QUEUE = 32;
-const MAX_TRANSCRIPT_BACKFILL = 100;
+const OVERLAY_CONTEXT_GAP_MICROS = 5_000_000;
+const MAX_TRANSLATION_QUEUE = 8;
+const SLOW_TRANSLATION_MS = 2_000;
+const TRANSLATION_DIAGNOSTIC_INTERVAL_MS = 15_000;
 
 type TranslationState =
   | { phase: "ready"; text: string }
@@ -20,6 +21,7 @@ type TranslationState =
 interface QueuedSegment {
   key: string;
   segment: TranscriptSegment;
+  queuedAtMs: number;
 }
 
 export class CaptionOutputController {
@@ -31,11 +33,15 @@ export class CaptionOutputController {
   private readonly pending = new Set<string>();
   private queue: QueuedSegment[] = [];
   private pumping = false;
+  private skippedStaleSegments = 0;
+  private lastDiagnosticAtMs = 0;
+  private reportedFirstTranslation = false;
 
   constructor(
     private readonly service: TranslationService,
     private readonly publishOutput: (payload: CaptionOutputPayload) => void | Promise<void>,
-    private readonly reportError: (message: string) => void
+    private readonly reportError: (message: string) => void,
+    private readonly reportDiagnostic: (message: string) => void = () => undefined
   ) {
     this.catalog = service.snapshot();
     service.subscribe((catalog) => {
@@ -115,18 +121,20 @@ export class CaptionOutputController {
   private scheduleTranslations(): void {
     if (this.mode === "original") return;
     const candidates = this.transcript.committed
-      .slice(-MAX_TRANSCRIPT_BACKFILL)
-      .reverse();
+      .slice(-MAX_TRANSLATION_QUEUE);
     for (const segment of candidates) {
       const sourceLanguage = supportedSourceLanguage(segment.sourceLanguage);
       if (!sourceLanguage || !this.translationModelUsable(sourceLanguage)) continue;
       const key = segmentKey(segment);
       if (this.translations.has(key) || this.queued.has(key) || this.pending.has(key)) continue;
-      this.queue.unshift({ key, segment });
+      this.queue.push({ key, segment, queuedAtMs: Date.now() });
       this.queued.add(key);
       if (this.queue.length > MAX_TRANSLATION_QUEUE) {
         const dropped = this.queue.shift();
-        if (dropped) this.queued.delete(dropped.key);
+        if (dropped) {
+          this.queued.delete(dropped.key);
+          this.skippedStaleSegments += 1;
+        }
       }
     }
     void this.pump();
@@ -149,6 +157,7 @@ export class CaptionOutputController {
         if (!sourceLanguage || !this.translationModelUsable(sourceLanguage)) continue;
         this.pending.add(next.key);
         this.publish();
+        const startedAtMs = Date.now();
         try {
           const text = await this.service.translate(sourceLanguage, next.segment.text);
           if (this.hasCommittedSegment(next.key)) {
@@ -162,6 +171,11 @@ export class CaptionOutputController {
           }
         } finally {
           this.pending.delete(next.key);
+          this.reportTranslationTiming(
+            sourceLanguage,
+            startedAtMs - next.queuedAtMs,
+            Date.now() - startedAtMs
+          );
           this.publish();
         }
       }
@@ -176,6 +190,30 @@ export class CaptionOutputController {
 
   private hasCommittedSegment(key: string): boolean {
     return this.transcript.committed.some((segment) => segmentKey(segment) === key);
+  }
+
+  private reportTranslationTiming(
+    sourceLanguage: TranslationSourceLanguage,
+    queueWaitMs: number,
+    inferenceMs: number
+  ): void {
+    const now = Date.now();
+    const slow = queueWaitMs >= SLOW_TRANSLATION_MS
+      || inferenceMs >= SLOW_TRANSLATION_MS
+      || this.skippedStaleSegments > 0;
+    if (
+      this.reportedFirstTranslation
+      && (!slow || now - this.lastDiagnosticAtMs < TRANSLATION_DIAGNOSTIC_INTERVAL_MS)
+    ) return;
+
+    const skipped = this.skippedStaleSegments;
+    this.skippedStaleSegments = 0;
+    this.reportedFirstTranslation = true;
+    this.lastDiagnosticAtMs = now;
+    this.reportDiagnostic(
+      `${sourceLanguage} to English completed in ${inferenceMs} ms after ${queueWaitMs} ms queued; `
+      + `${this.queue.length} caption(s) queued; ${skipped} stale caption(s) skipped.`
+    );
   }
 }
 

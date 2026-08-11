@@ -32,6 +32,7 @@ const TRANSLATION_RESULT_HOLD_MS = 6_000;
 let rawCaption = "";
 let captionActive = false;
 let output: CaptionOutputPayload = { mode: "original", originalCaption: "", entries: [] };
+let overlaySettings: OverlaySettings = { ...DEFAULT_OVERLAY_SETTINGS };
 let deferredClear = false;
 let clearTimer: number | undefined;
 
@@ -65,15 +66,54 @@ function captionLine(text: string, className: string, language: string): HTMLEle
   return line;
 }
 
+function translationStatus(entry: CaptionOutputEntry): string {
+  if (!entry.isFinal) return "English after pause…";
+  if (entry.translationPending) return "Translating…";
+  return "English unavailable";
+}
+
+function markTranslationState(group: HTMLElement, entry: CaptionOutputEntry): void {
+  group.classList.add(
+    !entry.isFinal
+      ? "translation-waiting"
+      : entry.translationPending ? "translation-pending" : "translation-unavailable"
+  );
+}
+
+function fitHistoryWithoutClipping(): void {
+  const contentOverflows = () => {
+    const first = captionText.firstElementChild?.getBoundingClientRect();
+    const last = captionText.lastElementChild?.getBoundingClientRect();
+    if (!first || !last) return false;
+    const bounds = captionText.getBoundingClientRect();
+    return first.top < bounds.top - 1
+      || last.bottom > bounds.bottom + 1
+      || captionText.scrollHeight > captionText.clientHeight + 1;
+  };
+  while (captionText.children.length > 1 && contentOverflows()) {
+    captionText.firstElementChild?.remove();
+  }
+  const remaining = [...captionText.querySelectorAll<HTMLElement>(":scope > .caption-entry")];
+  remaining.forEach((entry, index) => {
+    const historyDepth = remaining.length - index - 1;
+    entry.dataset.historyDepth = String(historyDepth);
+    entry.classList.toggle("caption-history", historyDepth > 0);
+  });
+}
+
 function renderCaption(): void {
   const entries = output.originalCaption === rawCaption
     ? output.entries
     : fallbackEntries(rawCaption);
   const mode = output.originalCaption === rawCaption ? output.mode : "original";
   captionText.dataset.mode = mode;
-  const rendered = entries.map((entry) => {
+  const visibleEntries = entries.slice(-overlaySettings.maximumLines);
+  const rendered = visibleEntries.map((entry, index) => {
     const group = document.createElement("span");
     group.className = "caption-entry";
+    const historyDepth = visibleEntries.length - index - 1;
+    group.dataset.historyDepth = String(historyDepth);
+    if (historyDepth > 0) group.classList.add("caption-history");
     if (mode === "original") {
       group.append(captionLine(
         entry.original,
@@ -83,19 +123,17 @@ function renderCaption(): void {
     } else if (mode === "english" && entry.translation) {
       group.append(captionLine(entry.translation, "caption-line caption-translation", "en"));
     } else if (mode === "english") {
-      group.classList.add("translation-pending");
+      markTranslationState(group, entry);
       group.append(captionLine(
         entry.original,
         "caption-line caption-original caption-fallback",
         entry.sourceLanguage === "auto" ? "" : entry.sourceLanguage
       ));
-      if (entry.translationPending) {
-        group.append(captionLine(
-          "Translating…",
-          "caption-line caption-translation caption-translation-status",
-          "en"
-        ));
-      }
+      group.append(captionLine(
+        translationStatus(entry),
+        "caption-line caption-translation caption-translation-status",
+        "en"
+      ));
     } else {
       group.append(captionLine(
         entry.original,
@@ -104,21 +142,20 @@ function renderCaption(): void {
       ));
       if (entry.translation) {
         group.append(captionLine(entry.translation, "caption-line caption-translation", "en"));
-      } else if (entry.translationPending) {
-        group.classList.add("translation-pending");
+      } else {
+        markTranslationState(group, entry);
         group.append(captionLine(
-          "Translating…",
+          translationStatus(entry),
           "caption-line caption-translation caption-translation-status",
           "en"
         ));
-      } else {
-        group.classList.add("translation-unavailable");
       }
     }
     return group;
   });
   captionText.replaceChildren(...rendered);
   surface.hidden = !captionActive || rendered.length === 0;
+  if (!surface.hidden) fitHistoryWithoutClipping();
 }
 
 function cancelCaptionClear(): void {
@@ -173,6 +210,7 @@ function handleCaptionOutput(payload: CaptionOutputPayload): void {
 }
 
 function applySettings(settings: OverlaySettings) {
+  overlaySettings = { ...settings };
   surface.style.fontFamily = settings.fontFamily;
   surface.style.fontSize = `${settings.fontSize}px`;
   surface.style.setProperty("--source-caption-color", settings.textColor);
@@ -183,6 +221,7 @@ function applySettings(settings: OverlaySettings) {
   surface.dataset.clickThrough = String(settings.clickThrough);
   surface.dataset.bilingualLayout = settings.bilingualLayout;
   requireElement<HTMLElement>("#overlay-app").dataset.position = settings.position;
+  renderCaption();
 }
 
 function storedSettings(): OverlaySettings {

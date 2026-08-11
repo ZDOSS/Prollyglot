@@ -39,7 +39,7 @@ export interface CaptureStatus {
   message?: string;
 }
 
-export type ModelPhase = "notInstalled" | "downloading" | "ready" | "corrupt" | "failed";
+export type ModelPhase = "checking" | "notInstalled" | "downloading" | "ready" | "corrupt" | "failed";
 
 export interface ModelStatus {
   phase: ModelPhase;

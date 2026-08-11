@@ -29,6 +29,7 @@ const LEGACY_SELECTED_MODEL_FILE: &str = "selected-english-model.txt";
 pub enum ModelPhase {
     #[default]
     NotInstalled,
+    Checking,
     Downloading,
     Ready,
     Corrupt,
@@ -90,6 +91,7 @@ impl Default for ModelCatalogStatus {
 pub struct ModelRuntime {
     catalog: Arc<Mutex<ModelCatalogStatus>>,
     installing: Arc<AtomicBool>,
+    inspecting: Arc<AtomicBool>,
 }
 
 pub fn models_root(app: &AppHandle) -> Result<PathBuf, String> {
@@ -101,22 +103,76 @@ pub fn models_root(app: &AppHandle) -> Result<PathBuf, String> {
 
 pub fn initialize(app: &AppHandle, runtime: &ModelRuntime) {
     let selected_model_id = read_selected_model(app);
-    let next = inspect(app, selected_model_id.clone()).unwrap_or_else(|message| {
-        let mut fallback = ModelCatalogStatus {
+    let checking = speech_model_manifests()
+        .map(|manifests| ModelCatalogStatus {
+            selected_model_id: selected_model_id.clone(),
+            models: manifests
+                .iter()
+                .map(|manifest| {
+                    status_for_manifest(
+                        manifest,
+                        ModelPhase::Checking,
+                        0,
+                        Some("Checking local model files…".into()),
+                    )
+                })
+                .collect(),
+        })
+        .unwrap_or_else(|error| {
+            inspection_failure_catalog(selected_model_id.clone(), error.to_string())
+        });
+    *runtime.catalog.lock() = checking;
+    runtime.inspecting.store(true, Ordering::Release);
+
+    let app_for_worker = app.clone();
+    let catalog = Arc::clone(&runtime.catalog);
+    let inspecting = Arc::clone(&runtime.inspecting);
+    let selected_for_worker = selected_model_id.clone();
+    let spawn_result = thread::Builder::new()
+        .name("model-inspection".into())
+        .spawn(move || {
+            let started = Instant::now();
+            let next = inspect(&app_for_worker, selected_for_worker.clone())
+                .unwrap_or_else(|message| inspection_failure_catalog(selected_for_worker, message));
+            let installed_models = next
+                .models
+                .iter()
+                .filter(|model| model.phase == ModelPhase::Ready)
+                .count();
+            *catalog.lock() = next.clone();
+            inspecting.store(false, Ordering::Release);
+            tracing::info!(
+                elapsed_ms = started.elapsed().as_millis(),
+                installed_models,
+                "speech model catalog inspection completed"
+            );
+            publish(&app_for_worker, next);
+        });
+    if let Err(error) = spawn_result {
+        runtime.inspecting.store(false, Ordering::Release);
+        let next = inspection_failure_catalog(
             selected_model_id,
-            ..ModelCatalogStatus::default()
-        };
-        if let Some(selected) = fallback
-            .models
-            .iter_mut()
-            .find(|model| model.model_id == fallback.selected_model_id)
-        {
-            selected.phase = ModelPhase::Failed;
-            selected.message = Some(message);
-        }
-        fallback
-    });
-    *runtime.catalog.lock() = next;
+            format!("Could not start the model inspection worker: {error}"),
+        );
+        *runtime.catalog.lock() = next.clone();
+        publish(app, next);
+    }
+}
+
+fn inspection_failure_catalog(selected_model_id: String, message: String) -> ModelCatalogStatus {
+    let mut fallback = ModelCatalogStatus {
+        selected_model_id,
+        ..ModelCatalogStatus::default()
+    };
+    if let Some(selected) = fallback
+        .models
+        .iter_mut()
+        .find(|model| model.model_id == fallback.selected_model_id)
+    {
+        selected.phase = ModelPhase::Failed;
+        selected.message = Some(message);
+    }
+    fallback
 }
 
 pub fn selected_model_id(runtime: &ModelRuntime, language: &str) -> Result<String, String> {
@@ -159,6 +215,7 @@ pub fn select_speech_model(
     let manifest = speech_manifest(&model_id).map_err(|error| error.to_string())?;
     let _control = state.control.lock();
     require_stopped(&state)?;
+    require_catalog_ready(&state)?;
     persist_selected_model(&app, &manifest.id)?;
 
     let next = {
@@ -177,6 +234,7 @@ pub fn install_speech_model(
     model_id: String,
 ) -> Result<(), String> {
     let manifest = speech_manifest(&model_id).map_err(|error| error.to_string())?;
+    require_catalog_ready(&state)?;
     let root = models_root(&app)?;
     state
         .model
@@ -262,6 +320,7 @@ pub fn remove_speech_model(
     let manifest = speech_manifest(&model_id).map_err(|error| error.to_string())?;
     let _control = state.control.lock();
     require_stopped(&state)?;
+    require_catalog_ready(&state)?;
     if state.model.installing.load(Ordering::Acquire) {
         return Err(
             "Wait for the current model download to finish before removing a model.".into(),
@@ -291,6 +350,14 @@ fn require_stopped(state: &RuntimeState) -> Result<(), String> {
     ) || state.session.lock().is_some()
     {
         Err("Stop captions before changing local speech models.".into())
+    } else {
+        Ok(())
+    }
+}
+
+fn require_catalog_ready(state: &RuntimeState) -> Result<(), String> {
+    if state.model.inspecting.load(Ordering::Acquire) {
+        Err("Wait for Prollyglot to finish checking the installed speech models.".into())
     } else {
         Ok(())
     }

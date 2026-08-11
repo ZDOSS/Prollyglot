@@ -19,7 +19,7 @@ const CAPTION_HOLD_DURATION: Duration = Duration::from_secs(6);
 const WORKER_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const SPEECH_PREROLL_CHUNKS: usize = 5;
 const MAX_OVERLAY_SEGMENTS: usize = 4;
-const OVERLAY_CONTEXT_GAP_MICROS: u64 = 2_000_000;
+const OVERLAY_CONTEXT_GAP_MICROS: u64 = 5_000_000;
 
 pub fn prepare_stream(
     models_root: std::path::PathBuf,

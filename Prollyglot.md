@@ -604,6 +604,15 @@ Only active models should consume substantial RAM or VRAM.
 
 This is particularly important for low-resource machines.
 
+Installed-model inventory and integrity checks must not hold the application
+window closed. A successful full SHA-256 verification may write a small local
+marker containing the pinned manifest digest and artifact size/modification
+metadata. Unchanged artifacts can use that marker on later launches; missing,
+changed, or unreadable metadata must fall back to full verification. Existing
+models may need one background full pass after this mechanism changes. This is
+separate from loading the selected model into the inference runtime when the
+user starts captions, which can remain noticeably slower for a large model.
+
 ---
 
 # 16. Multilingual engines
@@ -709,6 +718,12 @@ This is essential for captions that feel stable.
 
 The live overlay should retain a bounded amount of recent finalized context while the next provisional utterance develops. Finalized utterances should begin on separate visual lines, with the newest line visually strongest, so quick conversational turns remain readable instead of replacing one another immediately.
 
+Appearance should offer the current caption alone or up to three prior caption
+rows. Prior rows fade with age and may be removed as complete units when a long
+current caption needs the space; the overlay must never reveal more history by
+clipping a row midway. This visual grouping is conversational context, not
+speaker identification.
+
 ---
 
 # 19. Caption overlay
@@ -729,6 +744,7 @@ The overlay should support:
 - optional original + translated text,
 - independent original and translated text colors,
 - stacked or side-by-side bilingual layout,
+- zero to three fading prior caption rows,
 - multi-monitor placement,
 - temporary hiding,
 - fullscreen applications where possible.
@@ -763,6 +779,9 @@ Initial modes might include:
 Dual language should also offer a side-by-side layout when the selected width
 can keep both columns readable. The source and translation colors should be
 independently configurable so the two outputs remain easy to distinguish.
+Each source caption and its translation form one stable visual row. A new or
+provisional source must not span the bilingual grid, displace the English half
+of an older pair, or allow one language to be clipped independently.
 
 ### Minimal
 
@@ -942,10 +961,18 @@ cache and runs in a dedicated CPU/WebAssembly worker. English-only users do not
 download or load either translator.
 
 Only finalized ASR segments are translated. Original text renders immediately,
-the English line fills in independently, and the queue is bounded so
-translation cannot introduce unbounded delay into live captions. Translation
-failure falls back to the original text and writes a privacy-safe diagnostic
-without logging caption contents.
+and its English position says **English after pause…** while recognition is
+still provisional. **Translating…** is reserved for a finalized segment that
+has actually entered translation. For the current Nemotron integration, a
+continuous pause-light utterance finalizes at an eight-second safety boundary
+rather than waiting for the prior 20-second boundary.
+
+The translation queue is bounded and prioritizes the newest finalized caption.
+If translation falls behind, stale queued captions are skipped so the live
+display can return to the current edge instead of exhaustively replaying old
+work. The English line fills its existing source/translation pair independently.
+Translation failure falls back to original text and writes privacy-safe timing
+and failure diagnostics without logging caption contents.
 
 The implemented display choices are Original, English, and Original + English.
 The bilingual choice supports stacked and side-by-side layouts plus independent
@@ -1318,6 +1345,12 @@ rendering
 ```
 
 Different modes may intentionally trade latency for accuracy.
+
+Large installed model files should not add synchronous work before the control
+window appears. Model inventory verification runs in the background, and the
+diagnostic log distinguishes that time from the selected model's inference
+runtime load. Translation diagnostics separately record queue wait, inference
+time, and stale-work skips without caption content.
 
 Possible setting:
 
@@ -1920,6 +1953,11 @@ Translation can make otherwise responsive captions feel delayed.
 Mitigation:
 
 Transcription should render immediately; translated captions can update independently.
+Translate only stable finalized text, but give pause-light multilingual speech
+a bounded finalization point. Process the newest finalized caption before stale
+queued work, cap the backlog, discard stale translations when necessary, and
+make the pre-finalization wait distinct from active translation in both the UI
+and privacy-safe timing logs.
 
 ## Hardware fragmentation
 

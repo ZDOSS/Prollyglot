@@ -19,6 +19,7 @@ import {
   stopCapture,
   transcriptSnapshot,
   updateCaptionOutput,
+  updateOverlaySettings,
   windowAction
 } from "./bridge";
 import { CaptionOutputController, supportedSourceLanguage } from "./caption-output";
@@ -36,6 +37,7 @@ import type {
   TranslationCatalogStatus,
   TranslationModelStatus
 } from "./types";
+import { DEFAULT_OVERLAY_SETTINGS, type OverlaySettings } from "./types";
 
 const root = document.querySelector<HTMLElement>("#app");
 if (!root) throw new Error("missing app root");
@@ -208,6 +210,9 @@ const captionOutput = new CaptionOutputController(
   (message) => {
     captureMessage.textContent = message;
     void reportFrontendDiagnostic("translation", message);
+  },
+  (message) => {
+    void reportFrontendDiagnostic("translation-performance", message, "info");
   }
 );
 
@@ -228,6 +233,17 @@ function option(value: string, label: string, selected = false): HTMLOptionEleme
 function storedCaptionMode(): CaptionOutputMode {
   const stored = localStorage.getItem(CAPTION_MODE_STORAGE_KEY);
   return stored === "english" || stored === "both" ? stored : "original";
+}
+
+function storedOverlaySettings(): OverlaySettings {
+  try {
+    const stored = localStorage.getItem("prollyglot.overlay");
+    return stored
+      ? { ...DEFAULT_OVERLAY_SETTINGS, ...(JSON.parse(stored) as Partial<OverlaySettings>) }
+      : { ...DEFAULT_OVERLAY_SETTINGS };
+  } catch {
+    return { ...DEFAULT_OVERLAY_SETTINGS };
+  }
 }
 
 function populateSources(nextSnapshot: SourceSnapshot) {
@@ -520,11 +536,14 @@ function renderModelStatus(catalog: ModelCatalogStatus) {
   modelProgress.hidden = status.phase !== "downloading";
   modelProgress.max = Math.max(status.totalBytes, 1);
   modelProgress.value = Math.min(status.downloadedBytes, modelProgress.max);
-  modelAction.disabled = status.phase === "downloading" || !compatible;
+  modelAction.disabled = status.phase === "checking" || status.phase === "downloading" || !compatible;
 
   if (!compatible) {
     modelAction.textContent = "Choose compatible model";
     modelMessage.textContent = `${status.displayName} does not support ${languageLabel(spokenLanguage.value)}.`;
+  } else if (status.phase === "checking") {
+    modelAction.textContent = "Checking local models…";
+    modelMessage.textContent = status.message ?? "Checking installed speech models without delaying the app window…";
   } else if (status.phase === "downloading") {
     const percent = status.totalBytes > 0
       ? Math.round((status.downloadedBytes / status.totalBytes) * 100)
@@ -775,7 +794,9 @@ function renderSettingsPanel() {
     const badge = document.createElement("span");
     badge.className = "model-state-badge";
     badge.dataset.phase = model.phase;
-    badge.textContent = selected
+    badge.textContent = model.phase === "checking"
+      ? "Checking"
+      : selected
       ? model.phase === "ready" ? "In use" : "Selected"
       : model.phase === "ready" ? "Installed" : "Optional";
     heading.append(names, badge);
@@ -831,6 +852,9 @@ function renderSettingsPanel() {
           }
         });
       }
+    } else if (model.phase === "checking") {
+      primary.textContent = "Checking…";
+      primary.disabled = true;
     } else if (model.phase === "downloading") {
       const percent = model.totalBytes > 0
         ? Math.round((model.downloadedBytes / model.totalBytes) * 100)
@@ -1161,6 +1185,10 @@ translationService.subscribe(renderTranslationStatus);
 renderLanguageGuidance();
 renderCaptionOutputControl();
 void Promise.all([
+  updateOverlaySettings(storedOverlaySettings()).catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    void reportFrontendDiagnostic("overlay-settings", `startup restore: ${message}`);
+  }),
   refreshSources(),
   captureStatus().then(renderStatus),
   modelStatus().then(renderModelStatus),

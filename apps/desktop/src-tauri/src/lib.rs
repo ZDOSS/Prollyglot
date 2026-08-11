@@ -282,8 +282,11 @@ async fn start_capture(
         publish_capture_failure(&app, &state.status, source_label.clone(), message)
     })?;
     tracing::info!(%model_id, %language, "loading selected speech model");
+    let model_load_started = Instant::now();
+    let model_id_for_worker = model_id.clone();
+    let language_for_worker = language.clone();
     let prepared = tauri::async_runtime::spawn_blocking(move || {
-        transcription::prepare_stream(model_root, &model_id, language)
+        transcription::prepare_stream(model_root, &model_id_for_worker, language_for_worker)
     })
     .await
     .map_err(|error| {
@@ -297,6 +300,12 @@ async fn start_capture(
     .map_err(|message| {
         publish_capture_failure(&app, &state.status, source_label.clone(), message)
     })?;
+    tracing::info!(
+        %model_id,
+        %language,
+        elapsed_ms = model_load_started.elapsed().as_millis(),
+        "selected speech model ready"
+    );
 
     let transcript_snapshot = {
         let mut transcript = state.transcript.lock();
@@ -744,14 +753,19 @@ fn configure_overlay_window(
     let maximum_logical_width = (f64::from(work_area.size.width) / scale_factor - 32.0).max(320.0);
     let maximum_logical_height = (f64::from(work_area.size.height) / scale_factor - 32.0).max(80.0);
     let logical_width = (f64::from(settings.width) + 40.0).clamp(320.0, maximum_logical_width);
-    let bilingual_height = match settings.bilingual_layout {
-        BilingualLayout::Stacked => 2.0,
-        BilingualLayout::SideBySide => 1.0,
+    let (bilingual_height, current_wrap_allowance) = match settings.bilingual_layout {
+        BilingualLayout::Stacked => (2.0, 0.0),
+        // A bilingual row has two narrower columns, so reserve three additional
+        // visual lines for the current caption to wrap without clipping a
+        // complete history row above it.
+        BilingualLayout::SideBySide => (1.0, 3.0),
     };
     let logical_height = (f64::from(settings.font_size)
         * 1.25
-        * f64::from(settings.maximum_lines)
-        * bilingual_height
+        * (f64::from(settings.maximum_lines) * bilingual_height + current_wrap_allowance)
+        + f64::from(settings.font_size)
+            * 0.18
+            * f64::from(settings.maximum_lines.saturating_sub(1))
         + 48.0)
         .clamp(80.0, maximum_logical_height);
     overlay

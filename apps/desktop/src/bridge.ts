@@ -314,8 +314,13 @@ export async function updateCaptionOutput(output: CaptionOutputPayload): Promise
   if (isTauri()) await emit("caption-output", output);
 }
 
-export async function reportFrontendDiagnostic(scope: string, message: string): Promise<void> {
-  console.error(`[${scope}] ${message}`);
+export async function reportFrontendDiagnostic(
+  scope: string,
+  message: string,
+  level: "error" | "info" = "error"
+): Promise<void> {
+  if (level === "info") console.info(`[${scope}] ${message}`);
+  else console.error(`[${scope}] ${message}`);
   if (!isTauri()) return;
   try {
     await invoke("report_frontend_diagnostic", { scope, message });

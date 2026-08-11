@@ -16,7 +16,7 @@ pnpm --dir apps/desktop tauri dev
 
 Run `pnpm --dir apps/desktop install --frozen-lockfile` first only when dependencies have changed or pnpm says packages are missing.
 
-The app should open without a UAC prompt or blank window. No subtitle preview should appear merely because the app launched.
+The app should open without a UAC prompt or blank window. No subtitle preview should appear merely because the app launched. **Checking local models…** may appear briefly without holding the window closed. The first launch after this update may fully verify existing model files in the background; later launches should reuse that verification while those files remain unchanged.
 
 Open **Appearance** once. Its sample stays inside the Appearance window rather than opening a second always-on-top preview over the controls. Confirm both **Done** and the title-bar **Close** return to the main window; no screenshot is required.
 
@@ -43,7 +43,9 @@ Model removal is not required on every build. When specifically checking it, sto
 
 When specifically spot-checking multilingual captions, choose **Spanish** or **Japanese** under **Spoken language**. Prollyglot should select Nemotron and ask for its one-time 650.6 MiB recognition-model download if needed. Start with **Original language**, play familiar speech, and report whether the wording feels usable and how much recognition delay you notice.
 
-Then stop captions, select **Original + English** under **Caption output**, and accept the separate one-time translator download if needed: 113.8 MiB for Spanish or 109.4 MiB for Japanese. Installing a translator in Settings stores it locally but does not turn translation on by itself. Wait for **Loading translator…** to finish if it appears, start captions, and replay familiar speech. The original text should remain immediate; **Translating…** may briefly occupy the English position, then the differently colored English line should appear after each source caption is finalized. Open **Transcript** and confirm it follows the newest original/English pair. Open **Appearance**, switch **Original + English layout** between **Stacked** and **Side by side**, change either caption color, and confirm **Done** returns normally. Selecting **English only · translated** should show the translated result without retaining the original once English is ready; an unavailable or failed translator must fall back to readable original text rather than stopping captions.
+Then stop captions, select **Original + English** under **Caption output**, and accept the separate one-time translator download if needed: 113.8 MiB for Spanish or 109.4 MiB for Japanese. Installing a translator in Settings stores it locally but does not turn translation on by itself. Wait for **Loading translator…** to finish if it appears, start captions, and replay familiar speech. The original text should remain immediate. While a source caption is still changing, its English position should say **English after pause…**; after the source finalizes it may briefly say **Translating…**, then the differently colored English text should fill that same paired row. New Japanese or Spanish text must not push the English half of an older pair into another row or out of view.
+
+Open **Transcript** and confirm it follows the newest original/English pair. Open **Appearance**, switch **Original + English layout** between **Stacked** and **Side by side**, and try **Caption history** from **Current only** through **3 previous lines**. Prior finalized pairs should fade above the current caption as complete rows; a long current caption may reduce the number retained, but no row should be sliced in half. Change either caption color and confirm **Done** returns normally. Selecting **English only · translated** should show the translated result without retaining the original once English is ready; an unavailable or failed translator must fall back to readable original text rather than stopping captions.
 
 **Automatic detection** remains available for recognition experiments but may add delay or choose the wrong language. Translation is intentionally unavailable under Automatic until the recognizer reports a dependable source language for each finalized segment. No fixtures, recordings, screenshots, or evidence bundle are required.
 
@@ -70,6 +72,6 @@ $LatestLog = Get-ChildItem $LogRoot -Filter *.log |
 Get-Content $LatestLog.FullName -Tail 200
 ```
 
-The log includes queue-drop, recovery, and translation-runtime failure diagnostics in current builds, but no captured audio or transcript text.
+The log includes queue-drop, recovery, recognition-model load timing, and privacy-safe translation queue/inference timing in current builds, but no captured audio or transcript text.
 
 The longer [Windows release and hardening plan](WINDOWS_TEST_PLAN.md) remains available for formal milestone acceptance, installer/release candidates, latency work, routing edge cases, and sustained reliability testing.

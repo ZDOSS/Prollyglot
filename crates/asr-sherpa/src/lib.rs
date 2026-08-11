@@ -14,6 +14,7 @@ const NEMOTRON_BACKEND: &str = "sherpa-onnx-online-nemotron";
 const ENDPOINT_RULE_1_TRAILING_SILENCE_SECONDS: f32 = 2.4;
 const ENDPOINT_RULE_2_TRAILING_SILENCE_SECONDS: f32 = 1.2;
 const ENDPOINT_RULE_3_UTTERANCE_SECONDS: f32 = 20.0;
+const NEMOTRON_ENDPOINT_RULE_3_UTTERANCE_SECONDS: f32 = 8.0;
 const STREAM_PREROLL_MILLIS: u32 = 800;
 const NEMOTRON_LEFT_PADDING_MILLIS: u32 = 500;
 const NEMOTRON_RIGHT_PADDING_MILLIS: u32 = 800;
@@ -117,7 +118,13 @@ impl SpeechEngine for SherpaOnlineEngine {
         // Preserve sherpa-onnx's documented endpoint profile explicitly.
         config.rule1_min_trailing_silence = ENDPOINT_RULE_1_TRAILING_SILENCE_SECONDS;
         config.rule2_min_trailing_silence = ENDPOINT_RULE_2_TRAILING_SILENCE_SECONDS;
-        config.rule3_min_utterance_length = ENDPOINT_RULE_3_UTTERANCE_SECONDS;
+        // Translation intentionally waits for finalized source text. Bound a
+        // continuous multilingual utterance more tightly so news and other
+        // pause-light media cannot postpone translation for twenty seconds.
+        config.rule3_min_utterance_length = match model_kind {
+            LoadedModelKind::Nemotron => NEMOTRON_ENDPOINT_RULE_3_UTTERANCE_SECONDS,
+            LoadedModelKind::Transducer => ENDPOINT_RULE_3_UTTERANCE_SECONDS,
+        };
 
         let recognizer = OnlineRecognizer::create(&config).ok_or_else(|| {
             SpeechError::new(
