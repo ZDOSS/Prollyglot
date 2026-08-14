@@ -10,7 +10,6 @@ use std::{
 };
 
 use parking_lot::Mutex;
-use prollyglot_core::CaptureState;
 use prollyglot_model_manager::{
     DEFAULT_SPEECH_MODEL_ID, DownloadProgress, ModelInstallState, ModelManager, ModelManifest,
     NEMOTRON_MULTILINGUAL_MODEL_ID, speech_manifest, speech_model_manifests,
@@ -341,15 +340,7 @@ pub fn remove_speech_model(
 }
 
 fn require_stopped(state: &RuntimeState) -> Result<(), String> {
-    if matches!(
-        state.status.lock().state,
-        CaptureState::Starting
-            | CaptureState::Capturing
-            | CaptureState::Waiting
-            | CaptureState::Stopping
-    ) || state.session.lock().is_some()
-        || crate::visual::is_active(&state.visual)
-    {
+    if crate::audio::is_active(state) || crate::visual::is_active(&state.visual) {
         Err("Stop captions and visual translation before changing local speech models.".into())
     } else {
         Ok(())

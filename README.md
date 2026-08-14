@@ -11,7 +11,7 @@ Prollyglot is a free and open-source desktop utility that captures audio from a 
 > [!IMPORTANT]
 > Prollyglot is in active pre-release development. There is not yet a supported binary release. Windows 11 is the primary target; the first Windows owner smoke confirmed that **Everything I hear** captions audible output from the selected playback device, while broader application, lifecycle, and release validation remains in progress.
 >
-> Current pre-release: **0.1.2**. See the [changelog](CHANGELOG.md) and
+> Current pre-release: **0.1.3**. See the [changelog](CHANGELOG.md) and
 > [versioning policy](docs/VERSIONING.md).
 
 ## Why Prollyglot exists
@@ -48,10 +48,11 @@ draw between us.
 
 The repository currently contains:
 
-- a Tauri-free application-runtime foundation for one mutually exclusive,
-  revisioned audio/visual session lifecycle, with startup cancellation,
-  supervised worker completion, structured errors, and generated TypeScript
-  contracts; production command cutover is the active structural milestone;
+- a Tauri-free application runtime for one mutually exclusive, revisioned
+  audio/visual session lifecycle, with startup cancellation, supervised worker
+  completion, structured errors, and generated TypeScript contracts; production
+  audio captions now use that supervisor, while the visual-session and frontend
+  bootstrap cutovers are the next structural integration;
 - a Tauri 2 desktop shell and customizable caption-overlay proof;
 - Windows playback-device capture through WASAPI loopback;
 - Windows application/process-tree capture through the documented process-loopback API;

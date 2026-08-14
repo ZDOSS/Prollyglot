@@ -3,6 +3,7 @@ import { LogicalSize } from "@tauri-apps/api/dpi";
 import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { SPOKEN_LANGUAGES } from "./language-catalog";
+import { RUNTIME_COMMANDS, RUNTIME_CONTRACT_VERSION, RUNTIME_EVENTS } from "./types";
 
 import type {
   CaptureSelection,
@@ -11,6 +12,9 @@ import type {
   ModelCatalogStatus,
   OverlaySettings,
   PixelRect,
+  RuntimeBootstrap,
+  RuntimeSnapshot,
+  RuntimeStateEvent,
   SourceSnapshot,
   TranscriptSnapshot,
   VisualCaptureCapabilities,
@@ -46,6 +50,8 @@ const mockSnapshot: SourceSnapshot = {
 };
 
 let mockStatus: CaptureStatus = { state: "stopped", peak: 0, droppedFrames: 0 };
+let mockRuntimeRevision = 0;
+const mockRuntimeListeners = new Set<(snapshot: RuntimeSnapshot) => void>();
 const mockStatusListeners = new Set<(status: CaptureStatus) => void>();
 let mockTimer: number | undefined;
 let mockStartTimer: number | undefined;
@@ -213,6 +219,37 @@ const publishMockStatus = () => {
   for (const listener of mockStatusListeners) listener(mockStatus);
 };
 
+const mockRuntimeSnapshot = (): RuntimeSnapshot => ({
+  contractVersion: RUNTIME_CONTRACT_VERSION,
+  revision: mockRuntimeRevision,
+  sessionId: mockStatus.state === "stopped" ? null : 1,
+  mode: mockStatus.state === "stopped" ? null : "audioCaptions",
+  source: mockStatus.state === "stopped"
+    ? null
+    : { id: "default-output", kind: "systemOutput", label: "System default" },
+  lifecycle: mockStatus.state === "capturing" ? "running" : mockStatus.state,
+  health: {
+    level: mockStatus.state === "waiting" ? "recovering" : mockStatus.state === "failed" ? "degraded" : "healthy",
+    progress: mockStatus.state === "capturing"
+      ? "live"
+      : mockStatus.state === "waiting"
+        ? "waitingForSource"
+        : mockStatus.state === "starting"
+          ? "preparingModel"
+          : mockStatus.state === "stopped"
+            ? "idle"
+            : mockStatus.state,
+    message: mockStatus.message ?? null
+  },
+  failure: null
+});
+
+const publishMockRuntime = () => {
+  mockRuntimeRevision += 1;
+  const snapshot = mockRuntimeSnapshot();
+  for (const listener of mockRuntimeListeners) listener(structuredClone(snapshot));
+};
+
 const publishMockModel = () => {
   for (const listener of mockModelListeners) listener(structuredClone(mockModelCatalog));
 };
@@ -267,10 +304,12 @@ export async function startCapture(selection: CaptureSelection, language: string
   mockTranscript = { revision: mockTranscript.revision + 1, committed: [] };
   publishMockTranscript();
   publishMockStatus();
+  publishMockRuntime();
   mockStartTimer = window.setTimeout(() => {
     mockStartTimer = undefined;
     mockStatus = { state: "capturing", peak: 0.18, droppedFrames: 0 };
     publishMockStatus();
+    publishMockRuntime();
     mockTimer = window.setInterval(() => {
       mockStatus = { ...mockStatus, peak: 0.08 + Math.random() * 0.72 };
       publishMockStatus();
@@ -325,6 +364,7 @@ export async function stopCapture(): Promise<void> {
   mockStartTimer = undefined;
   mockStatus = { state: "stopped", peak: 0, droppedFrames: 0 };
   publishMockStatus();
+  publishMockRuntime();
 }
 
 export async function modelStatus(): Promise<ModelCatalogStatus> {
@@ -665,6 +705,23 @@ export async function onTranscriptUpdate(
 export async function captureStatus(): Promise<CaptureStatus> {
   if (!isTauri()) return mockStatus;
   return invoke<CaptureStatus>("capture_status");
+}
+
+export async function runtimeBootstrap(): Promise<RuntimeBootstrap> {
+  if (!isTauri()) return { snapshot: structuredClone(mockRuntimeSnapshot()) };
+  return invoke<RuntimeBootstrap>(RUNTIME_COMMANDS.bootstrap);
+}
+
+export async function onRuntimeState(
+  callback: (snapshot: RuntimeSnapshot) => void
+): Promise<UnlistenFn> {
+  if (isTauri()) {
+    return listen<RuntimeStateEvent>(RUNTIME_EVENTS.state, ({ payload }) => {
+      callback(payload.snapshot);
+    });
+  }
+  mockRuntimeListeners.add(callback);
+  return () => mockRuntimeListeners.delete(callback);
 }
 
 export async function onCaptureStatus(

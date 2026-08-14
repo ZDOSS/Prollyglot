@@ -36,7 +36,7 @@ Why this direction:
 
 | Milestone | Integrated outcome | Status |
 | --- | --- | --- |
-| S. Structural integrity program | Replace patched orchestration with supervised sessions, bounded translation and presentation work, generated contracts, maintainable desktop pages, unified local state, and portable capture boundaries | In progress; S1 runtime foundation integrated, production audio/visual cutovers next |
+| S. Structural integrity program | Replace patched orchestration with supervised sessions, bounded translation and presentation work, generated contracts, maintainable desktop pages, unified local state, and portable capture boundaries | In progress; S1 runtime foundation and production audio cutover integrated, visual/bootstrap cutover next |
 | 1. Windows capture foundation | A real Windows desktop shell can enumerate and capture either a selected output device or selected application | Selected-device Windows smoke passed; application and lifecycle validation remain |
 | 2. Live English captions | Captured audio becomes stable partial and final English captions locally | Device-to-caption and corrected UI/context re-smokes passed; accented/conversational model evidence and application/lifecycle validation remain |
 | 3. Minimal customizable Windows app | The complete daily-use interface, overlay customization, transcript view, and controls work together | Pending |
@@ -174,9 +174,14 @@ The first S1 integration point is present as the Tauri-free
 monotonic snapshots, mutually exclusive audio/visual transitions, cancellation
 allocated before startup work, idempotent Stop requests, supervised worker
 completion, and structured recovery errors. Deterministic Rust-derived
-TypeScript contracts are checked by both local scripts. Production audio and
-visual commands still use their existing state owners until their complete
-vertical cutovers; S1 is not yet complete.
+TypeScript contracts are checked by both local scripts.
+
+The production audio path now delegates lifecycle authority to that supervisor.
+Model preparation is invalidated by Stop, runtime resources clean up once in the
+background, capture and transcription worker outcomes are supervised, and the
+legacy `CaptureStatus` is only a compatibility projection. The visual path still
+uses its previous state owner, and the frontend still needs the revision-aware
+bootstrap cutover; S1 is not yet complete.
 
 ## S2 — Bounded translation, unified model storage, and authoritative overlays
 

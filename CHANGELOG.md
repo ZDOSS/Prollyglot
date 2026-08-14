@@ -5,6 +5,8 @@ Versioning while it is in the `0.x` pre-release line.
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-08-14
+
 ### Added
 
 - A platform-neutral application runtime foundation with typed audio/visual
@@ -13,6 +15,21 @@ Versioning while it is in the `0.x` pre-release line.
   errors.
 - Deterministic Rust-derived TypeScript runtime contracts plus local and Windows
   checks that fail when the checked-in bindings are stale.
+
+### Changed
+
+- Route production audio-caption sessions through one supervisor that owns
+  lifecycle, session identity, cancellation, health, and terminal failure state;
+  the previous capture status is now only a compatibility projection.
+- Supervise capture-event and transcription workers so unexpected exits, panics,
+  and cleanup timeouts produce structured recovery guidance instead of leaving
+  the interface claiming a dead session is live.
+
+### Fixed
+
+- Make one Stop click acknowledge immediately while model loading or capture is
+  active, invalidate late startup work, hide the overlay, and complete bounded
+  cleanup in the background.
 
 ## [0.1.2] - 2026-08-11
 

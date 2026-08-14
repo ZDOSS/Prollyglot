@@ -39,6 +39,7 @@ import {
 } from "./bridge";
 import { CaptionOutputController, supportedSourceLanguage } from "./caption-output";
 import { AppearancePanel } from "./appearance-panel";
+import { errorMessage, isApplicationError } from "./errors";
 import { icons } from "./icons";
 import {
   SPOKEN_LANGUAGES,
@@ -673,8 +674,11 @@ function renderStatus(status: CaptureStatus) {
   currentStatus = status;
   renderHeaderStatus();
   captureMessage.textContent = status.message ?? "";
-  captureToggle.textContent = status.state === "capturing" || status.state === "waiting" ? "Stop Captions" : "Start Captions";
-  captureToggle.classList.toggle("stop", status.state === "capturing" || status.state === "waiting");
+  const stoppable = status.state === "starting"
+    || status.state === "capturing"
+    || status.state === "waiting";
+  captureToggle.textContent = stoppable ? "Stop Captions" : "Start Captions";
+  captureToggle.classList.toggle("stop", stoppable);
   updatePrimaryAvailability();
   renderTranslationSetup();
   document.documentElement.style.setProperty("--audio-peak", String(status.peak));
@@ -752,13 +756,14 @@ function renderVisualModelStatus(catalog: VisualModelCatalogStatus): void {
 }
 
 function updatePrimaryAvailability() {
-  const transitioning = currentStatus.state === "starting" || currentStatus.state === "stopping";
-  const running = currentStatus.state === "capturing" || currentStatus.state === "waiting";
+  const stoppable = currentStatus.state === "starting"
+    || currentStatus.state === "capturing"
+    || currentStatus.state === "waiting";
   const blockedByVisual = visualEngaged();
   const model = selectedModel();
-  captureToggle.disabled = transitioning || blockedByVisual
-    || (!running && (model.phase !== "ready" || !modelSupportsLanguage(model)));
-  spokenLanguage.disabled = transitioning || running || blockedByVisual;
+  captureToggle.disabled = currentStatus.state === "stopping" || blockedByVisual
+    || (!stoppable && (model.phase !== "ready" || !modelSupportsLanguage(model)));
+  spokenLanguage.disabled = audioActive() || blockedByVisual;
 }
 
 function formatBytes(bytes: number): string {
@@ -852,7 +857,7 @@ async function refreshSources(): Promise<SourceRefreshResult> {
     populateSources(nextSnapshot);
     return { ok: true, snapshot: nextSnapshot };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = errorMessage(error);
     captureMessage.textContent = message;
     return { ok: false, message };
   }
@@ -1279,7 +1284,11 @@ translationAction.addEventListener("click", async () => {
 captureToggle.addEventListener("click", async () => {
   captureMessage.textContent = "";
   try {
-    if (currentStatus.state === "capturing" || currentStatus.state === "waiting") {
+    if (
+      currentStatus.state === "starting"
+      || currentStatus.state === "capturing"
+      || currentStatus.state === "waiting"
+    ) {
       await stopCapture();
     } else {
       if (visualEngaged()) throw new Error("Stop screen translation before starting audio captions.");
@@ -1292,11 +1301,12 @@ captureToggle.addEventListener("click", async () => {
       await startCapture(selectedCapture(), spokenLanguage.value);
     }
   } catch (error) {
+    if (isApplicationError(error) && error.code === "startupCancelled") return;
     renderStatus({
       state: "failed",
       peak: 0,
       droppedFrames: currentStatus.droppedFrames,
-      message: error instanceof Error ? error.message : String(error)
+      message: errorMessage(error)
     });
   }
 });

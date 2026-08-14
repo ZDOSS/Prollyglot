@@ -3,7 +3,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crossbeam_channel::{Receiver, RecvTimeoutError, Sender};
+use crossbeam_channel::{Receiver, RecvTimeoutError};
 use parking_lot::Mutex;
 use prollyglot_asr::{SpeechAudio, SpeechEngine, SpeechEvent, SpeechStream, SpeechStreamConfig};
 use prollyglot_asr_sherpa::SherpaOnlineEngine;
@@ -48,12 +48,10 @@ pub fn run(
     audio: Receiver<AudioFrame>,
     mut stream: Box<dyn SpeechStream>,
     transcript: Arc<Mutex<TranscriptStore>>,
-    errors: Sender<String>,
-) {
-    if let Err(error) = run_inner(&app, &audio, stream.as_mut(), &transcript) {
+) -> Result<(), String> {
+    run_inner(&app, &audio, stream.as_mut(), &transcript).inspect_err(|error| {
         tracing::error!(%error, "transcription worker failed");
-        let _ = errors.try_send(error);
-    }
+    })
 }
 
 fn run_inner(
