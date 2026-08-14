@@ -36,6 +36,7 @@ Why this direction:
 
 | Milestone | Integrated outcome | Status |
 | --- | --- | --- |
+| S. Structural integrity program | Replace patched orchestration with supervised sessions, bounded translation and presentation work, generated contracts, maintainable desktop pages, unified local state, and portable capture boundaries | Planned next; S1 and S2 gate further feature expansion |
 | 1. Windows capture foundation | A real Windows desktop shell can enumerate and capture either a selected output device or selected application | Selected-device Windows smoke passed; application and lifecycle validation remain |
 | 2. Live English captions | Captured audio becomes stable partial and final English captions locally | Device-to-caption and corrected UI/context re-smokes passed; accented/conversational model evidence and application/lifecycle validation remain |
 | 3. Minimal customizable Windows app | The complete daily-use interface, overlay customization, transcript view, and controls work together | Pending |
@@ -43,6 +44,381 @@ Why this direction:
 | 5. Ubuntu port | The Windows-proven core runs on one supported Ubuntu LTS release through PipeWire | Pending |
 | 6. Multilingual captions and translation | Downloadable language support, local translation, and dual captions are production-ready | 29 forced spoken languages, four compact language models, compact-to-English and 29-language many-to-many routes integrated; Windows quality, latency, and automatic-language constraints remain pending |
 | 7. Visual text translation | A selected region, application window, or display becomes locally translated positioned text | Experimental WGC/OCR/positioned-overlay slice integrated; native Windows media, DPI, performance, and OBS/DXGI parity remain pending |
+
+## Structural integrity program — next execution sequence
+
+The capture, audio-processing, transcript, native model-verification, and visual
+pipeline crates are worth preserving. The structural debt is concentrated in
+application orchestration: session lifecycle is split across locks and UI flags,
+translation uses one global serialized worker, overlays reconcile competing
+event paths, native and TypeScript contracts are copied by hand, and automated
+tests stop below the layer where recent regressions occurred.
+
+This program is therefore an incremental replacement of the application spine,
+not a rewrite of the working media engines. Execute S1 through S4 in order. S1
+and S2 are prerequisites for adding more model families, simultaneous
+audio/visual operation, or another major visual-translation feature. Narrow
+correctness fixes may still land while the program is active, but they should
+use the new boundary when that boundary already exists.
+
+### Program coverage
+
+| Review concern | Primary milestone | Completion evidence |
+| --- | --- | --- |
+| One translation worker serializes catalog, installation, loading, and all live inference without general cancellation | S2 | A never-resolving translation is cancelled within its deadline, current original output remains usable, and later work proceeds without restarting the application |
+| Audio and visual lifecycle truth is split across native locks, status objects, UI booleans, generations, and detached workers | S1 | One supervisor owns legal transitions, startup can be cancelled, one Stop action is sufficient, and worker completion always reaches a terminal state |
+| Raw and bilingual captions compete at the overlay; visual output can publish stale FIFO snapshots | S2 | Each overlay accepts one session-scoped, revisioned stream and rejects delayed results from an older revision or session |
+| Rust/TypeScript IPC shapes, command names, event names, and errors are manually duplicated | S1 | TypeScript bindings are schema-derived, contract tests cover every public command/event payload, and failures preserve code/recoverability/action metadata |
+| Automated checks miss Tauri orchestration and all TypeScript schedulers/controllers | S1 and S3 | Tauri-free runtime tests and fake-clock frontend tests run from the normal local check scripts; the Windows script also executes native desktop tests it can support |
+| Translation artifacts use WebView storage and artifact-sized buffers while speech/OCR use the native streaming model manager | S2 | One native inventory owns all model kinds, downloads remain bounded-memory and atomic, and the translation runtime reads only verified local artifacts |
+| `main.ts`, `bridge.ts`, and one generic dialog own too much UI and runtime behavior | S3 | Full-view destinations are persistent pages, production and preview bridges are separate, and feature controllers consume a shared application store |
+| Concurrent startup snapshots and listener registration can apply older state after a newer event | S1 and S3 | Bootstrap and all runtime events carry monotonic revisions; the frontend ignores older state deterministically |
+| Per-application capture exposes an ephemeral PID and the desktop calls the Windows backend directly | S4 | The UI selects a stable application identity through a capture-backend contract and an ordinary process restart can be re-resolved |
+| Durable settings are split across unversioned WebView storage and native files; architecture/build/contribution documents are absent | S3 and S4 | A validated configuration schema migrates existing preferences, and the required repository documentation matches the implemented boundaries |
+
+### Migration rules
+
+- Keep `prollyglot-core`, the audio and visual pipelines, ASR and OCR adapters,
+  transcript store, and native `ModelManager` operational throughout the work.
+  Refactor their callers unless a failing contract test proves a lower-level
+  defect.
+- Use a strangler migration: add a new contract or coordinator beside the old
+  route, move one complete vertical path, verify parity, and only then delete the
+  old state or event path. Do not maintain two authorities after the cutover.
+- Every asynchronous result carries the session and revision that created it.
+  A consumer must reject stale results; clearing a JavaScript array or boolean is
+  not cancellation.
+- Keep at most one substantial translator loaded while audio and visual modes
+  remain mutually exclusive. The new scheduler improves ownership and recovery;
+  it does not silently expand the current resource promise.
+- Preserve explicit model downloads, local-only inference, no raw-audio or frame
+  persistence, and privacy-safe logs without caption or OCR text.
+- Existing installed models and preferences receive a deliberate migration. A
+  legacy translation cache may remain read-only during a transition, but it must
+  not be silently destroyed or copied through an artifact-sized memory buffer.
+- Keep each published integration point runnable. Commit and push coherent
+  slices within a structural milestone, but do not publish placeholder crates,
+  half-migrated event paths, or a UI that requires old and new state to agree.
+- Run routine checks locally. Native Windows smokes occur at the milestone gates
+  below and require notes only for failures or material measurements, not a
+  screenshot or evidence bundle for every passing action.
+
+## S1 — Typed runtime spine and supervised sessions
+
+### Integrated outcome
+
+Create one platform-neutral application runtime that owns session identity,
+legal state transitions, cancellation, completion, revisions, and structured
+failures. Tauri becomes an adapter around that runtime instead of the place
+where lifecycle policy is assembled.
+
+### Included work
+
+- Add a Tauri-free runtime/coordinator crate. Its public state includes a
+  `SessionId`, monotonic revision, active mode, source identity, lifecycle state,
+  progress/health summary, and optional structured failure.
+- Define one mutually exclusive supervisor for audio and visual sessions with
+  explicit `Stopped`, `Starting`, `Running`, `Waiting`, `Stopping`, and `Failed`
+  transitions. Illegal commands return a typed conflict rather than consulting
+  several locks and booleans independently.
+- Allocate cancellation before model loading begins. Stop during `Starting`
+  cancels or invalidates model preparation; Stop during `Running` acknowledges
+  promptly, initiates bounded background cleanup, and publishes completion.
+- Route capture, transcription, OCR, and event-forwarder exit or panic through a
+  supervised completion channel. A dead worker cannot leave the UI claiming that
+  the session is still live.
+- Define a structured application error contract containing a stable code,
+  understandable message, recoverability, suggested action, and related session
+  where applicable. Preserve existing `SpeechError` information and map capture,
+  model, translation, configuration, and window errors into the same envelope.
+- Adopt one schema-generation path for Rust-to-TypeScript payloads and record the
+  choice. Generate command/event payload types and centralize command/event names;
+  remove hand-copied production shapes only after parity tests pass.
+- Add a versioned bootstrap snapshot. Register runtime listeners before fetching
+  it, attach revisions to subsequent events, and reject any snapshot or event
+  older than the state already applied.
+- Move current audio orchestration first, then visual orchestration, through the
+  supervisor. Preserve existing bounded media queues and native adapters.
+- Extract state-transition, cancellation, stale-event, panic, and recovery tests
+  so they run without Tauri, GTK/WebKit, WASAPI, WGC, or model downloads.
+
+### Migration and rollback
+
+The existing Tauri commands initially delegate to the supervisor while retaining
+their current external names. Audio moves completely before visual moves. For
+each mode, old `session`/`status` ownership is removed in the same integration
+point that switches its final command and event. If the new runtime fails parity,
+the adapter can be reverted without changing capture, ASR, OCR, or transcript
+implementations.
+
+### Acceptance boundary
+
+- Start and Stop each produce one legal, monotonic transition sequence; rapid
+  repeated clicks cannot create duplicate sessions or contradictory active flags.
+- Starting a large ASR or OCR model can be cancelled without waiting for the
+  model to finish loading before the UI acknowledges the request.
+- Audio and visual Stop return control promptly while cleanup completes once in
+  the background; no additional click is needed.
+- Simulated capture loss, inference error, worker panic, and shutdown timeout end
+  in a typed, recoverable state with one user-facing action.
+- An event from an older session or revision cannot overwrite current state.
+- Generated TypeScript contracts round-trip every public session command, event,
+  selection, status, and error shape.
+- The normal local check runs the new runtime tests, and the Windows check runs
+  supported desktop orchestration tests in addition to the real native link.
+
+## S2 — Bounded translation, unified model storage, and authoritative overlays
+
+### Integrated outcome
+
+Make translation a session-scoped, cancellable inference service and make each
+overlay consume one authoritative, revisioned presentation stream. Catalog and
+download work remain responsive even if inference stalls.
+
+### Included work
+
+- Split translation control from translation inference. Model status,
+  installation, verification, and removal no longer share the live inference
+  queue.
+- Move translation manifests and artifact lifecycle under the native
+  `ModelManager`. Prove a cache-only, read-only path from verified native files to
+  Transformers.js/ONNX Runtime in WebView2 before retiring the existing cache.
+  Prefer a streaming Tauri custom protocol or equivalent bounded path; do not
+  transfer a whole model artifact through command payloads.
+- Keep a legacy translation cache readable during migration. New installs use
+  the native store; an old pack is removed only after its native replacement is
+  verified or the user explicitly removes it.
+- Create one inference worker per active translation session. Terminating that
+  worker is the hard cancellation boundary for a runtime call that does not
+  cooperatively cancel. Stopping or replacing a session rejects all of its
+  pending work without affecting model inventory.
+- Introduce typed translation jobs with request ID, session ID, source revision,
+  workload profile, priority, enqueue time, and deadline. Final caption work
+  outranks provisional work; provisional text coalesces to the newest utterance;
+  visual work coalesces to the current recognized snapshot.
+- Give caption-live, caption-final, compact visual, and universal visual work
+  separate bounded generation/deadline policies. A timeout restarts only the
+  active inference session and records timing without source text.
+- Replace raw-caption plus bilingual-caption races with one caption presentation
+  frame. Original text is emitted immediately as the first revision; pending or
+  completed translation updates the same caption identity.
+- Add the same session/revision contract to visual overlay output. Replace the
+  FIFO `publishSerial` chain with one in-flight publish and one replaceable latest
+  value; native and overlay consumers reject older revisions.
+- Centralize active inference ownership and document the three current runtime
+  stacks: sherpa-onnx for speech, native ONNX Runtime for OCR, and WebAssembly ONNX
+  Runtime for translation. Record load, unload, cold-start, memory, queue, and
+  timeout telemetry without media text.
+- Add deterministic tests using fast, slow, failing, and never-resolving fake
+  translators plus delayed overlay publishers.
+
+### Migration and rollback
+
+First make the scheduler drive the existing verified WebView cache. Next prove
+native-store loading for one compact route, then migrate every route and model
+action. Only after all routes pass offline load, removal, repair, and rollback
+checks should the old write path be deleted. Likewise, publish the new overlay
+frame beside the old route only in a test adapter; production must cut over in
+one integration point so two presentation authorities never remain active.
+
+### Acceptance boundary
+
+- A never-resolving translation reaches its deadline, clears or reports its
+  pending state, and allows current work to continue without restarting the app.
+- Model status, installation, and removal remain responsive during slow or hung
+  inference.
+- Translation downloads and verification use bounded memory and atomic files;
+  no WebView allocation scales to the size of a model artifact.
+- At most one substantial translator is loaded, and switching or stopping modes
+  releases the previous inference session deterministically.
+- Original captions remain immediate. Final translation is not trapped behind
+  stale partials, and visual translation never exhaustively replays old scenes.
+- Delayed caption or visual results from a stopped/replaced session never appear.
+- Side-by-side, stacked, history, reading-time, fade, visual retention, and clear
+  behavior all consume the same versioned presentation state and pass fake-clock
+  tests.
+- On Windows, one Stop click succeeds during normal work, slow inference, and a
+  forced timeout. Compact routes meet the existing live target; universal-route
+  latency is measured and reported separately rather than hidden.
+
+## S3 — Maintainable desktop workspace and versioned configuration
+
+### Integrated outcome
+
+Rebuild the application shell around the stable runtime snapshot so full view is
+a real desktop workspace, compact view remains a focused utility, and feature
+controllers can be tested without a live native backend.
+
+### Included work
+
+- Introduce a small application store/reducer that consumes the versioned
+  bootstrap snapshot and runtime events. Session state, model catalogs,
+  transcript, translation state, visual state, navigation, and notices have one
+  owner instead of module-level flags spread through `main.ts`.
+- Split startup/bootstrap, captions, screen translation, transcript, models,
+  appearance, settings, window controls, and navigation into feature modules with
+  narrow inputs and actions. Keep vanilla TypeScript unless implementation
+  evidence shows a framework would reduce rather than move complexity.
+- Split the production Tauri bridge from the preview/test bridge behind one typed
+  interface. Remove copied production model catalogs from the bridge; preview
+  fixtures consume the same generated contracts and dedicated fixture builders.
+- Replace the full-view generic `<dialog>` router with persistent page containers
+  under the desktop navigation. Full-view Appearance, Transcript, Models,
+  Settings, and Screen translation retain DOM state while inactive. Compact mode
+  may continue using contained modal/dialog surfaces where appropriate.
+- Divide the shared stylesheet into design tokens, shell/layout, feature, caption
+  overlay, visual overlay, and utility-window layers so changes do not depend on
+  one global selector file.
+- Add one native, locally stored configuration document with a schema version,
+  defaults, validation, atomic writes, and migrations. Move overlay appearance,
+  caption mode, translation target, view mode, visual preferences, selected
+  models, and future source defaults into that repository.
+- Import existing valid `localStorage` and selected-model preferences once. Write
+  durable state only after validation succeeds, broadcast the accepted snapshot
+  to every WebView, and retain `localStorage` only for development preview or
+  disposable view state.
+- Add focused TypeScript tests with fake timers and injected bridges for the
+  caption/visual controllers, store revision handling, translation scheduling,
+  Stop/start interactions, settings migration, focus/scroll preservation, and
+  full/compact navigation. Add a small rendered interaction layer for critical
+  controls rather than an enormous snapshot suite.
+- Add `pnpm test` and make it part of both local check scripts. Keep browser/native
+  visual checks manual only where DOM simulation cannot prove the behavior.
+
+### Migration and rollback
+
+Move one full-view destination at a time into the persistent shell while compact
+mode remains available as a fallback. Route all new pages through the store before
+removing their old global variables. Configuration migration first reads and
+validates old values without deleting them; legacy keys are removed only after a
+successful atomic write and restart readback.
+
+### Acceptance boundary
+
+- Full-view navigation changes persistent pages without opening a modal, making
+  the caption workspace inert, losing scroll/focus, or rebuilding active controls.
+- Compact/full switching never changes the native session or transcript and
+  leaves no trapped dialog.
+- Startup cannot regress to an older snapshot after a newer event.
+- Invalid or older settings migrate or fall back once with a clear diagnostic;
+  they do not poison every launch. Every accepted setting reaches all relevant
+  windows from one configuration snapshot.
+- Native and preview bridges satisfy the same typed interface without copied
+  production catalog data.
+- The standard frontend test command covers timing and ordering failures that
+  previously produced stuck translation, stale overlays, and ineffective Stop.
+- Keyboard navigation, focus restoration, screen-reader semantics, high contrast,
+  and large text remain intact through the new shell.
+
+## S4 — Capture portability, resource hardening, and maintainership
+
+### Integrated outcome
+
+Finish the structural program with a Windows-proven capture boundary that can
+support Ubuntu later, explicit inference-resource ownership, durable architecture
+documentation, and one practical lifecycle soak.
+
+### Included work
+
+- Add an `AudioCaptureBackend` contract for capability reporting, source
+  enumeration, selection resolution, session start, recovery events, and stop.
+  The desktop runtime depends on that contract rather than calling the Windows
+  crate directly.
+- Replace the application selection contract's public PID with a stable opaque
+  application identity and display metadata. Keep PID/process-tree resolution
+  inside the Windows backend. Use executable identity, package/application
+  identity, and current process roots as available without exposing private paths
+  in logs.
+- On ordinary application exit/restart, enter `Waiting`, re-enumerate with bounded
+  backoff, re-resolve the stable identity, and resume the process-loopback session
+  when safe. A genuinely unavailable or ambiguous application produces a typed
+  recovery choice instead of silently binding another process.
+- Preserve selected-device recovery behind the same backend contract and define
+  the interface PipeWire will later implement. Do not implement or claim Ubuntu
+  support in this structural milestone.
+- Add an inference resource coordinator that records which speech, OCR, and
+  translation runtime is loaded, enforces current audio/visual exclusivity,
+  unloads inactive models, and supplies cold-start/RAM diagnostics. Evaluate
+  runtime convergence only with measured packaging and compatibility evidence;
+  do not replace working engines merely to reduce the runtime count.
+- Create `ARCHITECTURE.md` describing process/WebView/thread ownership, session
+  transitions, contracts, queues, cancellation, model storage, configuration,
+  overlays, and platform adapters. Create `BUILDING.md` and `CONTRIBUTING.md`
+  around the actual local-first workflow, Windows prerequisites, tests, vendored
+  dependency policy, and direct-to-main policy while it remains active.
+- Update the README, spec, build plan, smoke procedures, and troubleshooting
+  guidance to match the implemented architecture rather than retaining historical
+  implementation claims.
+- Run a focused Windows lifecycle soak covering cancellation during large-model
+  load, repeated start/stop, deliberately stalled translation, application exit
+  and restart, default/pinned device changes, sleep/resume, display movement,
+  corrupt/missing model recovery, offline launch, and bounded memory. Passing
+  actions need no screenshots; record only failures and material timing/resource
+  measurements.
+
+### Migration and rollback
+
+Implement the Windows backend adapter around existing capture functions before
+changing application selection. Resolve both legacy PID selections and new stable
+identities during one compatibility window, then migrate the UI and remove PID
+from the shared contract. The resource coordinator initially observes existing
+loads before it enforces ownership, allowing measurements to expose false
+assumptions without interrupting sessions.
+
+### Acceptance boundary
+
+- Device and application capture still pass their existing Windows smokes through
+  the backend contract with no direct Windows call in desktop orchestration.
+- A selected application can exit and ordinarily restart under a new PID while
+  the same user-facing session waits and resumes; ambiguous matches remain safe.
+- Repeated switching and stopping leave no orphan worker, loaded inactive model,
+  stale overlay, or unbounded queue/memory growth.
+- The Windows soak completes without a crash or unrecoverable state, and its log
+  contains session/revision/timing/resource evidence without audio, transcript,
+  OCR text, screenshots, or frames.
+- `ARCHITECTURE.md`, `BUILDING.md`, and `CONTRIBUTING.md` exist, agree with the
+  code and spec, and make adding the later PipeWire backend understandable.
+- Local formatting, linting, unit/controller tests, frontend build, Windows
+  cross-checks, and the native Windows build/link pass through the documented
+  scripts without adding per-push hosted CI.
+
+## Structural program release and completion rules
+
+### Planned published integration points
+
+These are coherent commits or small commit groups, not approval pauses. Continue
+from one to the next while the milestone direction remains clear.
+
+| Milestone | Published integration point | Repository remains understandable because |
+| --- | --- | --- |
+| S1 | Runtime contracts, generated bindings, structured errors, and supervisor tests | The new spine is exercised independently while production still uses its existing adapters |
+| S1 | Complete audio-session cutover | Device/application captions use one supervisor and the old audio state owner is removed |
+| S1 | Complete visual-session and bootstrap-revision cutover | Both user-visible modes share lifecycle semantics and stale startup state is rejected |
+| S2 | Session-scoped scheduler over the existing translation cache | Cancellation, priorities, and deadlines improve immediately without coupling the first change to storage migration |
+| S2 | Native translation-store cutover | Every model kind has one inventory and legacy cache data remains deliberately recoverable during transition |
+| S2 | Caption and visual presentation-protocol cutover | Each overlay has one versioned authority and old event routes are removed in the same integration |
+| S3 | Application store plus separate native/preview bridges | Feature code stops depending on globals and copied production fixtures before the DOM shell moves |
+| S3 | Persistent full workspace and configuration migration | The new page structure and durable settings land together with interaction and migration tests |
+| S4 | Capture-backend and stable-application-identity cutover | Windows behavior remains complete behind the interface the later PipeWire adapter will implement |
+| S4 | Resource enforcement, documentation, and Windows soak | The implemented architecture is documented and the full structural program receives native acceptance |
+
+- This documentation-only planning commit does not change the application
+  version. Each later user-visible integrated correction follows
+  `docs/VERSIONING.md`: normally a patch increment, with a minor increment only
+  when the integration adds a new compatibility or product promise.
+- Each published integration updates the changelog, README version statement,
+  Cargo/package versions where required, and passes `scripts/check-version.mjs`.
+- S1–S4 are complete only at their integrated acceptance boundaries. Individual
+  helper types, file moves, test harness setup, or design documents are work
+  inside a milestone, not milestone completions.
+- Milestones may contain several coherent commits and pushes. Use contract-first,
+  vertical cutovers rather than one giant final commit, and do not leave an old
+  and new authority active across a published boundary.
+- Resume broad Milestone 3, 6, and 7 feature expansion after S2. Complete S3 and
+  S4 before claiming the Windows MVP release boundary in Milestone 4.
+- Deliberately deferred from this program: simultaneous audio and visual modes,
+  new model families, DXGI implementation, the Ubuntu backend itself, GPU
+  acceleration, cloud services, and a framework rewrite without evidence.
 
 ### Windows smoke checkpoint — 2026-08-10
 

@@ -221,6 +221,45 @@ The overall architecture should resemble:
 
 Everything downstream from raw audio capture should ideally use shared code.
 
+## 5.1 Runtime and application integrity
+
+The application layer must have one explicit, testable account of what work is
+starting, active, waiting, stopping, or failed. Tauri commands and WebView
+controllers should adapt that state for the operating system and interface; they
+should not each maintain competing session truth.
+
+Runtime requirements:
+
+- Audio captions and visual translation use supervised sessions with stable
+  session identifiers, monotonic revisions, cancellable startup, bounded
+  shutdown, and terminal worker completion reporting. They remain mutually
+  exclusive until a later resource gate explicitly permits simultaneous use.
+- Live work such as transcription, OCR, and translation has bounded queues,
+  deadlines or cancellation, and an explicit stale-work policy. Stopping a
+  session must invalidate every result that belongs to it.
+- The control window, native runtime, and overlays exchange generated or
+  schema-derived contracts. User-facing failures retain a stable error code,
+  recoverability, and a suggested action instead of being flattened into
+  unclassified strings.
+- Each overlay has one versioned presentation stream. Original text may render
+  before translation, but later translation is an update to the same identified
+  caption or visual region rather than a second competing source of display
+  truth.
+- One native model store owns manifests, explicit installation, verification,
+  removal, and disk inventory for speech, OCR, and translation artifacts.
+  Inference runtimes load only the active verified model and are isolated from
+  catalog and download work so a slow inference cannot block model management.
+- Production settings use one locally stored, versioned schema with validation
+  and migrations. Individual WebViews may cache transient view state, but must
+  not become independent owners of durable application configuration.
+- The full desktop interface uses persistent workspace pages backed by shared
+  application state. Compact mode may use contained dialogs, but full mode must
+  not simulate navigation by repeatedly rebuilding one modal surface.
+- Session coordination, scheduling, revision handling, and configuration
+  migration must be testable without native capture hardware or a running Tauri
+  WebView. Manual Windows checks remain necessary for real WASAPI, capture,
+  overlay, and hardware-inference behavior.
+
 ---
 
 # 6. Audio capture
