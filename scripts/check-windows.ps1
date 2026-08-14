@@ -19,6 +19,7 @@ try {
         --all-targets
     cargo test --locked -p prollyglot-desktop --lib
     cargo run --locked -p prollyglot-application-runtime --bin export-runtime-bindings -- --check
+    pnpm --dir apps/desktop test
     pnpm --dir apps/desktop build
     # This must perform a real MSVC link. `cargo check` and Clippy did not catch
     # collisions between the native speech and OCR inference runtimes.

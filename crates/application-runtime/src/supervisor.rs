@@ -248,6 +248,27 @@ impl SessionSupervisor {
         Ok(self.publish(next))
     }
 
+    pub fn update_source(
+        &mut self,
+        session_id: SessionId,
+        source: crate::SessionSource,
+    ) -> Result<RuntimeSnapshot, ApplicationError> {
+        self.require_session(session_id)?;
+        if matches!(
+            self.snapshot.lifecycle,
+            SessionLifecycle::Stopping | SessionLifecycle::Failed | SessionLifecycle::Stopped
+        ) {
+            return Err(ApplicationError::invalid_transition(
+                session_id,
+                self.snapshot.lifecycle,
+                "update the session source",
+            ));
+        }
+        let mut next = self.snapshot.clone();
+        next.source = Some(source);
+        Ok(self.publish(next))
+    }
+
     pub fn mark_running(
         &mut self,
         session_id: SessionId,
@@ -365,6 +386,25 @@ impl SessionSupervisor {
             already_stopping: false,
             snapshot,
         })
+    }
+
+    pub fn request_stop_for_mode(
+        &mut self,
+        expected_mode: crate::SessionMode,
+    ) -> Result<StopPermit, ApplicationError> {
+        let Some(active) = self.active.as_ref() else {
+            return Err(ApplicationError::no_active_session());
+        };
+        if self.snapshot.mode != Some(expected_mode) {
+            return Err(ApplicationError::new(
+                ApplicationErrorCode::SessionConflict,
+                "A different Prollyglot session owns the runtime.",
+                ErrorRecoverability::UserActionRequired,
+                RecoveryAction::StopAndRetry,
+            )
+            .for_session(active.id));
+        }
+        self.request_stop(Some(active.id))
     }
 
     pub fn register_worker(
@@ -672,6 +712,25 @@ mod tests {
     }
 
     #[test]
+    fn a_resolved_source_updates_identity_without_changing_lifecycle() {
+        let mut supervisor = SessionSupervisor::new();
+        let started = supervisor.start(visual_request()).expect("start visual");
+        let resolved = SessionSource::new(
+            "display:primary",
+            SessionSourceKind::Display,
+            "Display 1 · Primary",
+        );
+
+        let updated = supervisor
+            .update_source(started.session_id, resolved.clone())
+            .expect("update source");
+
+        assert_eq!(updated.lifecycle, SessionLifecycle::Starting);
+        assert_eq!(updated.source, Some(resolved));
+        assert_eq!(updated.revision, started.snapshot.revision + 1);
+    }
+
+    #[test]
     fn stop_during_start_prevents_a_late_running_transition() {
         let mut supervisor = SessionSupervisor::new();
         let started = supervisor.start(audio_request()).expect("start audio");
@@ -685,6 +744,20 @@ mod tests {
 
         assert_eq!(error.code, ApplicationErrorCode::StartupCancelled);
         assert_eq!(supervisor.snapshot().lifecycle, SessionLifecycle::Stopping);
+    }
+
+    #[test]
+    fn a_mode_specific_stop_cannot_cancel_the_other_mode() {
+        let mut supervisor = SessionSupervisor::new();
+        let started = supervisor.start(audio_request()).expect("start audio");
+
+        let error = supervisor
+            .request_stop_for_mode(crate::SessionMode::VisualTranslation)
+            .expect_err("visual stop must not cancel audio");
+
+        assert_eq!(error.code, ApplicationErrorCode::SessionConflict);
+        assert!(!started.cancellation.is_cancelled());
+        assert_eq!(supervisor.snapshot().lifecycle, SessionLifecycle::Starting);
     }
 
     #[test]
@@ -735,6 +808,44 @@ mod tests {
             Some(ApplicationErrorCode::WorkerExited)
         );
         assert!(started.cancellation.is_cancelled());
+    }
+
+    #[test]
+    fn cleanup_after_failure_allows_a_new_session_without_erasing_the_failure_revision() {
+        let mut supervisor = SessionSupervisor::new();
+        let started = supervisor.start(audio_request()).expect("start audio");
+        supervisor
+            .mark_running(started.session_id)
+            .expect("mark running");
+        let reporter = supervisor
+            .register_worker(
+                started.session_id,
+                WorkerRole::Capture,
+                WorkerLifetime::Session,
+            )
+            .expect("register capture");
+        reporter.finish(WorkerOutcome::Panicked);
+        let failed = supervisor
+            .drain_worker_completions()
+            .pop()
+            .expect("publish failure");
+
+        assert_eq!(failed.lifecycle, SessionLifecycle::Failed);
+        assert!(
+            supervisor
+                .finish_cleanup(started.session_id, Ok(()))
+                .expect("finish failed cleanup")
+                .is_none()
+        );
+        assert!(!supervisor.has_active_session());
+        assert_eq!(supervisor.snapshot().revision, failed.revision);
+
+        let recovered = supervisor
+            .start(visual_request())
+            .expect("start replacement");
+        assert_eq!(recovered.snapshot.revision, failed.revision + 1);
+        assert_eq!(recovered.snapshot.lifecycle, SessionLifecycle::Starting);
+        assert_eq!(recovered.snapshot.session_id, Some(recovered.session_id));
     }
 
     #[test]

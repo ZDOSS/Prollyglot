@@ -36,7 +36,7 @@ Why this direction:
 
 | Milestone | Integrated outcome | Status |
 | --- | --- | --- |
-| S. Structural integrity program | Replace patched orchestration with supervised sessions, bounded translation and presentation work, generated contracts, maintainable desktop pages, unified local state, and portable capture boundaries | In progress; S1 runtime foundation and production audio cutover integrated, visual/bootstrap cutover next |
+| S. Structural integrity program | Replace patched orchestration with supervised sessions, bounded translation and presentation work, generated contracts, maintainable desktop pages, unified local state, and portable capture boundaries | In progress; S1 complete, S2 bounded translation/model storage/presentation next |
 | 1. Windows capture foundation | A real Windows desktop shell can enumerate and capture either a selected output device or selected application | Selected-device Windows smoke passed; application and lifecycle validation remain |
 | 2. Live English captions | Captured audio becomes stable partial and final English captions locally | Device-to-caption and corrected UI/context re-smokes passed; accented/conversational model evidence and application/lifecycle validation remain |
 | 3. Minimal customizable Windows app | The complete daily-use interface, overlay customization, transcript view, and controls work together | Pending |
@@ -169,19 +169,25 @@ implementations.
 
 ### Progress — 2026-08-14
 
-The first S1 integration point is present as the Tauri-free
-`prollyglot-application-runtime` crate. It owns opaque session identity,
-monotonic snapshots, mutually exclusive audio/visual transitions, cancellation
-allocated before startup work, idempotent Stop requests, supervised worker
-completion, and structured recovery errors. Deterministic Rust-derived
-TypeScript contracts are checked by both local scripts.
+S1 is complete in pre-release 0.1.4. The Tauri-free
+`prollyglot-application-runtime` owns opaque session identity, monotonic
+snapshots, mutually exclusive audio/visual transitions, cancellation allocated
+before startup work, idempotent Stop requests, supervised worker completion,
+bounded cleanup, and structured recovery errors.
 
-The production audio path now delegates lifecycle authority to that supervisor.
-Model preparation is invalidated by Stop, runtime resources clean up once in the
-background, capture and transcription worker outcomes are supervised, and the
-legacy `CaptureStatus` is only a compatibility projection. The visual path still
-uses its previous state owner, and the frontend still needs the revision-aware
-bootstrap cutover; S1 is not yet complete.
+Both production audio and visual paths now delegate lifecycle authority to that
+supervisor. Model preparation is invalidated by Stop; capture, transcription,
+OCR, and capture-event worker outcomes reach terminal state; source loss enters
+an explicit waiting state; and legacy `CaptureStatus`/`VisualStatus` messages are
+compatibility projections only. The frontend registers its runtime listener
+before fetching the versioned bootstrap snapshot, applies only newer revisions,
+and rejects visual results from an older session or invalidated revision epoch.
+
+Rust-derived TypeScript contracts and centralized names cover all
+session-facing commands, selections, statuses, visual-text events, and errors.
+Round-trip Rust tests plus browser-level revision/session tests run from both
+normal check scripts. Native Windows behavior remains part of the Windows smoke
+gate; the next structural implementation milestone is S2.
 
 ## S2 — Bounded translation, unified model storage, and authoritative overlays
 
@@ -417,6 +423,9 @@ from one to the next while the milestone direction remains clear.
 | S3 | Persistent full workspace and configuration migration | The new page structure and durable settings land together with interaction and migration tests |
 | S4 | Capture-backend and stable-application-identity cutover | Windows behavior remains complete behind the interface the later PipeWire adapter will implement |
 | S4 | Resource enforcement, documentation, and Windows soak | The implemented architecture is documented and the full structural program receives native acceptance |
+
+Published: all three S1 integration points are complete through pre-release
+0.1.4. Continue with the S2 session-scoped translation scheduler.
 
 - This documentation-only planning commit does not change the application
   version. Each later user-visible integrated correction follows

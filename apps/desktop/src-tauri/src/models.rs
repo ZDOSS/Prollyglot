@@ -340,7 +340,7 @@ pub fn remove_speech_model(
 }
 
 fn require_stopped(state: &RuntimeState) -> Result<(), String> {
-    if crate::audio::is_active(state) || crate::visual::is_active(&state.visual) {
+    if crate::audio::is_active(state) || crate::visual::is_active(state) {
         Err("Stop captions and visual translation before changing local speech models.".into())
     } else {
         Ok(())

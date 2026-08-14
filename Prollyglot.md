@@ -260,6 +260,14 @@ Runtime requirements:
   WebView. Manual Windows checks remain necessary for real WASAPI, capture,
   overlay, and hardware-inference behavior.
 
+The current pre-release runtime implements this lifecycle boundary for both
+audio captions and visual translation. Legacy audio/visual status events remain
+temporary interface projections, while the versioned runtime bootstrap and
+monotonic runtime event are authoritative. Session-facing source, status,
+selection, visual-text, and error payloads are generated from Rust contracts;
+the frontend rejects older runtime snapshots and visual results from a stopped,
+waiting, or replaced session.
+
 ---
 
 # 6. Audio capture

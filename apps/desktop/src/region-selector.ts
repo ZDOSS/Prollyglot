@@ -4,13 +4,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
 import { isTauri } from "./bridge";
-import type { PixelRect } from "./types";
-
-interface RegionSelectorRequest {
-  displayId: string;
-  width: number;
-  height: number;
-}
+import { errorMessage } from "./errors";
+import { RUNTIME_COMMANDS, RUNTIME_EVENTS } from "./types";
+import type {
+  CompleteVisualRegionSelectionCommand,
+  PixelRect,
+  VisualRegionSelectorRequest
+} from "./types";
 
 interface Point {
   x: number;
@@ -20,7 +20,7 @@ interface Point {
 declare global {
   interface Window {
     __PROLLYGLOT_REGION_SELECTOR_PREVIEW__?: {
-      show: (request: RegionSelectorRequest) => void;
+      show: (request: VisualRegionSelectorRequest) => void;
       selected?: PixelRect;
     };
   }
@@ -54,7 +54,7 @@ const box = required<HTMLElement>("#region-selection-box");
 const size = required<HTMLElement>("#region-selection-size");
 const cancel = required<HTMLButtonElement>("#region-selection-cancel");
 
-let request: RegionSelectorRequest | undefined;
+let request: VisualRegionSelectorRequest | undefined;
 let origin: Point | undefined;
 let current: Point | undefined;
 let pointerId: number | undefined;
@@ -107,7 +107,7 @@ function renderSelection(): void {
   size.style.top = `${Math.max(12, Math.min(window.innerHeight - 44, rect.y + rect.height + 10))}px`;
 }
 
-function reset(next?: RegionSelectorRequest): void {
+function reset(next?: VisualRegionSelectorRequest): void {
   request = next;
   origin = undefined;
   current = undefined;
@@ -120,9 +120,9 @@ async function cancelSelection(): Promise<void> {
   reset();
   if (!isTauri()) return;
   try {
-    await invoke("cancel_visual_region_selection");
+    await invoke(RUNTIME_COMMANDS.cancelVisualRegionSelection);
   } catch (error) {
-    size.textContent = error instanceof Error ? error.message : String(error);
+    size.textContent = errorMessage(error);
   }
 }
 
@@ -167,17 +167,23 @@ surface.addEventListener("pointerup", async (event) => {
     return;
   }
   try {
-    await invoke("complete_visual_region_selection", {
-      displayId: activeRequest.displayId,
-      region
-    });
+    await invoke(
+      RUNTIME_COMMANDS.completeVisualRegionSelection,
+      {
+        displayId: activeRequest.displayId,
+        region
+      } satisfies CompleteVisualRegionSelectionCommand
+    );
   } catch (error) {
     request = activeRequest;
-    size.textContent = error instanceof Error ? error.message : String(error);
+    size.textContent = errorMessage(error);
   }
 });
 
-function physicalRectForRequest(rect: PixelRect, activeRequest: RegionSelectorRequest): PixelRect {
+function physicalRectForRequest(
+  rect: PixelRect,
+  activeRequest: VisualRegionSelectorRequest
+): PixelRect {
   const scaleX = activeRequest.width / Math.max(1, window.innerWidth);
   const scaleY = activeRequest.height / Math.max(1, window.innerHeight);
   return {
@@ -196,7 +202,10 @@ window.addEventListener("keydown", (event) => {
 });
 
 if (isTauri()) {
-  void listen<RegionSelectorRequest>("visual-region-selector-request", ({ payload }) => reset(payload));
+  void listen<VisualRegionSelectorRequest>(
+    RUNTIME_EVENTS.visualRegionSelectorRequest,
+    ({ payload }) => reset(payload)
+  );
 } else {
   window.__PROLLYGLOT_REGION_SELECTOR_PREVIEW__ = { show: reset };
   reset({ displayId: "preview", width: window.innerWidth, height: window.innerHeight });

@@ -1,5 +1,6 @@
 mod audio;
 mod models;
+mod runtime;
 mod transcription;
 mod visual;
 
@@ -70,6 +71,7 @@ impl Default for OverlaySettings {
 struct RuntimeState {
     control: Mutex<()>,
     supervisor: Arc<Mutex<SessionSupervisor>>,
+    runtime_events: runtime::RuntimeEventPublisher,
     audio: audio::AudioRuntime,
     transcript: Arc<Mutex<TranscriptStore>>,
     model: models::ModelRuntime,
@@ -103,10 +105,6 @@ fn initialize_logging(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Er
     app.manage(LoggingGuard { _worker: worker });
     tracing::info!(version = env!("CARGO_PKG_VERSION"), "Prollyglot started");
     Ok(())
-}
-
-fn audio_session_active(state: &RuntimeState) -> bool {
-    audio::is_active(state)
 }
 
 #[tauri::command]
@@ -370,7 +368,7 @@ pub fn run() {
             audio::start_capture,
             audio::stop_capture,
             audio::capture_status,
-            audio::runtime_bootstrap,
+            runtime::runtime_bootstrap,
             transcript_snapshot,
             clear_transcript,
             models::model_status,

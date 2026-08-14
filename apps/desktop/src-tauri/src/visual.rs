@@ -8,32 +8,42 @@ use std::{
     time::{Duration, Instant},
 };
 
+use crossbeam_channel::RecvTimeoutError;
 use parking_lot::Mutex;
+#[cfg(test)]
+use prollyglot_application_runtime::VisualOverlayRegion;
+use prollyglot_application_runtime::{
+    ApplicationError, ApplicationErrorCode, CancellationToken, ErrorRecoverability, PixelRect,
+    RecoveryAction, RuntimeSnapshot, SessionHealthLevel, SessionId, SessionLifecycle, SessionMode,
+    SessionProgress, SessionSource, SessionSourceKind, StableVisualTextRegion, StartSessionRequest,
+    VisualCaptureCapabilities, VisualCaptureGeometry, VisualCaptureSelection, VisualDetectionMode,
+    VisualOverlayOutput, VisualRect, VisualRegionSelected, VisualRegionSelectorRequest,
+    VisualSource, VisualSourceKind, VisualSourceSnapshot, VisualState, VisualStatus,
+    VisualTextClear, VisualTextUpdate, WorkerLifetime, WorkerOutcome, WorkerReporter, WorkerRole,
+};
 use prollyglot_model_manager::{
     DEFAULT_VISUAL_OCR_MODEL_ID, DownloadProgress, ModelInstallState, ModelManager, ModelManifest,
     visual_ocr_manifest, visual_ocr_manifest_by_id,
 };
 use prollyglot_visual_ocr_rapid::{RapidOcrCancellation, RapidOcrEngine, RecognitionProfile};
 use prollyglot_visual_pipeline::{
-    FrameGate, FrameGateConfig, OcrEngine, OcrError, OcrObservation, PixelRect, StabilizerUpdate,
+    FrameGate, FrameGateConfig, OcrEngine, OcrError, OcrObservation, StabilizerUpdate,
     TextStabilizer, TextStabilizerConfig, VisualFrame, VisualPipeline, VisualPipelineStats,
-    VisualRect,
 };
 use prollyglot_visual_windows::{
-    PickedVisualSource, StartedVisualCapture, VisualCaptureCapabilities, VisualCaptureEvent,
-    VisualCaptureSelection, VisualSourceSnapshot,
+    PickedVisualSource, StartedVisualCapture, VisualCaptureEvent,
+    VisualCaptureSelection as BackendVisualCaptureSelection,
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, State};
 
 use crate::RuntimeState;
 
 const VISUAL_MODEL_STATUS_EVENT: &str = "visual-model-status";
-const VISUAL_STATUS_EVENT: &str = "visual-status";
-const VISUAL_TEXT_EVENT: &str = "visual-text-update";
-const VISUAL_CLEAR_EVENT: &str = "visual-text-clear";
 const VISUAL_STATUS_INTERVAL: Duration = Duration::from_millis(500);
 const MAX_VISUAL_RESULT_AGE_MICROS: u64 = 3_000_000;
+const SUPERVISOR_POLL_INTERVAL: Duration = Duration::from_millis(25);
+const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -95,110 +105,20 @@ impl Default for VisualModelCatalogStatus {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub enum VisualState {
-    Starting,
-    Capturing,
-    Waiting,
-    Stopping,
-    #[default]
-    Stopped,
-    Failed,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum VisualDetectionMode {
-    #[default]
-    Focused,
-    AllText,
-}
-
-#[derive(Clone, Debug, Default, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VisualStatus {
-    pub active: bool,
-    pub state: VisualState,
-    pub source_label: Option<String>,
-    pub frames_received: u64,
-    pub frames_analyzed: u64,
-    pub frames_unchanged: u64,
-    pub replaced_frames: u64,
-    pub visible_regions: u64,
-    pub overlay_regions: u64,
-    pub message: Option<String>,
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct VisualTextUpdate {
-    source: PickedVisualSource,
-    #[serde(flatten)]
-    update: StabilizerUpdate,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VisualOverlayRegion {
-    track_id: u64,
-    text_revision: u64,
-    original: String,
-    translation: Option<String>,
-    translation_pending: bool,
-    #[serde(default)]
-    retained: bool,
-    bounds: VisualRect,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VisualOverlayOutput {
-    source_width: u32,
-    source_height: u32,
-    source_language: String,
-    target_language: String,
-    scanning: bool,
-    regions: Vec<VisualOverlayRegion>,
-}
-
-impl Default for VisualOverlayOutput {
-    fn default() -> Self {
-        Self {
-            source_width: 1,
-            source_height: 1,
-            source_language: String::new(),
-            target_language: String::new(),
-            scanning: false,
-            regions: Vec::new(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VisualRegionSelectorRequest {
-    display_id: String,
-    width: u32,
-    height: u32,
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct VisualRegionSelected {
-    display_id: String,
-    region: PixelRect,
-}
-
-struct ActiveVisualSession {
+struct ActiveVisualResources {
+    session_id: SessionId,
     capture: StartedVisualCapture,
     capture_events: Option<JoinHandle<()>>,
     processor: Option<JoinHandle<()>>,
     ocr_cancellation: RapidOcrCancellation,
 }
 
-impl ActiveVisualSession {
-    fn stop(&mut self) -> Result<(), String> {
+impl ActiveVisualResources {
+    fn cancel(&self) {
+        self.ocr_cancellation.cancel();
+    }
+
+    fn stop(mut self) -> Result<(), ApplicationError> {
         self.ocr_cancellation.cancel();
         let capture_error = self.capture.stop().err().map(|error| error.to_string());
         let event_error = self
@@ -224,7 +144,15 @@ impl ActiveVisualSession {
         capture_error
             .or(event_error)
             .or(processor_error)
-            .map_or(Ok(()), Err)
+            .map_or(Ok(()), |message| {
+                Err(application_error(
+                    ApplicationErrorCode::CaptureFailed,
+                    message,
+                    ErrorRecoverability::Retryable,
+                    RecoveryAction::StopAndRetry,
+                    Some(self.session_id),
+                ))
+            })
     }
 }
 
@@ -244,13 +172,60 @@ impl OcrEngine for EchoFilteringEngine {
     }
 }
 
+struct VisualProcessorWorker {
+    app: AppHandle,
+    supervisor: Arc<Mutex<prollyglot_application_runtime::SessionSupervisor>>,
+    status: SharedVisualStatus,
+    source: Arc<Mutex<PickedVisualSource>>,
+    session_id: SessionId,
+    cancellation: CancellationToken,
+    frames: crossbeam_channel::Receiver<VisualFrame>,
+    engine: EchoFilteringEngine,
+    detection_mode: VisualDetectionMode,
+}
+
+struct VisualCaptureEventWorker {
+    app: AppHandle,
+    supervisor: Arc<Mutex<prollyglot_application_runtime::SessionSupervisor>>,
+    status: SharedVisualStatus,
+    source: Arc<Mutex<PickedVisualSource>>,
+    overlay_output: Arc<Mutex<VisualOverlayOutput>>,
+    session_id: SessionId,
+    cancellation: CancellationToken,
+    events: crossbeam_channel::Receiver<VisualCaptureEvent>,
+}
+
+#[derive(Default)]
+struct PublishedVisualStatus {
+    runtime_revision: u32,
+    session_id: Option<SessionId>,
+    visual: VisualStatus,
+}
+
+impl PublishedVisualStatus {
+    fn apply_snapshot(&mut self, snapshot: &RuntimeSnapshot) -> Option<VisualStatus> {
+        if snapshot.revision <= self.runtime_revision {
+            return None;
+        }
+        let next = projected_visual_status(self, snapshot);
+        self.runtime_revision = snapshot.revision;
+        self.session_id = (snapshot.mode == Some(SessionMode::VisualTranslation))
+            .then_some(snapshot.session_id)
+            .flatten();
+        self.visual = next.clone();
+        Some(next)
+    }
+}
+
+type SharedVisualStatus = Arc<Mutex<PublishedVisualStatus>>;
+
 #[derive(Default)]
 pub struct VisualRuntime {
     catalog: Arc<Mutex<VisualModelCatalogStatus>>,
     installing: Arc<AtomicBool>,
     inspecting: Arc<AtomicBool>,
-    status: Arc<Mutex<VisualStatus>>,
-    session: Mutex<Option<ActiveVisualSession>>,
+    status: SharedVisualStatus,
+    resources: Arc<Mutex<Option<ActiveVisualResources>>>,
     overlay_echoes: Arc<Mutex<Vec<String>>>,
     overlay_output: Arc<Mutex<VisualOverlayOutput>>,
 }
@@ -301,33 +276,52 @@ pub fn initialize(app: &AppHandle, runtime: &VisualRuntime) {
     }
 }
 
-pub fn is_active(runtime: &VisualRuntime) -> bool {
-    runtime.session.lock().is_some()
-        || matches!(
-            runtime.status.lock().state,
-            VisualState::Starting
-                | VisualState::Capturing
-                | VisualState::Waiting
-                | VisualState::Stopping
-        )
+pub fn is_active(state: &RuntimeState) -> bool {
+    let supervisor = state.supervisor.lock();
+    supervisor.has_active_session()
+        && supervisor.snapshot().mode == Some(SessionMode::VisualTranslation)
 }
 
 #[tauri::command]
 pub fn visual_capabilities() -> VisualCaptureCapabilities {
-    prollyglot_visual_windows::capabilities()
+    let capabilities = prollyglot_visual_windows::capabilities();
+    VisualCaptureCapabilities {
+        windows_graphics_capture: capabilities.windows_graphics_capture,
+        system_picker: capabilities.system_picker,
+        desktop_duplication_experiment: capabilities.desktop_duplication_experiment,
+        message: capabilities.message,
+    }
 }
 
 #[tauri::command]
-pub fn visual_source_snapshot() -> Result<VisualSourceSnapshot, String> {
-    prollyglot_visual_windows::source_snapshot().map_err(|error| {
+pub fn visual_source_snapshot() -> Result<VisualSourceSnapshot, ApplicationError> {
+    let snapshot = prollyglot_visual_windows::source_snapshot().map_err(|error| {
         tracing::error!(%error, "could not enumerate visual capture sources");
-        error.to_string()
+        application_error(
+            ApplicationErrorCode::CaptureUnavailable,
+            error.to_string(),
+            ErrorRecoverability::Retryable,
+            RecoveryAction::Retry,
+            None,
+        )
+    })?;
+    Ok(VisualSourceSnapshot {
+        windows: snapshot
+            .windows
+            .into_iter()
+            .map(visual_source_contract)
+            .collect(),
+        displays: snapshot
+            .displays
+            .into_iter()
+            .map(visual_source_contract)
+            .collect(),
     })
 }
 
 #[tauri::command]
 pub fn visual_status(state: State<'_, RuntimeState>) -> VisualStatus {
-    state.visual.status.lock().clone()
+    state.visual.status.lock().visual.clone()
 }
 
 #[tauri::command]
@@ -340,8 +334,20 @@ pub fn update_visual_overlay_output(
     app: AppHandle,
     state: State<'_, RuntimeState>,
     output: VisualOverlayOutput,
-) -> Result<(), String> {
-    validate_visual_overlay_output(&output)?;
+) -> Result<(), ApplicationError> {
+    let runtime_snapshot = state.supervisor.lock().snapshot();
+    let session_id = (runtime_snapshot.mode == Some(SessionMode::VisualTranslation))
+        .then_some(runtime_snapshot.session_id)
+        .flatten();
+    validate_visual_overlay_output(&output).map_err(|message| {
+        application_error(
+            ApplicationErrorCode::ConfigurationInvalid,
+            message,
+            ErrorRecoverability::UserActionRequired,
+            RecoveryAction::OpenSettings,
+            session_id,
+        )
+    })?;
     let region_count = output.regions.len() as u64;
     let echoes = output
         .regions
@@ -362,20 +368,25 @@ pub fn update_visual_overlay_output(
         *current = output.clone();
         changed
     };
-    let overlay = app
-        .get_webview_window("visual-overlay")
-        .ok_or("Visual translation overlay is unavailable.")?;
+    let overlay = app.get_webview_window("visual-overlay").ok_or_else(|| {
+        window_operation_error("Visual translation overlay is unavailable.", session_id)
+    })?;
     overlay
         .emit("visual-overlay-output", &output)
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| window_operation_error(error.to_string(), session_id))?;
 
-    let active = matches!(state.visual.status.lock().state, VisualState::Capturing);
-    if active {
+    let snapshot = state.supervisor.lock().snapshot();
+    if snapshot.mode == Some(SessionMode::VisualTranslation)
+        && snapshot.lifecycle == SessionLifecycle::Running
+        && let Some(session_id) = snapshot.session_id
+    {
         overlay
             .set_always_on_top(true)
-            .map_err(|error| error.to_string())?;
-        overlay.show().map_err(|error| error.to_string())?;
-        publish_overlay_region_count(&app, &state.visual.status, region_count);
+            .map_err(|error| window_operation_error(error.to_string(), Some(session_id)))?;
+        overlay
+            .show()
+            .map_err(|error| window_operation_error(error.to_string(), Some(session_id)))?;
+        publish_overlay_region_count(&app, &state.visual.status, session_id, region_count);
     }
     if changed {
         tracing::info!(
@@ -391,30 +402,50 @@ pub fn update_visual_overlay_output(
 pub fn show_visual_region_selector(
     app: AppHandle,
     display_id: String,
-) -> Result<VisualRegionSelectorRequest, String> {
+) -> Result<VisualRegionSelectorRequest, ApplicationError> {
     let display = prollyglot_visual_windows::source_snapshot()
-        .map_err(|error| error.to_string())?
+        .map_err(|error| {
+            application_error(
+                ApplicationErrorCode::CaptureUnavailable,
+                error.to_string(),
+                ErrorRecoverability::Retryable,
+                RecoveryAction::Retry,
+                None,
+            )
+        })?
         .displays
         .into_iter()
         .find(|display| display.id == display_id)
-        .ok_or("The selected display is no longer available.")?;
-    let selector = app
-        .get_webview_window("region-selector")
-        .ok_or("The visual region selector is unavailable.")?;
+        .ok_or_else(|| {
+            application_error(
+                ApplicationErrorCode::CaptureUnavailable,
+                "The selected display is no longer available.",
+                ErrorRecoverability::UserActionRequired,
+                RecoveryAction::ChooseAnotherSource,
+                None,
+            )
+        })?;
+    let selector = app.get_webview_window("region-selector").ok_or_else(|| {
+        window_operation_error("The visual region selector is unavailable.", None)
+    })?;
     selector
         .set_ignore_cursor_events(false)
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| window_operation_error(error.to_string(), None))?;
     selector
         .set_focusable(true)
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| window_operation_error(error.to_string(), None))?;
     selector
         .set_position(PhysicalPosition::new(display.x, display.y))
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| window_operation_error(error.to_string(), None))?;
     selector
         .set_size(PhysicalSize::new(display.width, display.height))
-        .map_err(|error| error.to_string())?;
-    selector.show().map_err(|error| error.to_string())?;
-    selector.set_focus().map_err(|error| error.to_string())?;
+        .map_err(|error| window_operation_error(error.to_string(), None))?;
+    selector
+        .show()
+        .map_err(|error| window_operation_error(error.to_string(), None))?;
+    selector
+        .set_focus()
+        .map_err(|error| window_operation_error(error.to_string(), None))?;
     Ok(VisualRegionSelectorRequest {
         display_id: display.id,
         width: display.width,
@@ -427,33 +458,62 @@ pub fn complete_visual_region_selection(
     app: AppHandle,
     display_id: String,
     region: PixelRect,
-) -> Result<(), String> {
+) -> Result<(), ApplicationError> {
     let display = prollyglot_visual_windows::source_snapshot()
-        .map_err(|error| error.to_string())?
+        .map_err(|error| {
+            application_error(
+                ApplicationErrorCode::CaptureUnavailable,
+                error.to_string(),
+                ErrorRecoverability::Retryable,
+                RecoveryAction::Retry,
+                None,
+            )
+        })?
         .displays
         .into_iter()
         .find(|display| display.id == display_id)
-        .ok_or("The selected display is no longer available.")?;
+        .ok_or_else(|| {
+            application_error(
+                ApplicationErrorCode::CaptureUnavailable,
+                "The selected display is no longer available.",
+                ErrorRecoverability::UserActionRequired,
+                RecoveryAction::ChooseAnotherSource,
+                None,
+            )
+        })?;
     if !region.fits_within(display.width, display.height) {
-        return Err("The selected region is outside the display.".into());
+        return Err(application_error(
+            ApplicationErrorCode::ConfigurationInvalid,
+            "The selected region is outside the display.",
+            ErrorRecoverability::UserActionRequired,
+            RecoveryAction::ChooseAnotherSource,
+            None,
+        ));
     }
     if let Some(selector) = app.get_webview_window("region-selector") {
-        selector.hide().map_err(|error| error.to_string())?;
+        selector
+            .hide()
+            .map_err(|error| window_operation_error(error.to_string(), None))?;
     }
     app.emit(
-        "visual-region-selected",
+        prollyglot_application_runtime::ipc::VISUAL_REGION_SELECTED_EVENT,
         VisualRegionSelected { display_id, region },
     )
-    .map_err(|error| error.to_string())
+    .map_err(|error| window_operation_error(error.to_string(), None))
 }
 
 #[tauri::command]
-pub fn cancel_visual_region_selection(app: AppHandle) -> Result<(), String> {
+pub fn cancel_visual_region_selection(app: AppHandle) -> Result<(), ApplicationError> {
     if let Some(selector) = app.get_webview_window("region-selector") {
-        selector.hide().map_err(|error| error.to_string())?;
+        selector
+            .hide()
+            .map_err(|error| window_operation_error(error.to_string(), None))?;
     }
-    app.emit("visual-region-selection-cancelled", ())
-        .map_err(|error| error.to_string())
+    app.emit(
+        prollyglot_application_runtime::ipc::VISUAL_REGION_SELECTION_CANCELLED_EVENT,
+        (),
+    )
+    .map_err(|error| window_operation_error(error.to_string(), None))
 }
 
 #[tauri::command]
@@ -585,26 +645,71 @@ pub async fn start_visual_translation(
     source_language: String,
     target_language: String,
     detection_mode: Option<VisualDetectionMode>,
-) -> Result<(), String> {
-    validate_language_pair(&source_language, &target_language)?;
+) -> Result<(), ApplicationError> {
+    validate_language_pair(&source_language, &target_language).map_err(|message| {
+        application_error(
+            ApplicationErrorCode::ConfigurationInvalid,
+            message,
+            ErrorRecoverability::UserActionRequired,
+            RecoveryAction::OpenSettings,
+            None,
+        )
+    })?;
     let detection_mode = detection_mode.unwrap_or_default();
-    {
+    let unresolved_source = visual_session_source(&selection);
+    let started = {
         let _control = state.control.lock();
-        if super::audio_session_active(&state) {
-            return Err("Stop audio captions before starting visual translation.".into());
-        }
-        if is_active(&state.visual) {
-            return Err("A visual translation session is already starting or running.".into());
-        }
-        publish_status(
+        state.supervisor.lock().start(StartSessionRequest {
+            mode: SessionMode::VisualTranslation,
+            source: unresolved_source.clone(),
+        })?
+    };
+    publish_visual_runtime(&app, &state.visual.status, started.snapshot.clone());
+    spawn_session_monitor(
+        app.clone(),
+        Arc::clone(&state.supervisor),
+        Arc::clone(&state.visual.resources),
+        Arc::clone(&state.visual.status),
+        Arc::clone(&state.visual.overlay_output),
+        Arc::clone(&state.visual.overlay_echoes),
+        started.session_id,
+    )
+    .inspect_err(|error| {
+        fail_and_publish(
             &app,
+            &state.supervisor,
             &state.visual.status,
-            VisualStatus {
-                state: VisualState::Starting,
-                message: Some("Loading local visual text recognition…".into()),
-                ..VisualStatus::default()
-            },
+            started.session_id,
+            error.clone(),
         );
+        let _ = state
+            .supervisor
+            .lock()
+            .finish_cleanup(started.session_id, Ok(()));
+    })?;
+
+    let mut startup_reporter = Some(state.supervisor.lock().register_worker(
+        started.session_id,
+        WorkerRole::ModelPreparation,
+        WorkerLifetime::Startup,
+    )?);
+    tracing::info!(
+        ?selection,
+        %source_language,
+        %target_language,
+        ?detection_mode,
+        session_id = %started.session_id,
+        "starting visual translation session"
+    );
+    if let Ok(snapshot) = state.supervisor.lock().update_start_progress(
+        started.session_id,
+        SessionProgress::PreparingModel,
+        Some("Loading local visual text recognition…".into()),
+    ) {
+        publish_visual_runtime(&app, &state.visual.status, snapshot);
+    }
+
+    {
         state.visual.overlay_echoes.lock().clear();
         *state.visual.overlay_output.lock() = VisualOverlayOutput {
             source_language: source_language.clone(),
@@ -614,17 +719,27 @@ pub async fn start_visual_translation(
         };
     }
 
-    let model_directory =
-        installed_model_directory(&app, &state.visual).inspect_err(|message| {
-            publish_failure(&app, &state.visual.status, message.clone());
-        })?;
+    let model_directory = match installed_model_directory(&app, &state.visual) {
+        Ok(directory) => directory,
+        Err(message) => {
+            let error = application_error(
+                ApplicationErrorCode::ModelUnavailable,
+                message,
+                ErrorRecoverability::UserActionRequired,
+                RecoveryAction::InstallModel,
+                Some(started.session_id),
+            );
+            finish_reporter(&mut startup_reporter, WorkerOutcome::Failed(error.clone()));
+            return Err(error);
+        }
+    };
     let source_language_for_worker = source_language.clone();
     let recognition_profile = match detection_mode {
         VisualDetectionMode::Focused => RecognitionProfile::Focused,
         VisualDetectionMode::AllText => RecognitionProfile::AllText,
     };
     let load_started = Instant::now();
-    let engine = tauri::async_runtime::spawn_blocking(move || {
+    let engine = match tauri::async_runtime::spawn_blocking(move || {
         RapidOcrEngine::load_with_profile(
             model_directory,
             source_language_for_worker,
@@ -632,16 +747,31 @@ pub async fn start_visual_translation(
         )
     })
     .await
-    .map_err(|error| {
-        let message = format!("Could not join the visual model-loading worker: {error}");
-        publish_failure(&app, &state.visual.status, message.clone());
-        message
-    })?
-    .map_err(|error| {
-        let message = error.to_string();
-        publish_failure(&app, &state.visual.status, message.clone());
-        message
-    })?;
+    {
+        Ok(Ok(engine)) => engine,
+        Ok(Err(error)) => {
+            let error = application_error(
+                ApplicationErrorCode::ModelFailed,
+                error.to_string(),
+                ErrorRecoverability::Retryable,
+                RecoveryAction::InstallModel,
+                Some(started.session_id),
+            );
+            finish_reporter(&mut startup_reporter, WorkerOutcome::Failed(error.clone()));
+            return Err(error);
+        }
+        Err(join_error) => {
+            let error = application_error(
+                ApplicationErrorCode::WorkerPanicked,
+                format!("Could not join the visual model-loading worker: {join_error}"),
+                ErrorRecoverability::Retryable,
+                RecoveryAction::StopAndRetry,
+                Some(started.session_id),
+            );
+            finish_reporter(&mut startup_reporter, WorkerOutcome::Panicked);
+            return Err(error);
+        }
+    };
     tracing::info!(
         elapsed_ms = load_started.elapsed().as_millis(),
         %source_language,
@@ -651,68 +781,298 @@ pub async fn start_visual_translation(
     );
     let ocr_cancellation = engine.cancellation();
 
-    let capture = prollyglot_visual_windows::start_capture(selection.clone()).map_err(|error| {
-        let message = error.to_string();
-        publish_failure(&app, &state.visual.status, message.clone());
-        message
-    })?;
-    let source = Arc::new(Mutex::new(capture.source.clone()));
-    configure_visual_overlay(&app, &capture.source, &state.visual.overlay_output).inspect_err(
-        |message| {
-            publish_start_failure(&app, &state.visual.status, message.clone());
-        },
-    )?;
+    if started.cancellation.is_cancelled() {
+        ocr_cancellation.cancel();
+        finish_reporter(&mut startup_reporter, WorkerOutcome::Cancelled);
+        return Err(startup_cancelled(started.session_id));
+    }
 
-    let processor = spawn_processor(
-        app.clone(),
-        Arc::clone(&state.visual.status),
-        Arc::clone(&source),
-        capture.frames.clone(),
-        EchoFilteringEngine {
-            inner: engine,
-            overlay_echoes: Arc::clone(&state.visual.overlay_echoes),
+    if let Ok(snapshot) = state.supervisor.lock().update_start_progress(
+        started.session_id,
+        SessionProgress::StartingCapture,
+        None,
+    ) {
+        publish_visual_runtime(&app, &state.visual.status, snapshot);
+    }
+
+    let capture =
+        match prollyglot_visual_windows::start_capture(backend_visual_selection(&selection)) {
+            Ok(capture) => capture,
+            Err(error) => {
+                let error = application_error(
+                    ApplicationErrorCode::CaptureFailed,
+                    error.to_string(),
+                    ErrorRecoverability::Retryable,
+                    RecoveryAction::ChooseAnotherSource,
+                    Some(started.session_id),
+                );
+                finish_reporter(&mut startup_reporter, WorkerOutcome::Failed(error.clone()));
+                return Err(error);
+            }
+        };
+    if started.cancellation.is_cancelled() {
+        schedule_cleanup(
+            &app,
+            &state.supervisor,
+            &state.visual.status,
+            &state.visual.overlay_output,
+            &state.visual.overlay_echoes,
+            started.session_id,
+            Some(ActiveVisualResources {
+                session_id: started.session_id,
+                capture,
+                capture_events: None,
+                processor: None,
+                ocr_cancellation,
+            }),
+        );
+        finish_reporter(&mut startup_reporter, WorkerOutcome::Cancelled);
+        return Err(startup_cancelled(started.session_id));
+    }
+    let source = Arc::new(Mutex::new(capture.source.clone()));
+    let resolved_source = SessionSource {
+        label: capture.source.label.clone(),
+        ..unresolved_source
+    };
+    if let Ok(snapshot) = state
+        .supervisor
+        .lock()
+        .update_source(started.session_id, resolved_source)
+    {
+        publish_visual_runtime(&app, &state.visual.status, snapshot);
+    }
+    if let Err(message) =
+        configure_visual_overlay(&app, &capture.source, &state.visual.overlay_output, false)
+    {
+        let error = application_error(
+            ApplicationErrorCode::WindowOperationFailed,
+            message,
+            ErrorRecoverability::Retryable,
+            RecoveryAction::StopAndRetry,
+            Some(started.session_id),
+        );
+        schedule_cleanup(
+            &app,
+            &state.supervisor,
+            &state.visual.status,
+            &state.visual.overlay_output,
+            &state.visual.overlay_echoes,
+            started.session_id,
+            Some(ActiveVisualResources {
+                session_id: started.session_id,
+                capture,
+                capture_events: None,
+                processor: None,
+                ocr_cancellation,
+            }),
+        );
+        finish_reporter(&mut startup_reporter, WorkerOutcome::Failed(error.clone()));
+        return Err(error);
+    }
+
+    let processor_reporter = match state.supervisor.lock().register_worker(
+        started.session_id,
+        WorkerRole::VisualRecognition,
+        WorkerLifetime::Session,
+    ) {
+        Ok(reporter) => reporter,
+        Err(error) => {
+            schedule_cleanup(
+                &app,
+                &state.supervisor,
+                &state.visual.status,
+                &state.visual.overlay_output,
+                &state.visual.overlay_echoes,
+                started.session_id,
+                Some(ActiveVisualResources {
+                    session_id: started.session_id,
+                    capture,
+                    capture_events: None,
+                    processor: None,
+                    ocr_cancellation,
+                }),
+            );
+            finish_reporter(&mut startup_reporter, WorkerOutcome::Failed(error.clone()));
+            return Err(error);
+        }
+    };
+    let processor = match spawn_processor(
+        VisualProcessorWorker {
+            app: app.clone(),
+            supervisor: Arc::clone(&state.supervisor),
+            status: Arc::clone(&state.visual.status),
+            source: Arc::clone(&source),
+            session_id: started.session_id,
+            cancellation: started.cancellation.clone(),
+            frames: capture.frames.clone(),
+            engine: EchoFilteringEngine {
+                inner: engine,
+                overlay_echoes: Arc::clone(&state.visual.overlay_echoes),
+            },
+            detection_mode,
         },
-        detection_mode,
-    )
-    .inspect_err(|message| {
-        publish_start_failure(&app, &state.visual.status, message.clone());
-    })?;
+        processor_reporter,
+    ) {
+        Ok(processor) => processor,
+        Err(error) => {
+            schedule_cleanup(
+                &app,
+                &state.supervisor,
+                &state.visual.status,
+                &state.visual.overlay_output,
+                &state.visual.overlay_echoes,
+                started.session_id,
+                Some(ActiveVisualResources {
+                    session_id: started.session_id,
+                    capture,
+                    capture_events: None,
+                    processor: None,
+                    ocr_cancellation,
+                }),
+            );
+            finish_reporter(&mut startup_reporter, WorkerOutcome::Failed(error.clone()));
+            return Err(error);
+        }
+    };
+    let event_reporter = match state.supervisor.lock().register_worker(
+        started.session_id,
+        WorkerRole::VisualEvents,
+        WorkerLifetime::Session,
+    ) {
+        Ok(reporter) => reporter,
+        Err(error) => {
+            schedule_cleanup(
+                &app,
+                &state.supervisor,
+                &state.visual.status,
+                &state.visual.overlay_output,
+                &state.visual.overlay_echoes,
+                started.session_id,
+                Some(ActiveVisualResources {
+                    session_id: started.session_id,
+                    capture,
+                    capture_events: None,
+                    processor: Some(processor),
+                    ocr_cancellation,
+                }),
+            );
+            finish_reporter(&mut startup_reporter, WorkerOutcome::Failed(error.clone()));
+            return Err(error);
+        }
+    };
     let capture_events = match spawn_capture_events(
-        app.clone(),
-        Arc::clone(&state.visual.status),
-        Arc::clone(&source),
-        Arc::clone(&state.visual.overlay_output),
-        capture.events.clone(),
+        VisualCaptureEventWorker {
+            app: app.clone(),
+            supervisor: Arc::clone(&state.supervisor),
+            status: Arc::clone(&state.visual.status),
+            source: Arc::clone(&source),
+            overlay_output: Arc::clone(&state.visual.overlay_output),
+            session_id: started.session_id,
+            cancellation: started.cancellation.clone(),
+            events: capture.events.clone(),
+        },
+        event_reporter,
     ) {
         Ok(worker) => worker,
         Err(error) => {
-            drop(processor);
-            publish_start_failure(&app, &state.visual.status, error.clone());
+            schedule_cleanup(
+                &app,
+                &state.supervisor,
+                &state.visual.status,
+                &state.visual.overlay_output,
+                &state.visual.overlay_echoes,
+                started.session_id,
+                Some(ActiveVisualResources {
+                    session_id: started.session_id,
+                    capture,
+                    capture_events: None,
+                    processor: Some(processor),
+                    ocr_cancellation,
+                }),
+            );
+            finish_reporter(&mut startup_reporter, WorkerOutcome::Failed(error.clone()));
             return Err(error);
         }
     };
 
-    let source_label = capture.source.label.clone();
-    *state.visual.session.lock() = Some(ActiveVisualSession {
+    let resources = ActiveVisualResources {
+        session_id: started.session_id,
         capture,
         capture_events: Some(capture_events),
         processor: Some(processor),
         ocr_cancellation,
-    });
-    publish_status(
-        &app,
-        &state.visual.status,
-        VisualStatus {
-            active: true,
-            state: VisualState::Capturing,
-            source_label: Some(source_label),
-            overlay_regions: state.visual.overlay_output.lock().regions.len() as u64,
-            message: Some(format!(
-                "Watching the live source, recognizing {source_language} text, and translating to {target_language}."
-            )),
-            ..VisualStatus::default()
-        },
+    };
+    let resources = {
+        let _control = state.control.lock();
+        if started.cancellation.is_cancelled() {
+            Some(resources)
+        } else {
+            let mut slot = state.visual.resources.lock();
+            if slot.is_some() {
+                Some(resources)
+            } else {
+                *slot = Some(resources);
+                None
+            }
+        }
+    };
+    if let Some(resources) = resources {
+        schedule_cleanup(
+            &app,
+            &state.supervisor,
+            &state.visual.status,
+            &state.visual.overlay_output,
+            &state.visual.overlay_echoes,
+            started.session_id,
+            Some(resources),
+        );
+        finish_reporter(&mut startup_reporter, WorkerOutcome::Cancelled);
+        return Err(startup_cancelled(started.session_id));
+    }
+
+    finish_reporter(&mut startup_reporter, WorkerOutcome::Completed);
+    let lifecycle = state.supervisor.lock().snapshot().lifecycle;
+    if lifecycle == SessionLifecycle::Starting {
+        let running = state.supervisor.lock().mark_running(started.session_id)?;
+        publish_visual_runtime(&app, &state.visual.status, running);
+    } else if lifecycle != SessionLifecycle::Waiting {
+        return Err(startup_cancelled(started.session_id));
+    }
+    let overlay_result = {
+        let _control = state.control.lock();
+        if started.cancellation.is_cancelled() {
+            return Err(startup_cancelled(started.session_id));
+        }
+        if state.supervisor.lock().snapshot().lifecycle == SessionLifecycle::Running {
+            configure_visual_overlay(&app, &source.lock(), &state.visual.overlay_output, true)
+        } else {
+            Ok(())
+        }
+    };
+    let message = format!(
+        "Watching the live source, recognizing {source_language} text, and translating to {target_language}."
     );
+    let session_is_running =
+        state.supervisor.lock().snapshot().lifecycle == SessionLifecycle::Running;
+    if session_is_running
+        && let Ok(snapshot) = state.supervisor.lock().update_health(
+            started.session_id,
+            SessionHealthLevel::Healthy,
+            Some(message),
+        )
+    {
+        publish_visual_runtime(&app, &state.visual.status, snapshot);
+    }
+    if let Err(message) = overlay_result {
+        tracing::warn!(%message, "could not show visual translation overlay");
+        if let Ok(snapshot) = state.supervisor.lock().update_health(
+            started.session_id,
+            SessionHealthLevel::Degraded,
+            Some(message),
+        ) {
+            publish_visual_runtime(&app, &state.visual.status, snapshot);
+        }
+    }
     Ok(())
 }
 
@@ -720,325 +1080,425 @@ pub async fn start_visual_translation(
 pub fn stop_visual_translation(
     app: AppHandle,
     state: State<'_, RuntimeState>,
-) -> Result<(), String> {
-    let _control = state.control.lock();
-    let Some(mut session) = state.visual.session.lock().take() else {
-        return Err("No visual translation session is running.".into());
+) -> Result<(), ApplicationError> {
+    let (permit, resources) = {
+        let _control = state.control.lock();
+        let permit = state
+            .supervisor
+            .lock()
+            .request_stop_for_mode(SessionMode::VisualTranslation)?;
+        let resources = take_resources(&state.visual.resources, permit.session_id);
+        if let Some(resources) = resources.as_ref() {
+            resources.cancel();
+        }
+        (permit, resources)
     };
-    let previous = state.visual.status.lock().clone();
-    publish_status(
+    let revision = permit.snapshot.revision;
+    publish_visual_runtime(&app, &state.visual.status, permit.snapshot);
+    clear_visual_output(
         &app,
-        &state.visual.status,
-        VisualStatus {
-            active: true,
-            state: VisualState::Stopping,
-            message: Some("Cancelling recognition and stopping screen capture…".into()),
-            ..previous
-        },
+        &state.visual.overlay_output,
+        &state.visual.overlay_echoes,
+        permit.session_id,
+        revision,
     );
-    let cleared_output = VisualOverlayOutput::default();
-    *state.visual.overlay_output.lock() = cleared_output.clone();
-    if let Some(overlay) = app.get_webview_window("visual-overlay") {
-        let _ = overlay.emit("visual-overlay-output", &cleared_output);
-        let _ = overlay.hide();
+    if !permit.already_stopping || resources.is_some() {
+        schedule_cleanup(
+            &app,
+            &state.supervisor,
+            &state.visual.status,
+            &state.visual.overlay_output,
+            &state.visual.overlay_echoes,
+            permit.session_id,
+            resources,
+        );
     }
-    emit_visual_clear(&app);
-    state.visual.overlay_echoes.lock().clear();
-
-    let app_for_worker = app.clone();
-    let status = Arc::clone(&state.visual.status);
-    thread::Builder::new()
-        .name("visual-stop".into())
-        .spawn(move || {
-            let result = session.stop();
-            finish_visual_stop(&app_for_worker, &status, result);
-        })
-        .map(|_| ())
-        .map_err(|error| {
-            let message = format!("Could not start the visual shutdown worker: {error}");
-            publish_status(
-                &app,
-                &state.visual.status,
-                VisualStatus {
-                    active: false,
-                    state: VisualState::Failed,
-                    message: Some(message.clone()),
-                    ..VisualStatus::default()
-                },
-            );
-            message
-        })
-}
-
-fn finish_visual_stop(
-    app: &AppHandle,
-    status: &Arc<Mutex<VisualStatus>>,
-    result: Result<(), String>,
-) {
-    match result {
-        Ok(()) => {
-            tracing::info!("visual translation session stopped");
-            publish_status(app, status, VisualStatus::default());
-        }
-        Err(message) => {
-            publish_status(
-                app,
-                status,
-                VisualStatus {
-                    active: false,
-                    state: VisualState::Failed,
-                    message: Some(message),
-                    ..VisualStatus::default()
-                },
-            );
-        }
-    }
+    Ok(())
 }
 
 fn spawn_processor(
-    app: AppHandle,
-    status: Arc<Mutex<VisualStatus>>,
-    source: Arc<Mutex<PickedVisualSource>>,
-    frames: crossbeam_channel::Receiver<prollyglot_visual_pipeline::VisualFrame>,
-    engine: EchoFilteringEngine,
-    detection_mode: VisualDetectionMode,
-) -> Result<JoinHandle<()>, String> {
+    worker: VisualProcessorWorker,
+    reporter: WorkerReporter,
+) -> Result<JoinHandle<()>, ApplicationError> {
+    let session_id = worker.session_id;
+    let cancellation = worker.cancellation.clone();
     thread::Builder::new()
         .name("visual-ocr".into())
         .spawn(move || {
-            let stabilizer_config = match detection_mode {
-                VisualDetectionMode::Focused => TextStabilizerConfig {
-                    required_consecutive_frames: 1,
-                    ..TextStabilizerConfig::default()
-                },
-                VisualDetectionMode::AllText => TextStabilizerConfig::default(),
+            let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                run_visual_processor(worker)
+            }));
+            let outcome = match outcome {
+                Ok(Ok(())) if cancellation.is_cancelled() => WorkerOutcome::Cancelled,
+                Ok(Ok(())) => WorkerOutcome::Completed,
+                Ok(Err(error)) => WorkerOutcome::Failed(error),
+                Err(_) => WorkerOutcome::Panicked,
             };
-            let mut pipeline = VisualPipeline::new(
-                FrameGate::new(FrameGateConfig::default()),
-                engine,
-                TextStabilizer::new(stabilizer_config),
-            );
-            let mut last_status_publish = Instant::now()
-                .checked_sub(VISUAL_STATUS_INTERVAL)
-                .unwrap_or_else(Instant::now);
-            let mut last_slow_pass_log = Instant::now()
-                .checked_sub(Duration::from_secs(5))
-                .unwrap_or_else(Instant::now);
-            let mut pending_frame = None;
-            loop {
-                let mut frame = match pending_frame.take() {
-                    Some(frame) => frame,
-                    None => match frames.recv() {
-                        Ok(frame) => frame,
-                        Err(_) => break,
-                    },
-                };
-                while let Ok(newer) = frames.try_recv() {
-                    frame = newer;
-                }
-                let pass_started = Instant::now();
-                let mut outcome = match pipeline.process(&frame) {
-                    Ok(outcome) => outcome,
-                    Err(OcrError::Cancelled) => {
-                        tracing::info!("visual OCR pass cancelled");
-                        break;
-                    }
-                    Err(error) => {
-                        let message = error.to_string();
-                        tracing::error!(%error, "visual OCR inference failed");
-                        publish_failure(&app, &status, message);
-                        break;
-                    }
-                };
-                let pass_elapsed = pass_started.elapsed();
-                let newest_frame = frames.try_recv().ok();
-                let result_age_micros = newest_frame.as_ref().map_or(0, |newest| {
-                    newest
-                        .captured_at_micros
-                        .saturating_sub(frame.captured_at_micros)
-                });
-                let stale_for_changed_source = outcome.update.is_some()
-                    && result_age_micros > MAX_VISUAL_RESULT_AGE_MICROS
-                    && newest_frame.as_ref().is_some_and(|newest| {
-                        pipeline.source_substantially_changed_since_last_analysis(newest)
-                    });
-                if outcome.update.is_some()
-                    && pass_elapsed >= Duration::from_millis(750)
-                    && last_slow_pass_log.elapsed() >= Duration::from_secs(5)
-                {
-                    tracing::warn!(
-                        elapsed_ms = pass_elapsed.as_millis(),
-                        frames_received = outcome.stats.frames_received,
-                        frames_analyzed = outcome.stats.frames_analyzed,
-                        stable_regions = outcome.stats.stable_regions,
-                        "visual OCR pass is slower than the live-media target"
-                    );
-                    last_slow_pass_log = Instant::now();
-                }
-                if stale_for_changed_source || outcome.update.is_some() {
-                    let current_status = status.lock();
-                    if !matches!(
-                        current_status.state,
-                        VisualState::Starting | VisualState::Capturing
-                    ) {
-                        break;
-                    }
-                    if stale_for_changed_source {
-                        pipeline.reset_text_tracks();
-                        outcome.stats.stable_regions = 0;
-                        emit_visual_clear(&app);
-                        tracing::warn!(
-                            result_age_ms = result_age_micros / 1_000,
-                            "discarded stale visual OCR output after the source changed"
-                        );
-                    } else if let Some(update) = outcome.update {
-                        let payload = VisualTextUpdate {
-                            source: source.lock().clone(),
-                            update,
-                        };
-                        if let Err(error) = app.emit_to("main", VISUAL_TEXT_EVENT, payload) {
-                            tracing::warn!(%error, "could not emit visual text update");
+            reporter.finish(outcome);
+        })
+        .map_err(|error| {
+            application_error(
+                ApplicationErrorCode::WorkerExited,
+                format!("Could not start the visual OCR worker: {error}"),
+                ErrorRecoverability::Retryable,
+                RecoveryAction::StopAndRetry,
+                Some(session_id),
+            )
+        })
+}
+
+fn run_visual_processor(worker: VisualProcessorWorker) -> Result<(), ApplicationError> {
+    let VisualProcessorWorker {
+        app,
+        supervisor,
+        status,
+        source,
+        session_id,
+        cancellation,
+        frames,
+        engine,
+        detection_mode,
+    } = worker;
+    let app = &app;
+    let supervisor = &supervisor;
+    let status = &status;
+    let source = &source;
+    let cancellation = &cancellation;
+    let frames = &frames;
+    let stabilizer_config = match detection_mode {
+        VisualDetectionMode::Focused => TextStabilizerConfig {
+            required_consecutive_frames: 1,
+            ..TextStabilizerConfig::default()
+        },
+        VisualDetectionMode::AllText => TextStabilizerConfig::default(),
+    };
+    let mut pipeline = VisualPipeline::new(
+        FrameGate::new(FrameGateConfig::default()),
+        engine,
+        TextStabilizer::new(stabilizer_config),
+    );
+    let mut last_status_publish = Instant::now()
+        .checked_sub(VISUAL_STATUS_INTERVAL)
+        .unwrap_or_else(Instant::now);
+    let mut last_slow_pass_log = Instant::now()
+        .checked_sub(Duration::from_secs(5))
+        .unwrap_or_else(Instant::now);
+    let mut pending_frame = None;
+    loop {
+        if cancellation.is_cancelled() {
+            return Ok(());
+        }
+        let mut frame = match pending_frame.take() {
+            Some(frame) => frame,
+            None => match frames.recv_timeout(Duration::from_millis(50)) {
+                Ok(frame) => frame,
+                Err(RecvTimeoutError::Timeout) => continue,
+                Err(RecvTimeoutError::Disconnected) => {
+                    if !session_is_waiting(supervisor, session_id) {
+                        let message = "The selected visual source is no longer providing frames. Stop visual translation or choose another source.";
+                        if let Some(revision) =
+                            mark_visual_waiting(app, supervisor, status, session_id, message)
+                        {
+                            emit_visual_clear(app, session_id, revision);
+                            hide_visual_overlay(app);
                         }
                     }
+                    thread::sleep(Duration::from_millis(50));
+                    continue;
                 }
-                if last_status_publish.elapsed() >= VISUAL_STATUS_INTERVAL {
-                    publish_pipeline_stats(&app, &status, outcome.stats);
-                    last_status_publish = Instant::now();
-                }
-                pending_frame = newest_frame;
+            },
+        };
+        while let Ok(newer) = frames.try_recv() {
+            frame = newer;
+        }
+        let pass_started = Instant::now();
+        let mut outcome = match pipeline.process(&frame) {
+            Ok(outcome) => outcome,
+            Err(OcrError::Cancelled) if cancellation.is_cancelled() => return Ok(()),
+            Err(error) => {
+                tracing::error!(%error, session_id = %session_id, "visual OCR inference failed");
+                return Err(application_error(
+                    ApplicationErrorCode::ModelFailed,
+                    error.to_string(),
+                    ErrorRecoverability::Retryable,
+                    RecoveryAction::StopAndRetry,
+                    Some(session_id),
+                ));
             }
-        })
-        .map_err(|error| format!("Could not start the visual OCR worker: {error}"))
+        };
+        let pass_elapsed = pass_started.elapsed();
+        let newest_frame = frames.try_recv().ok();
+        let result_age_micros = newest_frame.as_ref().map_or(0, |newest| {
+            newest
+                .captured_at_micros
+                .saturating_sub(frame.captured_at_micros)
+        });
+        let stale_for_changed_source = outcome.update.is_some()
+            && result_age_micros > MAX_VISUAL_RESULT_AGE_MICROS
+            && newest_frame.as_ref().is_some_and(|newest| {
+                pipeline.source_substantially_changed_since_last_analysis(newest)
+            });
+        if outcome.update.is_some()
+            && pass_elapsed >= Duration::from_millis(750)
+            && last_slow_pass_log.elapsed() >= Duration::from_secs(5)
+        {
+            tracing::warn!(
+                elapsed_ms = pass_elapsed.as_millis(),
+                frames_received = outcome.stats.frames_received,
+                frames_analyzed = outcome.stats.frames_analyzed,
+                stable_regions = outcome.stats.stable_regions,
+                session_id = %session_id,
+                "visual OCR pass is slower than the live-media target"
+            );
+            last_slow_pass_log = Instant::now();
+        }
+        let snapshot = supervisor.lock().snapshot();
+        if snapshot.session_id != Some(session_id)
+            || !matches!(
+                snapshot.lifecycle,
+                SessionLifecycle::Starting | SessionLifecycle::Running | SessionLifecycle::Waiting
+            )
+        {
+            return Ok(());
+        }
+        if (stale_for_changed_source || outcome.update.is_some())
+            && snapshot.lifecycle != SessionLifecycle::Waiting
+        {
+            if stale_for_changed_source {
+                pipeline.reset_text_tracks();
+                outcome.stats.stable_regions = 0;
+                emit_visual_clear(app, session_id, snapshot.revision);
+                tracing::warn!(
+                    result_age_ms = result_age_micros / 1_000,
+                    session_id = %session_id,
+                    "discarded stale visual OCR output after the source changed"
+                );
+            } else if let Some(update) = outcome.update {
+                let payload =
+                    visual_text_contract(session_id, snapshot.revision, &source.lock(), update);
+                if let Err(error) = app.emit_to(
+                    "main",
+                    prollyglot_application_runtime::ipc::VISUAL_TEXT_EVENT,
+                    payload,
+                ) {
+                    tracing::warn!(%error, "could not emit visual text update");
+                }
+            }
+        }
+        if last_status_publish.elapsed() >= VISUAL_STATUS_INTERVAL {
+            publish_pipeline_stats(app, status, session_id, outcome.stats);
+            last_status_publish = Instant::now();
+        }
+        pending_frame = newest_frame;
+    }
 }
 
 fn spawn_capture_events(
-    app: AppHandle,
-    status: Arc<Mutex<VisualStatus>>,
-    source: Arc<Mutex<PickedVisualSource>>,
-    overlay_output: Arc<Mutex<VisualOverlayOutput>>,
-    events: crossbeam_channel::Receiver<VisualCaptureEvent>,
-) -> Result<JoinHandle<()>, String> {
+    worker: VisualCaptureEventWorker,
+    reporter: WorkerReporter,
+) -> Result<JoinHandle<()>, ApplicationError> {
+    let session_id = worker.session_id;
     thread::Builder::new()
         .name("visual-capture-events".into())
         .spawn(move || {
-            let mut last_status_publish = Instant::now()
-                .checked_sub(VISUAL_STATUS_INTERVAL)
-                .unwrap_or_else(Instant::now);
-            while let Ok(event) = events.recv() {
-                match event {
-                    VisualCaptureEvent::Started(next_source) => {
-                        let current_status = status.lock();
-                        if !matches!(
-                            current_status.state,
-                            VisualState::Starting | VisualState::Capturing
-                        ) {
-                            break;
-                        }
-                        *source.lock() = next_source.clone();
-                        if let Err(error) =
-                            configure_visual_overlay(&app, &next_source, &overlay_output)
-                        {
-                            tracing::warn!(%error, "could not configure visual overlay");
-                        }
-                    }
-                    VisualCaptureEvent::Frame {
-                        x,
-                        y,
-                        width,
-                        height,
-                        replaced_frames,
-                        ..
-                    } => {
-                        let mut current_status = status.lock();
-                        if !matches!(
-                            current_status.state,
-                            VisualState::Starting | VisualState::Capturing
-                        ) {
-                            break;
-                        }
-                        let changed = {
-                            let mut current = source.lock();
-                            let changed = current.x != x
-                                || current.y != y
-                                || current.width != width
-                                || current.height != height;
-                            current.x = x;
-                            current.y = y;
-                            current.width = width;
-                            current.height = height;
-                            changed
-                        };
-                        if changed {
-                            let next_source = source.lock().clone();
-                            if let Err(error) =
-                                configure_visual_overlay(&app, &next_source, &overlay_output)
-                            {
-                                tracing::warn!(%error, "could not follow visual source geometry");
-                            }
-                        }
-                        if current_status.active
-                            && (changed
-                                || last_status_publish.elapsed() >= VISUAL_STATUS_INTERVAL)
-                        {
-                            current_status.replaced_frames = replaced_frames;
-                            let next = current_status.clone();
-                            drop(current_status);
-                            emit_status(&app, next);
-                            last_status_publish = Instant::now();
-                        }
-                    }
-                    VisualCaptureEvent::SourceClosed => {
-                        let message = "The selected visual source closed. Stop visual translation or choose another source.".to_owned();
-                        tracing::warn!(%message, "visual source closed");
-                        let mut next = status.lock().clone();
-                        next.state = VisualState::Waiting;
-                        next.message = Some(message);
-                        publish_status(&app, &status, next);
-                        if let Some(overlay) = app.get_webview_window("visual-overlay") {
-                            let _ = overlay.hide();
-                        }
-                        break;
-                    }
+            let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                run_visual_capture_events(&worker)
+            }));
+            let outcome = match outcome {
+                Ok(Ok(())) if worker.cancellation.is_cancelled() => WorkerOutcome::Cancelled,
+                Ok(Ok(())) => WorkerOutcome::Completed,
+                Ok(Err(error)) => WorkerOutcome::Failed(error),
+                Err(_) => WorkerOutcome::Panicked,
+            };
+            reporter.finish(outcome);
+        })
+        .map_err(|error| {
+            application_error(
+                ApplicationErrorCode::WorkerExited,
+                format!("Could not start the visual capture event worker: {error}"),
+                ErrorRecoverability::Retryable,
+                RecoveryAction::StopAndRetry,
+                Some(session_id),
+            )
+        })
+}
+
+fn run_visual_capture_events(worker: &VisualCaptureEventWorker) -> Result<(), ApplicationError> {
+    let VisualCaptureEventWorker {
+        app,
+        supervisor,
+        status,
+        source,
+        overlay_output,
+        session_id,
+        cancellation,
+        events,
+    } = worker;
+    let session_id = *session_id;
+    let mut last_status_publish = Instant::now()
+        .checked_sub(VISUAL_STATUS_INTERVAL)
+        .unwrap_or_else(Instant::now);
+    let mut source_closed = false;
+    loop {
+        if cancellation.is_cancelled() {
+            return Ok(());
+        }
+        let event = match events.recv_timeout(Duration::from_millis(50)) {
+            Ok(event) => event,
+            Err(RecvTimeoutError::Timeout) => continue,
+            Err(RecvTimeoutError::Disconnected)
+                if source_closed || session_is_waiting(supervisor, session_id) =>
+            {
+                thread::sleep(Duration::from_millis(50));
+                continue;
+            }
+            Err(RecvTimeoutError::Disconnected) => {
+                source_closed = true;
+                let message = "The selected visual source is no longer available. Stop visual translation or choose another source.";
+                if let Some(revision) =
+                    mark_visual_waiting(app, supervisor, status, session_id, message)
+                {
+                    emit_visual_clear(app, session_id, revision);
+                    hide_visual_overlay(app);
+                }
+                thread::sleep(Duration::from_millis(50));
+                continue;
+            }
+        };
+        let snapshot = supervisor.lock().snapshot();
+        if snapshot.session_id != Some(session_id)
+            || matches!(
+                snapshot.lifecycle,
+                SessionLifecycle::Stopping | SessionLifecycle::Failed | SessionLifecycle::Stopped
+            )
+        {
+            return Ok(());
+        }
+        match event {
+            VisualCaptureEvent::Started(next_source) => {
+                source_closed = false;
+                *source.lock() = next_source.clone();
+                resume_visual_if_needed(app, supervisor, status, session_id);
+                let show = session_is_running(supervisor, session_id);
+                if let Err(error) =
+                    configure_visual_overlay(app, &next_source, overlay_output, show)
+                {
+                    tracing::warn!(%error, "could not configure visual overlay");
                 }
             }
-        })
-        .map_err(|error| format!("Could not start the visual capture event worker: {error}"))
+            VisualCaptureEvent::Frame {
+                x,
+                y,
+                width,
+                height,
+                replaced_frames,
+                ..
+            } => {
+                source_closed = false;
+                resume_visual_if_needed(app, supervisor, status, session_id);
+                let changed = {
+                    let mut current = source.lock();
+                    let changed = current.x != x
+                        || current.y != y
+                        || current.width != width
+                        || current.height != height;
+                    current.x = x;
+                    current.y = y;
+                    current.width = width;
+                    current.height = height;
+                    changed
+                };
+                if changed {
+                    let next_source = source.lock().clone();
+                    if let Err(error) = configure_visual_overlay(
+                        app,
+                        &next_source,
+                        overlay_output,
+                        session_is_running(supervisor, session_id),
+                    ) {
+                        tracing::warn!(%error, "could not follow visual source geometry");
+                    }
+                }
+                if changed || last_status_publish.elapsed() >= VISUAL_STATUS_INTERVAL {
+                    publish_replaced_frames(app, status, session_id, replaced_frames);
+                    last_status_publish = Instant::now();
+                }
+            }
+            VisualCaptureEvent::SourceClosed => {
+                source_closed = true;
+                let message = "The selected visual source closed. Stop visual translation or choose another source.";
+                tracing::warn!(%message, session_id = %session_id, "visual source closed");
+                if let Some(revision) =
+                    mark_visual_waiting(app, supervisor, status, session_id, message)
+                {
+                    emit_visual_clear(app, session_id, revision);
+                }
+                hide_visual_overlay(app);
+            }
+        }
+    }
 }
 
 fn publish_pipeline_stats(
     app: &AppHandle,
-    status: &Arc<Mutex<VisualStatus>>,
+    status: &SharedVisualStatus,
+    session_id: SessionId,
     stats: VisualPipelineStats,
 ) {
     let next = {
-        let mut current = status.lock();
-        if current.state != VisualState::Capturing || !current.active {
+        let mut published = status.lock();
+        if published.session_id != Some(session_id)
+            || published.visual.state != VisualState::Capturing
+            || !published.visual.active
+        {
             return;
         }
-        current.frames_received = stats.frames_received;
-        current.frames_analyzed = stats.frames_analyzed;
-        current.frames_unchanged = stats.frames_unchanged;
-        current.visible_regions = stats.stable_regions;
-        current.clone()
+        published.visual.frames_received = stats.frames_received;
+        published.visual.frames_analyzed = stats.frames_analyzed;
+        published.visual.frames_unchanged = stats.frames_unchanged;
+        published.visual.visible_regions = stats.stable_regions;
+        published.visual.clone()
     };
     emit_status(app, next);
 }
 
 fn publish_overlay_region_count(
     app: &AppHandle,
-    status: &Arc<Mutex<VisualStatus>>,
+    status: &SharedVisualStatus,
+    session_id: SessionId,
     region_count: u64,
 ) {
     let next = {
-        let mut current = status.lock();
-        if current.state != VisualState::Capturing
-            || !current.active
-            || current.overlay_regions == region_count
+        let mut published = status.lock();
+        if published.session_id != Some(session_id)
+            || published.visual.state != VisualState::Capturing
+            || !published.visual.active
+            || published.visual.overlay_regions == region_count
         {
             return;
         }
-        current.overlay_regions = region_count;
-        current.clone()
+        published.visual.overlay_regions = region_count;
+        published.visual.clone()
+    };
+    emit_status(app, next);
+}
+
+fn publish_replaced_frames(
+    app: &AppHandle,
+    status: &SharedVisualStatus,
+    session_id: SessionId,
+    replaced_frames: u64,
+) {
+    let next = {
+        let mut published = status.lock();
+        if published.session_id != Some(session_id)
+            || published.visual.state != VisualState::Capturing
+            || !published.visual.active
+        {
+            return;
+        }
+        published.visual.replaced_frames = replaced_frames;
+        published.visual.clone()
     };
     emit_status(app, next);
 }
@@ -1047,6 +1507,7 @@ fn configure_visual_overlay(
     app: &AppHandle,
     source: &PickedVisualSource,
     output: &Arc<Mutex<VisualOverlayOutput>>,
+    show: bool,
 ) -> Result<(), String> {
     let overlay = app
         .get_webview_window("visual-overlay")
@@ -1069,7 +1530,11 @@ fn configure_visual_overlay(
     overlay
         .emit("visual-overlay-output", output.lock().clone())
         .map_err(|error| error.to_string())?;
-    overlay.show().map_err(|error| error.to_string())
+    if show {
+        overlay.show().map_err(|error| error.to_string())
+    } else {
+        overlay.hide().map_err(|error| error.to_string())
+    }
 }
 
 fn validate_visual_overlay_output(output: &VisualOverlayOutput) -> Result<(), String> {
@@ -1142,7 +1607,7 @@ fn require_model_changes_allowed(state: &RuntimeState) -> Result<(), String> {
     if state.visual.installing.load(Ordering::Acquire) {
         return Err("Wait for the visual recognition model download to finish.".into());
     }
-    if is_active(&state.visual) || super::audio_session_active(state) {
+    if state.supervisor.lock().has_active_session() {
         return Err("Stop captions and visual translation before changing visual models.".into());
     }
     Ok(())
@@ -1281,43 +1746,466 @@ fn publish_model(app: &AppHandle, catalog: VisualModelCatalogStatus) {
     }
 }
 
-fn publish_status(app: &AppHandle, status: &Arc<Mutex<VisualStatus>>, next: VisualStatus) {
-    *status.lock() = next.clone();
-    emit_status(app, next);
-}
-
 fn emit_status(app: &AppHandle, next: VisualStatus) {
-    if let Err(error) = app.emit(VISUAL_STATUS_EVENT, next) {
+    if let Err(error) = app.emit(
+        prollyglot_application_runtime::ipc::VISUAL_STATUS_EVENT,
+        next,
+    ) {
         tracing::warn!(%error, "could not emit visual translation status");
     }
 }
 
-fn emit_visual_clear(app: &AppHandle) {
-    if let Err(error) = app.emit_to("main", VISUAL_CLEAR_EVENT, ()) {
+fn emit_visual_clear(app: &AppHandle, session_id: SessionId, runtime_revision: u32) {
+    if let Err(error) = app.emit_to(
+        "main",
+        prollyglot_application_runtime::ipc::VISUAL_CLEAR_EVENT,
+        VisualTextClear {
+            session_id,
+            runtime_revision,
+        },
+    ) {
         tracing::warn!(%error, "could not clear visual text state");
     }
 }
 
-fn publish_failure(app: &AppHandle, status: &Arc<Mutex<VisualStatus>>, message: String) {
-    tracing::error!(%message, "visual translation failed");
-    let previous = status.lock().clone();
-    publish_status(
-        app,
-        status,
-        VisualStatus {
-            state: VisualState::Failed,
-            message: Some(message),
-            ..previous
-        },
-    );
+fn publish_visual_runtime(app: &AppHandle, status: &SharedVisualStatus, snapshot: RuntimeSnapshot) {
+    if !crate::runtime::publish_snapshot(app, &snapshot) {
+        return;
+    }
+    let mut published = status.lock();
+    let published_revision = published.runtime_revision;
+    let Some(next) = published.apply_snapshot(&snapshot) else {
+        tracing::debug!(
+            revision = snapshot.revision,
+            published_revision,
+            "ignored an out-of-order visual status projection"
+        );
+        return;
+    };
+    emit_status(app, next);
 }
 
-fn publish_start_failure(app: &AppHandle, status: &Arc<Mutex<VisualStatus>>, message: String) {
+fn projected_visual_status(
+    published: &PublishedVisualStatus,
+    snapshot: &RuntimeSnapshot,
+) -> VisualStatus {
+    if snapshot.mode != Some(SessionMode::VisualTranslation) {
+        return VisualStatus::default();
+    }
+    let mut next = if published.session_id == snapshot.session_id {
+        published.visual.clone()
+    } else {
+        VisualStatus::default()
+    };
+    next.state = match snapshot.lifecycle {
+        SessionLifecycle::Stopped => VisualState::Stopped,
+        SessionLifecycle::Starting => VisualState::Starting,
+        SessionLifecycle::Running => VisualState::Capturing,
+        SessionLifecycle::Waiting => VisualState::Waiting,
+        SessionLifecycle::Stopping => VisualState::Stopping,
+        SessionLifecycle::Failed => VisualState::Failed,
+    };
+    next.active = matches!(
+        snapshot.lifecycle,
+        SessionLifecycle::Starting
+            | SessionLifecycle::Running
+            | SessionLifecycle::Waiting
+            | SessionLifecycle::Stopping
+    );
+    next.source_label = snapshot.source.as_ref().map(|source| source.label.clone());
+    next.message = snapshot
+        .failure
+        .as_ref()
+        .map(|failure| failure.message.clone())
+        .or_else(|| snapshot.health.message.clone());
+    if snapshot.lifecycle == SessionLifecycle::Stopped {
+        VisualStatus::default()
+    } else {
+        next
+    }
+}
+
+fn fail_and_publish(
+    app: &AppHandle,
+    supervisor: &Arc<Mutex<prollyglot_application_runtime::SessionSupervisor>>,
+    status: &SharedVisualStatus,
+    session_id: SessionId,
+    error: ApplicationError,
+) {
+    tracing::error!(%error, session_id = %session_id, "visual translation session failed");
+    if let Ok(snapshot) = supervisor.lock().fail(session_id, error) {
+        publish_visual_runtime(app, status, snapshot);
+    }
+}
+
+fn spawn_session_monitor(
+    app: AppHandle,
+    supervisor: Arc<Mutex<prollyglot_application_runtime::SessionSupervisor>>,
+    resources: Arc<Mutex<Option<ActiveVisualResources>>>,
+    status: SharedVisualStatus,
+    overlay_output: Arc<Mutex<VisualOverlayOutput>>,
+    overlay_echoes: Arc<Mutex<Vec<String>>>,
+    session_id: SessionId,
+) -> Result<(), ApplicationError> {
+    thread::Builder::new()
+        .name(format!("visual-session-supervisor-{session_id}"))
+        .spawn(move || {
+            let mut stopping_since = None::<Instant>;
+            let mut failure_cleanup_started = false;
+            loop {
+                let updates = supervisor.lock().drain_worker_completions();
+                for update in updates {
+                    publish_visual_runtime(&app, &status, update);
+                }
+                let (snapshot, active) = {
+                    let supervisor = supervisor.lock();
+                    (supervisor.snapshot(), supervisor.has_active_session())
+                };
+                if !active || snapshot.session_id != Some(session_id) {
+                    break;
+                }
+                if snapshot.lifecycle == SessionLifecycle::Stopping {
+                    let started = stopping_since.get_or_insert_with(Instant::now);
+                    if started.elapsed() >= SHUTDOWN_TIMEOUT
+                        && let Ok(snapshot) = supervisor.lock().shutdown_timed_out(session_id)
+                    {
+                        publish_visual_runtime(&app, &status, snapshot);
+                    }
+                } else {
+                    stopping_since = None;
+                }
+                if snapshot.lifecycle == SessionLifecycle::Failed && !failure_cleanup_started {
+                    failure_cleanup_started = true;
+                    let resources = take_resources(&resources, session_id);
+                    schedule_cleanup(
+                        &app,
+                        &supervisor,
+                        &status,
+                        &overlay_output,
+                        &overlay_echoes,
+                        session_id,
+                        resources,
+                    );
+                }
+                thread::sleep(SUPERVISOR_POLL_INTERVAL);
+            }
+        })
+        .map(|_| ())
+        .map_err(|error| {
+            application_error(
+                ApplicationErrorCode::WorkerExited,
+                format!("Could not start the visual session supervisor: {error}"),
+                ErrorRecoverability::RestartRequired,
+                RecoveryAction::RestartApplication,
+                Some(session_id),
+            )
+        })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn schedule_cleanup(
+    app: &AppHandle,
+    supervisor: &Arc<Mutex<prollyglot_application_runtime::SessionSupervisor>>,
+    status: &SharedVisualStatus,
+    overlay_output: &Arc<Mutex<VisualOverlayOutput>>,
+    overlay_echoes: &Arc<Mutex<Vec<String>>>,
+    session_id: SessionId,
+    resources: Option<ActiveVisualResources>,
+) {
+    let revision = supervisor.lock().snapshot().revision;
+    clear_visual_output(app, overlay_output, overlay_echoes, session_id, revision);
+    let Some(resources) = resources else {
+        if let Ok(Some(snapshot)) = supervisor.lock().finish_cleanup(session_id, Ok(())) {
+            publish_visual_runtime(app, status, snapshot);
+        }
+        return;
+    };
+    resources.cancel();
+    let reporter = match supervisor.lock().register_worker(
+        session_id,
+        WorkerRole::Shutdown,
+        WorkerLifetime::Shutdown,
+    ) {
+        Ok(reporter) => reporter,
+        Err(error) => {
+            tracing::error!(%error, session_id = %session_id, "could not supervise visual cleanup");
+            let _ = thread::Builder::new()
+                .name("visual-cleanup-untracked".into())
+                .spawn(move || {
+                    let _ = resources.stop();
+                });
+            return;
+        }
+    };
+    let app_for_worker = app.clone();
+    let supervisor_for_worker = Arc::clone(supervisor);
+    let status_for_worker = Arc::clone(status);
+    let spawn = thread::Builder::new()
+        .name("visual-session-stop".into())
+        .spawn(move || {
+            let result = resources.stop();
+            reporter.finish(WorkerOutcome::Completed);
+            match supervisor_for_worker
+                .lock()
+                .finish_cleanup(session_id, result)
+            {
+                Ok(Some(snapshot)) => {
+                    publish_visual_runtime(&app_for_worker, &status_for_worker, snapshot);
+                }
+                Ok(None) => {}
+                Err(error) => tracing::warn!(%error, session_id = %session_id, "visual cleanup completed after the session changed"),
+            }
+        });
+    if let Err(error) = spawn {
+        let failure = application_error(
+            ApplicationErrorCode::WorkerExited,
+            format!("Could not start the visual cleanup worker: {error}"),
+            ErrorRecoverability::RestartRequired,
+            RecoveryAction::RestartApplication,
+            Some(session_id),
+        );
+        fail_and_publish(app, supervisor, status, session_id, failure.clone());
+        if let Ok(Some(snapshot)) = supervisor.lock().finish_cleanup(session_id, Err(failure)) {
+            publish_visual_runtime(app, status, snapshot);
+        }
+    }
+}
+
+fn take_resources(
+    resources: &Arc<Mutex<Option<ActiveVisualResources>>>,
+    session_id: SessionId,
+) -> Option<ActiveVisualResources> {
+    let mut resources = resources.lock();
+    if resources
+        .as_ref()
+        .is_some_and(|resources| resources.session_id == session_id)
+    {
+        resources.take()
+    } else {
+        None
+    }
+}
+
+fn clear_visual_output(
+    app: &AppHandle,
+    output: &Arc<Mutex<VisualOverlayOutput>>,
+    echoes: &Arc<Mutex<Vec<String>>>,
+    session_id: SessionId,
+    runtime_revision: u32,
+) {
+    let cleared = VisualOverlayOutput::default();
+    *output.lock() = cleared.clone();
+    echoes.lock().clear();
+    if let Some(overlay) = app.get_webview_window("visual-overlay") {
+        let _ = overlay.emit("visual-overlay-output", &cleared);
+        let _ = overlay.hide();
+    }
+    emit_visual_clear(app, session_id, runtime_revision);
+}
+
+fn hide_visual_overlay(app: &AppHandle) {
     if let Some(overlay) = app.get_webview_window("visual-overlay") {
         let _ = overlay.hide();
     }
-    emit_visual_clear(app);
-    publish_failure(app, status, message);
+}
+
+fn session_is_waiting(
+    supervisor: &Arc<Mutex<prollyglot_application_runtime::SessionSupervisor>>,
+    session_id: SessionId,
+) -> bool {
+    let snapshot = supervisor.lock().snapshot();
+    snapshot.session_id == Some(session_id) && snapshot.lifecycle == SessionLifecycle::Waiting
+}
+
+fn session_is_running(
+    supervisor: &Arc<Mutex<prollyglot_application_runtime::SessionSupervisor>>,
+    session_id: SessionId,
+) -> bool {
+    let snapshot = supervisor.lock().snapshot();
+    snapshot.session_id == Some(session_id) && snapshot.lifecycle == SessionLifecycle::Running
+}
+
+fn resume_visual_if_needed(
+    app: &AppHandle,
+    supervisor: &Arc<Mutex<prollyglot_application_runtime::SessionSupervisor>>,
+    status: &SharedVisualStatus,
+    session_id: SessionId,
+) {
+    if session_is_waiting(supervisor, session_id)
+        && let Ok(snapshot) = supervisor.lock().mark_running(session_id)
+    {
+        publish_visual_runtime(app, status, snapshot);
+    }
+}
+
+fn mark_visual_waiting(
+    app: &AppHandle,
+    supervisor: &Arc<Mutex<prollyglot_application_runtime::SessionSupervisor>>,
+    status: &SharedVisualStatus,
+    session_id: SessionId,
+    message: impl Into<String>,
+) -> Option<u32> {
+    if session_is_waiting(supervisor, session_id) {
+        return None;
+    }
+    let snapshot = supervisor.lock().mark_waiting(session_id, message).ok()?;
+    let revision = snapshot.revision;
+    publish_visual_runtime(app, status, snapshot);
+    Some(revision)
+}
+
+fn visual_source_contract(source: prollyglot_visual_windows::VisualSource) -> VisualSource {
+    VisualSource {
+        id: source.id,
+        kind: match source.kind {
+            prollyglot_visual_windows::VisualSourceKind::ApplicationWindow => {
+                VisualSourceKind::ApplicationWindow
+            }
+            prollyglot_visual_windows::VisualSourceKind::Display => VisualSourceKind::Display,
+        },
+        label: source.label,
+        x: source.x,
+        y: source.y,
+        width: source.width,
+        height: source.height,
+    }
+}
+
+fn backend_visual_selection(selection: &VisualCaptureSelection) -> BackendVisualCaptureSelection {
+    match selection {
+        VisualCaptureSelection::ApplicationWindow { source_id } => {
+            BackendVisualCaptureSelection::ApplicationWindow {
+                source_id: source_id.clone(),
+            }
+        }
+        VisualCaptureSelection::Display { source_id } => BackendVisualCaptureSelection::Display {
+            source_id: source_id.clone(),
+        },
+        VisualCaptureSelection::Region { display_id, region } => {
+            BackendVisualCaptureSelection::Region {
+                display_id: display_id.clone(),
+                region: prollyglot_visual_pipeline::PixelRect {
+                    x: region.x,
+                    y: region.y,
+                    width: region.width,
+                    height: region.height,
+                },
+            }
+        }
+    }
+}
+
+fn visual_text_contract(
+    session_id: SessionId,
+    runtime_revision: u32,
+    source: &PickedVisualSource,
+    update: StabilizerUpdate,
+) -> VisualTextUpdate {
+    VisualTextUpdate {
+        session_id,
+        runtime_revision,
+        source: VisualCaptureGeometry {
+            label: source.label.clone(),
+            x: source.x,
+            y: source.y,
+            width: source.width,
+            height: source.height,
+        },
+        visible: update
+            .visible
+            .into_iter()
+            .map(stable_visual_text_contract)
+            .collect(),
+        translation_requests: update
+            .translation_requests
+            .into_iter()
+            .map(stable_visual_text_contract)
+            .collect(),
+        removed_track_ids: update.removed_track_ids,
+    }
+}
+
+fn stable_visual_text_contract(
+    region: prollyglot_visual_pipeline::StableTextRegion,
+) -> StableVisualTextRegion {
+    StableVisualTextRegion {
+        track_id: region.track_id,
+        text_revision: region.text_revision,
+        text: region.text,
+        confidence: region.confidence,
+        language: region.language,
+        script: region.script,
+        bounds: VisualRect {
+            x: region.bounds.x,
+            y: region.bounds.y,
+            width: region.bounds.width,
+            height: region.bounds.height,
+        },
+    }
+}
+
+fn visual_session_source(selection: &VisualCaptureSelection) -> SessionSource {
+    match selection {
+        VisualCaptureSelection::ApplicationWindow { source_id } => SessionSource::new(
+            source_id,
+            SessionSourceKind::ApplicationWindow,
+            "Selected application window",
+        ),
+        VisualCaptureSelection::Display { source_id } => {
+            SessionSource::new(source_id, SessionSourceKind::Display, "Selected display")
+        }
+        VisualCaptureSelection::Region { display_id, region } => SessionSource::new(
+            format!(
+                "{display_id}:{}:{}:{}:{}",
+                region.x, region.y, region.width, region.height
+            ),
+            SessionSourceKind::Region,
+            "Selected display region",
+        ),
+    }
+}
+
+fn application_error(
+    code: ApplicationErrorCode,
+    message: impl Into<String>,
+    recoverability: ErrorRecoverability,
+    action: RecoveryAction,
+    session_id: Option<SessionId>,
+) -> ApplicationError {
+    let error = ApplicationError::new(code, message, recoverability, action);
+    match session_id {
+        Some(session_id) => error.for_session(session_id),
+        None => error,
+    }
+}
+
+fn window_operation_error(
+    message: impl Into<String>,
+    session_id: Option<SessionId>,
+) -> ApplicationError {
+    application_error(
+        ApplicationErrorCode::WindowOperationFailed,
+        message,
+        ErrorRecoverability::Retryable,
+        RecoveryAction::StopAndRetry,
+        session_id,
+    )
+}
+
+fn startup_cancelled(session_id: SessionId) -> ApplicationError {
+    application_error(
+        ApplicationErrorCode::StartupCancelled,
+        "Visual translation startup was cancelled.",
+        ErrorRecoverability::Retryable,
+        RecoveryAction::Retry,
+        Some(session_id),
+    )
+}
+
+fn finish_reporter(reporter: &mut Option<WorkerReporter>, outcome: WorkerOutcome) {
+    if let Some(reporter) = reporter.take() {
+        reporter.finish(outcome);
+    }
 }
 
 #[cfg(test)]

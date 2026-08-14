@@ -1,4 +1,5 @@
 import { icons } from "./icons";
+import { errorMessage } from "./errors";
 import {
   SPOKEN_LANGUAGES,
   languageLabel,
@@ -116,6 +117,7 @@ export class VisualPanel {
   private region?: PixelRect;
   private notice = "";
   private busy = false;
+  private stopping = false;
   private container?: HTMLElement;
   private state?: VisualPanelState;
   private actions?: VisualPanelActions;
@@ -195,12 +197,12 @@ export class VisualPanel {
 
     const stop = create("button", "primary-button stop visual-stop-button");
     stop.type = "button";
-    stop.textContent = this.busy || state.status.state === "stopping"
+    stop.textContent = this.stopping || state.status.state === "stopping"
       ? "Stopping…"
       : "Stop Screen Translation";
-    stop.disabled = this.busy || state.status.state === "stopping";
+    stop.disabled = this.stopping || state.status.state === "stopping";
     stop.addEventListener("click", () => {
-      void this.run(async () => actions.stop(), "Could not stop screen translation.");
+      void this.runStop(actions.stop);
     });
     container.append(hero, stop);
   }
@@ -592,14 +594,26 @@ export class VisualPanel {
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       await operation();
     } catch (error) {
-      this.notice = error instanceof Error
-        ? error.message
-        : typeof error === "string" && error.trim()
-          ? error
-          : fallback;
+      this.notice = errorMessage(error, fallback);
       this.actions?.report(this.notice);
     } finally {
       this.busy = false;
+      this.rerender();
+    }
+  }
+
+  private async runStop(stop: () => Promise<void>): Promise<void> {
+    if (this.stopping) return;
+    this.stopping = true;
+    this.notice = "";
+    this.rerender();
+    try {
+      await stop();
+    } catch (error) {
+      this.notice = errorMessage(error);
+      this.actions?.report(this.notice || "Could not stop screen translation.");
+    } finally {
+      this.stopping = false;
       this.rerender();
     }
   }

@@ -42,4 +42,5 @@ else
   echo "Skipping the desktop Windows cross-check: install llvm-rc or x86_64-w64-mingw32-windres."
 fi
 cargo run --locked -p prollyglot-application-runtime --bin export-runtime-bindings -- --check
+pnpm --dir apps/desktop test
 pnpm --dir apps/desktop build

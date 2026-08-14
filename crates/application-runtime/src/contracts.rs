@@ -310,6 +310,406 @@ pub struct StartSessionRequest {
     pub source: SessionSource,
 }
 
+// Session-facing desktop contracts live beside the lifecycle contract so the
+// native adapter and TypeScript client consume one schema. Capture backends
+// keep their own platform contracts and are converted at the adapter edge.
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+#[ts(tag = "kind", rename_all = "camelCase")]
+pub enum CaptureSelection {
+    SystemDefault,
+    SystemOutput {
+        #[serde(rename = "deviceId")]
+        #[ts(rename = "deviceId")]
+        device_id: String,
+    },
+    Application {
+        #[serde(rename = "processId")]
+        #[ts(rename = "processId")]
+        process_id: u32,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub enum CaptureState {
+    Starting,
+    Capturing,
+    Waiting,
+    Stopping,
+    Stopped,
+    Failed,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct PlaybackDevice {
+    pub id: String,
+    pub name: String,
+    pub is_default: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct ApplicationSource {
+    pub id: String,
+    pub name: String,
+    pub process_id: u32,
+    pub device_ids: Vec<String>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct SourceSnapshot {
+    pub playback_devices: Vec<PlaybackDevice>,
+    pub applications: Vec<ApplicationSource>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct CaptureStatus {
+    pub state: CaptureState,
+    pub peak: f32,
+    #[ts(type = "number")]
+    pub dropped_frames: u64,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[ts(optional)]
+    pub source_label: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[ts(optional)]
+    pub message: Option<String>,
+}
+
+impl Default for CaptureStatus {
+    fn default() -> Self {
+        Self {
+            state: CaptureState::Stopped,
+            peak: 0.0,
+            dropped_frames: 0,
+            source_label: None,
+            message: None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct StartCaptureCommand {
+    pub selection: CaptureSelection,
+    pub language: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub enum VisualSourceKind {
+    ApplicationWindow,
+    Display,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct VisualSource {
+    pub id: String,
+    pub kind: VisualSourceKind,
+    pub label: String,
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct VisualSourceSnapshot {
+    pub windows: Vec<VisualSource>,
+    pub displays: Vec<VisualSource>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct PixelRect {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+impl PixelRect {
+    pub fn fits_within(self, width: u32, height: u32) -> bool {
+        self.width > 0
+            && self.height > 0
+            && self
+                .x
+                .checked_add(self.width)
+                .is_some_and(|right| right <= width)
+            && self
+                .y
+                .checked_add(self.height)
+                .is_some_and(|bottom| bottom <= height)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct VisualRegionSelectorRequest {
+    pub display_id: String,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct VisualRegionSelected {
+    pub display_id: String,
+    pub region: PixelRect,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct ShowVisualRegionSelectorCommand {
+    pub display_id: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct CompleteVisualRegionSelectionCommand {
+    pub display_id: String,
+    pub region: PixelRect,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+#[ts(tag = "kind", rename_all = "camelCase")]
+pub enum VisualCaptureSelection {
+    ApplicationWindow {
+        #[serde(rename = "sourceId")]
+        #[ts(rename = "sourceId")]
+        source_id: String,
+    },
+    Display {
+        #[serde(rename = "sourceId")]
+        #[ts(rename = "sourceId")]
+        source_id: String,
+    },
+    Region {
+        #[serde(rename = "displayId")]
+        #[ts(rename = "displayId")]
+        display_id: String,
+        region: PixelRect,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub enum VisualDetectionMode {
+    #[default]
+    Focused,
+    AllText,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct VisualCaptureCapabilities {
+    pub windows_graphics_capture: bool,
+    pub system_picker: bool,
+    pub desktop_duplication_experiment: bool,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[ts(optional)]
+    pub message: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub enum VisualState {
+    Starting,
+    Capturing,
+    Waiting,
+    Stopping,
+    #[default]
+    Stopped,
+    Failed,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct VisualStatus {
+    pub active: bool,
+    pub state: VisualState,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[ts(optional)]
+    pub source_label: Option<String>,
+    #[ts(type = "number")]
+    pub frames_received: u64,
+    #[ts(type = "number")]
+    pub frames_analyzed: u64,
+    #[ts(type = "number")]
+    pub frames_unchanged: u64,
+    #[ts(type = "number")]
+    pub replaced_frames: u64,
+    #[ts(type = "number")]
+    pub visible_regions: u64,
+    #[ts(type = "number")]
+    pub overlay_regions: u64,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[ts(optional)]
+    pub message: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct VisualCaptureGeometry {
+    pub label: String,
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct VisualRect {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+impl VisualRect {
+    pub fn is_valid(self) -> bool {
+        self.x.is_finite()
+            && self.y.is_finite()
+            && self.width.is_finite()
+            && self.height.is_finite()
+            && self.x >= 0.0
+            && self.y >= 0.0
+            && self.width > 0.0
+            && self.height > 0.0
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct StableVisualTextRegion {
+    #[ts(type = "number")]
+    pub track_id: u64,
+    #[ts(type = "number")]
+    pub text_revision: u64,
+    pub text: String,
+    pub confidence: f32,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[ts(optional)]
+    pub language: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[ts(optional)]
+    pub script: Option<String>,
+    pub bounds: VisualRect,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct VisualTextUpdate {
+    pub session_id: SessionId,
+    pub runtime_revision: u32,
+    pub source: VisualCaptureGeometry,
+    pub visible: Vec<StableVisualTextRegion>,
+    pub translation_requests: Vec<StableVisualTextRegion>,
+    #[ts(type = "Array<number>")]
+    pub removed_track_ids: Vec<u64>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct VisualTextClear {
+    pub session_id: SessionId,
+    pub runtime_revision: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+#[ts(rename = "VisualOutputRegion")]
+pub struct VisualOverlayRegion {
+    #[ts(type = "number")]
+    pub track_id: u64,
+    #[ts(type = "number")]
+    pub text_revision: u64,
+    pub original: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[ts(optional)]
+    pub translation: Option<String>,
+    pub translation_pending: bool,
+    #[serde(default)]
+    pub retained: bool,
+    pub bounds: VisualRect,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+#[ts(rename = "VisualOutputPayload")]
+pub struct VisualOverlayOutput {
+    pub source_width: u32,
+    pub source_height: u32,
+    pub source_language: String,
+    pub target_language: String,
+    pub scanning: bool,
+    pub regions: Vec<VisualOverlayRegion>,
+}
+
+impl Default for VisualOverlayOutput {
+    fn default() -> Self {
+        Self {
+            source_width: 1,
+            source_height: 1,
+            source_language: String::new(),
+            target_language: String::new(),
+            scanning: false,
+            regions: Vec::new(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct StartVisualTranslationCommand {
+    pub selection: VisualCaptureSelection,
+    pub source_language: String,
+    pub target_language: String,
+    pub detection_mode: Option<VisualDetectionMode>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct UpdateVisualOverlayOutputCommand {
+    pub output: VisualOverlayOutput,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(rename_all = "camelCase")]
@@ -357,6 +757,17 @@ pub struct RuntimeStateEvent {
 mod tests {
     use super::*;
 
+    fn assert_json_round_trip<T>(value: &T) -> serde_json::Value
+    where
+        T: Serialize + serde::de::DeserializeOwned + PartialEq + fmt::Debug,
+    {
+        let json = serde_json::to_value(value).expect("serialize desktop contract");
+        let round_trip: T =
+            serde_json::from_value(json.clone()).expect("deserialize desktop contract");
+        assert_eq!(&round_trip, value);
+        json
+    }
+
     #[test]
     fn runtime_snapshot_uses_the_camel_case_wire_contract() {
         let snapshot = RuntimeSnapshot {
@@ -394,5 +805,186 @@ mod tests {
         assert_eq!(value["recoverability"], "restartRequired");
         assert_eq!(value["suggestedAction"], "restartApplication");
         assert_eq!(value["sessionId"], 12);
+    }
+
+    #[test]
+    fn audio_session_contracts_round_trip_without_handwritten_field_names() {
+        let command = StartCaptureCommand {
+            selection: CaptureSelection::SystemOutput {
+                device_id: "device:primary".into(),
+            },
+            language: "en".into(),
+        };
+        let command_json = assert_json_round_trip(&command);
+        assert_eq!(command_json["selection"]["kind"], "systemOutput");
+        assert_eq!(command_json["selection"]["deviceId"], "device:primary");
+
+        let sources = SourceSnapshot {
+            playback_devices: vec![PlaybackDevice {
+                id: "device:primary".into(),
+                name: "Speakers".into(),
+                is_default: true,
+            }],
+            applications: vec![ApplicationSource {
+                id: "process:42".into(),
+                name: "Player".into(),
+                process_id: 42,
+                device_ids: vec!["device:primary".into()],
+            }],
+        };
+        let sources_json = assert_json_round_trip(&sources);
+        assert_eq!(sources_json["playbackDevices"][0]["isDefault"], true);
+        assert_eq!(sources_json["applications"][0]["processId"], 42);
+
+        let status = CaptureStatus {
+            state: CaptureState::Capturing,
+            peak: 0.5,
+            dropped_frames: 3,
+            source_label: Some("Speakers".into()),
+            message: None,
+        };
+        let status_json = assert_json_round_trip(&status);
+        assert_eq!(status_json["droppedFrames"], 3);
+        assert!(status_json.get("message").is_none());
+    }
+
+    #[test]
+    fn visual_session_contracts_round_trip_without_handwritten_field_names() {
+        let command = StartVisualTranslationCommand {
+            selection: VisualCaptureSelection::Region {
+                display_id: "display:1".into(),
+                region: PixelRect {
+                    x: 10,
+                    y: 20,
+                    width: 640,
+                    height: 360,
+                },
+            },
+            source_language: "ja".into(),
+            target_language: "en".into(),
+            detection_mode: Some(VisualDetectionMode::Focused),
+        };
+        let command_json = assert_json_round_trip(&command);
+        assert_eq!(command_json["selection"]["displayId"], "display:1");
+        assert_eq!(command_json["sourceLanguage"], "ja");
+        assert_eq!(command_json["detectionMode"], "focused");
+
+        let selector = VisualRegionSelectorRequest {
+            display_id: "display:1".into(),
+            width: 1920,
+            height: 1080,
+        };
+        assert_json_round_trip(&selector);
+        assert_json_round_trip(&ShowVisualRegionSelectorCommand {
+            display_id: selector.display_id.clone(),
+        });
+        assert_json_round_trip(&VisualRegionSelected {
+            display_id: selector.display_id.clone(),
+            region: PixelRect {
+                x: 10,
+                y: 20,
+                width: 640,
+                height: 360,
+            },
+        });
+        assert_json_round_trip(&CompleteVisualRegionSelectionCommand {
+            display_id: selector.display_id,
+            region: PixelRect {
+                x: 10,
+                y: 20,
+                width: 640,
+                height: 360,
+            },
+        });
+
+        let sources = VisualSourceSnapshot {
+            windows: vec![VisualSource {
+                id: "window:1".into(),
+                kind: VisualSourceKind::ApplicationWindow,
+                label: "News".into(),
+                x: 5,
+                y: 6,
+                width: 1280,
+                height: 720,
+            }],
+            displays: Vec::new(),
+        };
+        assert_json_round_trip(&sources);
+        assert_json_round_trip(&VisualCaptureCapabilities {
+            windows_graphics_capture: true,
+            system_picker: false,
+            desktop_duplication_experiment: false,
+            message: None,
+        });
+        assert_json_round_trip(&VisualStatus {
+            active: true,
+            state: VisualState::Capturing,
+            source_label: Some("News".into()),
+            frames_received: 12,
+            frames_analyzed: 4,
+            frames_unchanged: 2,
+            replaced_frames: 1,
+            visible_regions: 1,
+            overlay_regions: 1,
+            message: None,
+        });
+
+        let region = StableVisualTextRegion {
+            track_id: 7,
+            text_revision: 2,
+            text: "ニュース".into(),
+            confidence: 0.9,
+            language: Some("ja".into()),
+            script: Some("Japanese".into()),
+            bounds: VisualRect {
+                x: 0.1,
+                y: 0.2,
+                width: 0.3,
+                height: 0.1,
+            },
+        };
+        let update = VisualTextUpdate {
+            session_id: SessionId(9),
+            runtime_revision: 14,
+            source: VisualCaptureGeometry {
+                label: "News".into(),
+                x: 5,
+                y: 6,
+                width: 1280,
+                height: 720,
+            },
+            visible: vec![region.clone()],
+            translation_requests: vec![region],
+            removed_track_ids: vec![3],
+        };
+        let update_json = assert_json_round_trip(&update);
+        assert_eq!(update_json["sessionId"], 9);
+        assert_eq!(update_json["translationRequests"][0]["trackId"], 7);
+
+        let output = UpdateVisualOverlayOutputCommand {
+            output: VisualOverlayOutput {
+                source_width: 1280,
+                source_height: 720,
+                source_language: "ja".into(),
+                target_language: "en".into(),
+                scanning: false,
+                regions: vec![VisualOverlayRegion {
+                    track_id: 7,
+                    text_revision: 2,
+                    original: "ニュース".into(),
+                    translation: Some("News".into()),
+                    translation_pending: false,
+                    retained: false,
+                    bounds: VisualRect {
+                        x: 0.1,
+                        y: 0.2,
+                        width: 0.3,
+                        height: 0.1,
+                    },
+                }],
+            },
+        };
+        let output_json = assert_json_round_trip(&output);
+        assert_eq!(output_json["output"]["regions"][0]["translation"], "News");
     }
 }

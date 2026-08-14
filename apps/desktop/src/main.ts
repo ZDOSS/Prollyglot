@@ -9,6 +9,7 @@ import {
   modelStatus,
   onCaptureStatus,
   onModelStatus,
+  onRuntimeState,
   onTranscriptUpdate,
   onVisualModelStatus,
   onVisualStatus,
@@ -18,6 +19,7 @@ import {
   reportFrontendDiagnostic,
   removeSpeechModel,
   removeVisualModel,
+  runtimeBootstrap,
   selectSpeechModel,
   setWindowLayout,
   showAppearance,
@@ -47,6 +49,11 @@ import {
   supportedTranslationLanguage
 } from "./language-catalog";
 import { SettingsPanel, type SettingsNotice, type SettingsNoticeTone } from "./settings";
+import {
+  acceptsVisualSessionEvent as acceptsVisualRuntimeEvent,
+  initialRuntimeCursor,
+  reduceRuntimeSnapshot
+} from "./runtime-state";
 import { TranslationService, translationStatusForRoute } from "./translation";
 import { VisualPanel } from "./visual-panel";
 import { VisualTranslationController } from "./visual-translation";
@@ -63,10 +70,15 @@ import type {
   TranslationModelStatus,
   VisualCaptureCapabilities,
   VisualModelCatalogStatus,
+  RuntimeSnapshot,
   VisualSourceSnapshot,
   VisualStatus
 } from "./types";
-import { DEFAULT_OVERLAY_SETTINGS, type OverlaySettings } from "./types";
+import {
+  DEFAULT_OVERLAY_SETTINGS,
+  RUNTIME_CONTRACT_VERSION,
+  type OverlaySettings
+} from "./types";
 
 const root = document.querySelector<HTMLElement>("#app");
 if (!root) throw new Error("missing app root");
@@ -271,6 +283,9 @@ let currentViewMode: AppViewMode = storedViewMode();
 
 let snapshot: SourceSnapshot = { playbackDevices: [], applications: [] };
 let currentStatus: CaptureStatus = { state: "stopped", peak: 0, droppedFrames: 0 };
+let runtimeCursor = initialRuntimeCursor();
+let currentRuntime: RuntimeSnapshot | undefined;
+const runtimeSubscribers = new Set<() => void>();
 const FALLBACK_MODEL: ModelStatus = {
   phase: "failed",
   modelId: "initial-english",
@@ -686,20 +701,156 @@ function renderStatus(status: CaptureStatus) {
   if (dialog.open && dialog.dataset.panel === "visual") renderVisualPanel();
 }
 
+function runtimeCaptureState(snapshot: RuntimeSnapshot): CaptureStatus["state"] {
+  if (snapshot.lifecycle === "running") return "capturing";
+  return snapshot.lifecycle;
+}
+
+function runtimeSessionActive(snapshot: RuntimeSnapshot): boolean {
+  return snapshot.lifecycle === "starting"
+    || snapshot.lifecycle === "running"
+    || snapshot.lifecycle === "waiting"
+    || snapshot.lifecycle === "stopping";
+}
+
+function applyRuntimeSnapshot(next: RuntimeSnapshot): void {
+  const reduction = reduceRuntimeSnapshot(runtimeCursor, next, RUNTIME_CONTRACT_VERSION);
+  if (reduction.contractMismatch) {
+    const message = `The desktop runtime contract is ${next.contractVersion}; this interface expects ${RUNTIME_CONTRACT_VERSION}. Restart Prollyglot after updating.`;
+    captureMessage.textContent = message;
+    void reportFrontendDiagnostic("runtime-contract", message);
+    return;
+  }
+  if (!reduction.accepted) return;
+  const changedSession = reduction.sessionChanged;
+  runtimeCursor = reduction.cursor;
+  currentRuntime = reduction.cursor.snapshot;
+  for (const subscriber of runtimeSubscribers) subscriber();
+  const message = next.failure?.message ?? next.health.message ?? undefined;
+  const sourceLabel = next.source?.label ?? undefined;
+
+  if (next.mode === "audioCaptions") {
+    const base = changedSession
+      ? { state: "stopped" as const, peak: 0, droppedFrames: 0 }
+      : currentStatus;
+    renderStatus({
+      ...base,
+      state: runtimeCaptureState(next),
+      sourceLabel,
+      message
+    });
+    if (currentVisualStatus.active
+      || currentVisualStatus.state === "starting"
+      || currentVisualStatus.state === "waiting"
+      || currentVisualStatus.state === "stopping") {
+      renderVisualStatus({
+        active: false,
+        state: "stopped",
+        framesReceived: 0,
+        framesAnalyzed: 0,
+        framesUnchanged: 0,
+        replacedFrames: 0,
+        visibleRegions: 0,
+        overlayRegions: 0
+      });
+    }
+    return;
+  }
+
+  if (next.mode === "visualTranslation") {
+    const base = changedSession
+      ? {
+          framesReceived: 0,
+          framesAnalyzed: 0,
+          framesUnchanged: 0,
+          replacedFrames: 0,
+          visibleRegions: 0,
+          overlayRegions: 0
+        }
+      : currentVisualStatus;
+    renderVisualStatus({
+      ...base,
+      active: runtimeSessionActive(next),
+      state: runtimeCaptureState(next),
+      sourceLabel,
+      message
+    });
+    if (currentStatus.state === "starting"
+      || currentStatus.state === "capturing"
+      || currentStatus.state === "waiting"
+      || currentStatus.state === "stopping") {
+      renderStatus({ state: "stopped", peak: 0, droppedFrames: 0 });
+    }
+    return;
+  }
+
+  renderStatus({ state: "stopped", peak: 0, droppedFrames: 0 });
+  renderVisualStatus({
+    active: false,
+    state: "stopped",
+    framesReceived: 0,
+    framesAnalyzed: 0,
+    framesUnchanged: 0,
+    replacedFrames: 0,
+    visibleRegions: 0,
+    overlayRegions: 0
+  });
+}
+
 function audioActive(): boolean {
+  if (currentRuntime) {
+    return currentRuntime.mode === "audioCaptions" && runtimeSessionActive(currentRuntime);
+  }
   return currentStatus.state === "starting"
     || currentStatus.state === "capturing"
     || currentStatus.state === "waiting"
     || currentStatus.state === "stopping";
 }
 
+function waitForRuntimeStopped(timeoutMs = 15_000): Promise<void> {
+  if (!currentRuntime || currentRuntime.lifecycle === "stopped") return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const finish = () => {
+      runtimeSubscribers.delete(check);
+      window.clearTimeout(timeout);
+    };
+    const check = () => {
+      if (currentRuntime?.lifecycle !== "stopped") return;
+      finish();
+      resolve();
+    };
+    const timeout = window.setTimeout(() => {
+      finish();
+      reject(new Error("Prollyglot could not finish stopping the previous session in time. Restart the app and try again."));
+    }, timeoutMs);
+    runtimeSubscribers.add(check);
+  });
+}
+
 function visualEngaged(): boolean {
+  if (currentRuntime) {
+    return currentRuntime.mode === "visualTranslation" && runtimeSessionActive(currentRuntime);
+  }
   return currentVisualStatus.active
     || currentVisualStatus.state === "starting"
     || currentVisualStatus.state === "stopping";
 }
 
 function renderHeaderStatus(): void {
+  if (currentRuntime) {
+    const state = runtimeCaptureState(currentRuntime);
+    const labels: Record<CaptureStatus["state"], string> = {
+      starting: "Starting",
+      capturing: currentRuntime.mode === "visualTranslation" ? "Screen" : "Live",
+      waiting: "Waiting",
+      stopping: "Stopping",
+      stopped: "Ready",
+      failed: "Error"
+    };
+    statusLabel.dataset.state = state;
+    statusText.textContent = labels[state];
+    return;
+  }
   const visualState = currentVisualStatus.state;
   const state = visualEngaged() || (visualState === "failed" && !audioActive())
     ? visualState
@@ -1170,15 +1321,20 @@ function renderVisualPanel(): void {
       } catch (error) {
         visualTranslation.clear();
         captionOutput.setTranslationActive(true);
+        if (isApplicationError(error) && error.code === "startupCancelled") return;
         void stopVisualTranslation().catch(() => undefined);
         throw error;
       }
     },
     stop: async () => {
       visualTranslation.clear();
+      captionOutput.setTranslationActive(true);
       await stopVisualTranslation();
     },
-    stopAudio: stopCapture,
+    stopAudio: async () => {
+      await stopCapture();
+      await waitForRuntimeStopped();
+    },
     openSettings: () => openDialogPanel("models"),
     report: (message) => {
       void reportFrontendDiagnostic("visual-translation", message);
@@ -1436,6 +1592,43 @@ populateSpokenLanguageOptions();
 populateTranslationTargets();
 renderLanguageGuidance();
 renderCaptionOutputControl();
+
+async function initializeSessionRuntime(): Promise<void> {
+  let bootstrapping = true;
+  let newestEvent: RuntimeSnapshot | undefined;
+  await onRuntimeState((next) => {
+    if (bootstrapping) {
+      if (!newestEvent || next.revision > newestEvent.revision) newestEvent = next;
+      return;
+    }
+    applyRuntimeSnapshot(next);
+  });
+  await Promise.all([
+    onCaptureStatus(renderStatus),
+    onVisualStatus(renderVisualStatus)
+  ]);
+  const [bootstrap, audioStatus, screenStatus] = await Promise.all([
+    runtimeBootstrap(),
+    captureStatus(),
+    visualStatus()
+  ]);
+  renderStatus(audioStatus);
+  renderVisualStatus(screenStatus);
+  bootstrapping = false;
+  const newest = newestEvent && newestEvent.revision > bootstrap.snapshot.revision
+    ? newestEvent
+    : bootstrap.snapshot;
+  applyRuntimeSnapshot(newest);
+}
+
+function acceptsVisualSessionEvent(
+  sessionId: number,
+  runtimeRevision: number,
+  allowTerminal = false
+): boolean {
+  return acceptsVisualRuntimeEvent(runtimeCursor, sessionId, runtimeRevision, allowTerminal);
+}
+
 void Promise.all([
   updateOverlaySettings(storedOverlaySettings()).catch((error) => {
     const message = error instanceof Error ? error.message : String(error);
@@ -1452,23 +1645,25 @@ void Promise.all([
       message: error instanceof Error ? error.message : String(error)
     };
   }),
-  captureStatus().then(renderStatus),
+  initializeSessionRuntime(),
   modelStatus().then(renderModelStatus),
   visualModelStatus().then(renderVisualModelStatus),
-  visualStatus().then(renderVisualStatus),
   translationService.initialize().then(renderTranslationStatus).catch((error) => {
     const message = error instanceof Error ? error.message : String(error);
     captureMessage.textContent = message;
     void reportFrontendDiagnostic("translation-model", message);
   }),
   transcriptSnapshot().then(renderTranscript),
-  onCaptureStatus(renderStatus),
   onModelStatus(renderModelStatus),
   onTranscriptUpdate(renderTranscript),
   onVisualModelStatus(renderVisualModelStatus),
-  onVisualStatus(renderVisualStatus),
-  onVisualTextUpdate((update) => visualTranslation.update(update)),
-  onVisualTextClear(() => {
+  onVisualTextUpdate((update) => {
+    if (acceptsVisualSessionEvent(update.sessionId, update.runtimeRevision)) {
+      visualTranslation.update(update);
+    }
+  }),
+  onVisualTextClear((event) => {
+    if (!acceptsVisualSessionEvent(event.sessionId, event.runtimeRevision, true)) return;
     if (currentVisualStatus.active && currentVisualStatus.state === "capturing") {
       visualTranslation.rescan();
     } else {

@@ -5,6 +5,37 @@ Versioning while it is in the `0.x` pre-release line.
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-08-14
+
+### Added
+
+- Rust-derived desktop contracts and centralized IPC names for audio and visual
+  session commands, source selections, status projections, region selection,
+  OCR updates, clears, bootstrap state, and structured failures.
+- Browser-level runtime reducer tests in the normal local and Windows check
+  scripts, covering contract mismatches, out-of-order snapshots, replacement
+  sessions, and stale visual-result epochs.
+
+### Changed
+
+- Route visual-translation startup, capture/OCR workers, source loss, stopping,
+  failure cleanup, and compatibility status through the same session supervisor
+  already used by audio captions.
+- Register the runtime listener before fetching a versioned bootstrap snapshot;
+  the interface now applies only the newest monotonic revision and rejects
+  delayed visual output from stopped, waiting, or replaced sessions.
+- Treat the legacy audio and visual status events as UI compatibility
+  projections instead of independent lifecycle authorities.
+
+### Fixed
+
+- Keep one visual Stop action available while the OCR model is loading, cancel
+  late startup work, hide and clear the overlay immediately, and complete native
+  cleanup once in the background.
+- Surface visual source, region-selector, overlay, capture, model, worker, and
+  shutdown failures with stable codes and recovery guidance instead of flattening
+  session errors into strings.
+
 ## [0.1.3] - 2026-08-14
 
 ### Added

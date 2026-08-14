@@ -7,47 +7,25 @@ use std::{
 use crossbeam_channel::{RecvTimeoutError, TrySendError};
 use parking_lot::Mutex;
 use prollyglot_application_runtime::{
-    ApplicationError, ApplicationErrorCode, CancellationToken, ErrorRecoverability, RecoveryAction,
-    RuntimeBootstrap, RuntimeSnapshot, RuntimeStateEvent, SessionHealthLevel, SessionId,
-    SessionLifecycle, SessionMode, SessionProgress, SessionSource, SessionSourceKind,
-    StartSessionRequest, WorkerLifetime, WorkerOutcome, WorkerReporter, WorkerRole,
+    ApplicationError, ApplicationErrorCode, ApplicationSource, CancellationToken, CaptureSelection,
+    CaptureState, CaptureStatus, ErrorRecoverability, PlaybackDevice, RecoveryAction,
+    RuntimeSnapshot, SessionHealthLevel, SessionId, SessionLifecycle, SessionMode, SessionProgress,
+    SessionSource, SessionSourceKind, SourceSnapshot, StartSessionRequest, WorkerLifetime,
+    WorkerOutcome, WorkerReporter, WorkerRole,
 };
 use prollyglot_core::{
-    AudioFrame, CaptureEvent, CaptureSelection, CaptureSession, CaptureState, SourceSnapshot,
+    AudioFrame, CaptureEvent, CaptureSelection as BackendCaptureSelection, CaptureSession,
+    CaptureState as BackendCaptureState,
 };
-use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::{RuntimeState, show_live_overlay};
 
-const CAPTURE_STATUS_EVENT: &str = "capture-status";
 const SUPERVISOR_POLL_INTERVAL: Duration = Duration::from_millis(25);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(15);
 const INFERENCE_QUEUE_CAPACITY: usize = 128;
 const INFERENCE_QUEUE_RECOVERY_DEPTH: usize = INFERENCE_QUEUE_CAPACITY / 4;
 const INFERENCE_BACKLOG_RECOVERY_GRACE: Duration = Duration::from_secs(2);
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CaptureStatus {
-    state: CaptureState,
-    peak: f32,
-    dropped_frames: u64,
-    source_label: Option<String>,
-    message: Option<String>,
-}
-
-impl Default for CaptureStatus {
-    fn default() -> Self {
-        Self {
-            state: CaptureState::Stopped,
-            peak: 0.0,
-            dropped_frames: 0,
-            source_label: None,
-            message: None,
-        }
-    }
-}
 
 #[derive(Default)]
 struct PublishedAudioStatus {
@@ -74,6 +52,17 @@ struct ActiveAudioResources {
     capture: Box<dyn CaptureSession>,
     event_forwarder: Option<JoinHandle<()>>,
     transcription_worker: Option<JoinHandle<()>>,
+}
+
+struct AudioEventForwarder {
+    app: AppHandle,
+    supervisor: Arc<Mutex<prollyglot_application_runtime::SessionSupervisor>>,
+    status: SharedAudioStatus,
+    session_id: SessionId,
+    cancellation: CancellationToken,
+    events: crossbeam_channel::Receiver<CaptureEvent>,
+    audio_sender: crossbeam_channel::Sender<AudioFrame>,
+    overflow_audio_receiver: crossbeam_channel::Receiver<AudioFrame>,
 }
 
 impl ActiveAudioResources {
@@ -160,7 +149,7 @@ fn queue_latest_audio(
 
 #[tauri::command]
 pub fn source_snapshot() -> Result<SourceSnapshot, ApplicationError> {
-    prollyglot_audio_windows::source_snapshot().map_err(|error| {
+    let snapshot = prollyglot_audio_windows::source_snapshot().map_err(|error| {
         tracing::error!(%error, "could not enumerate Windows audio sources");
         application_error(
             ApplicationErrorCode::CaptureUnavailable,
@@ -169,19 +158,33 @@ pub fn source_snapshot() -> Result<SourceSnapshot, ApplicationError> {
             RecoveryAction::Retry,
             None,
         )
+    })?;
+    Ok(SourceSnapshot {
+        playback_devices: snapshot
+            .playback_devices
+            .into_iter()
+            .map(|device| PlaybackDevice {
+                id: device.id.0,
+                name: device.name,
+                is_default: device.is_default,
+            })
+            .collect(),
+        applications: snapshot
+            .applications
+            .into_iter()
+            .map(|application| ApplicationSource {
+                id: application.id.0,
+                name: application.name,
+                process_id: application.process_id,
+                device_ids: application.device_ids.into_iter().map(|id| id.0).collect(),
+            })
+            .collect(),
     })
 }
 
 #[tauri::command]
 pub fn capture_status(state: State<'_, RuntimeState>) -> CaptureStatus {
     state.audio.status.lock().capture.clone()
-}
-
-#[tauri::command]
-pub fn runtime_bootstrap(state: State<'_, RuntimeState>) -> RuntimeBootstrap {
-    RuntimeBootstrap {
-        snapshot: state.supervisor.lock().snapshot(),
-    }
 }
 
 #[tauri::command]
@@ -197,15 +200,6 @@ pub async fn start_capture(
     };
     let started = {
         let _control = state.control.lock();
-        if crate::visual::is_active(&state.visual) {
-            return Err(application_error(
-                ApplicationErrorCode::SessionConflict,
-                "Stop screen translation before starting audio captions.",
-                ErrorRecoverability::UserActionRequired,
-                RecoveryAction::StopAndRetry,
-                None,
-            ));
-        }
         state.supervisor.lock().start(request)?
     };
     publish_runtime_snapshot(&app, &state.audio.status, started.snapshot.clone());
@@ -323,7 +317,10 @@ pub async fn start_capture(
     }
 
     let (event_sender, event_receiver) = crossbeam_channel::bounded(12);
-    let capture = match prollyglot_audio_windows::start_capture(selection, event_sender) {
+    let capture = match prollyglot_audio_windows::start_capture(
+        backend_capture_selection(&selection),
+        event_sender,
+    ) {
         Ok(capture) => capture,
         Err(error) => {
             let error = application_error(
@@ -406,14 +403,16 @@ pub async fn start_capture(
         WorkerLifetime::Session,
     )?;
     let forwarder = match spawn_event_forwarder(
-        app.clone(),
-        Arc::clone(&state.supervisor),
-        Arc::clone(&state.audio.status),
-        started.session_id,
-        started.cancellation.clone(),
-        event_receiver,
-        audio_sender,
-        overflow_audio_receiver,
+        AudioEventForwarder {
+            app: app.clone(),
+            supervisor: Arc::clone(&state.supervisor),
+            status: Arc::clone(&state.audio.status),
+            session_id: started.session_id,
+            cancellation: started.cancellation.clone(),
+            events: event_receiver,
+            audio_sender,
+            overflow_audio_receiver,
+        },
         event_reporter,
     ) {
         Ok(forwarder) => forwarder,
@@ -469,20 +468,29 @@ pub async fn start_capture(
     }
 
     finish_reporter(&mut startup_reporter, WorkerOutcome::Completed);
-    let running = match state.supervisor.lock().mark_running(started.session_id) {
-        Ok(snapshot) => snapshot,
-        Err(error) if error.code == ApplicationErrorCode::StartupCancelled => {
-            return Err(error);
-        }
-        Err(error) => return Err(error),
-    };
-    publish_runtime_snapshot(&app, &state.audio.status, running);
+    let lifecycle = state.supervisor.lock().snapshot().lifecycle;
+    if lifecycle == SessionLifecycle::Starting {
+        let running = match state.supervisor.lock().mark_running(started.session_id) {
+            Ok(snapshot) => snapshot,
+            Err(error) if error.code == ApplicationErrorCode::StartupCancelled => {
+                return Err(error);
+            }
+            Err(error) => return Err(error),
+        };
+        publish_runtime_snapshot(&app, &state.audio.status, running);
+    } else if lifecycle != SessionLifecycle::Waiting {
+        return Err(startup_cancelled(started.session_id));
+    }
     let overlay_result = {
         let _control = state.control.lock();
         if started.cancellation.is_cancelled() {
             return Err(startup_cancelled(started.session_id));
         }
-        show_live_overlay(&app, &state)
+        if state.supervisor.lock().snapshot().lifecycle == SessionLifecycle::Running {
+            show_live_overlay(&app, &state)
+        } else {
+            Ok(())
+        }
     };
     if let Err(message) = overlay_result {
         tracing::warn!(%message, "could not show live caption overlay");
@@ -504,7 +512,10 @@ pub fn stop_capture(
 ) -> Result<(), ApplicationError> {
     let (permit, resources) = {
         let _control = state.control.lock();
-        let permit = state.supervisor.lock().request_stop(None)?;
+        let permit = state
+            .supervisor
+            .lock()
+            .request_stop_for_mode(SessionMode::AudioCaptions)?;
         let resources = take_resources(&state.audio.resources, permit.session_id);
         (permit, resources)
     };
@@ -569,33 +580,18 @@ fn prollyglot_models_root(
 }
 
 fn spawn_event_forwarder(
-    app: AppHandle,
-    supervisor: Arc<Mutex<prollyglot_application_runtime::SessionSupervisor>>,
-    status: SharedAudioStatus,
-    session_id: SessionId,
-    cancellation: CancellationToken,
-    event_receiver: crossbeam_channel::Receiver<CaptureEvent>,
-    audio_sender: crossbeam_channel::Sender<AudioFrame>,
-    overflow_audio_receiver: crossbeam_channel::Receiver<AudioFrame>,
+    forwarder: AudioEventForwarder,
     reporter: WorkerReporter,
 ) -> Result<JoinHandle<()>, ApplicationError> {
+    let session_id = forwarder.session_id;
     thread::Builder::new()
         .name("capture-event-forwarder".into())
         .spawn(move || {
             let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                forward_capture_events(
-                    &app,
-                    &supervisor,
-                    &status,
-                    session_id,
-                    &cancellation,
-                    &event_receiver,
-                    &audio_sender,
-                    &overflow_audio_receiver,
-                )
+                forward_capture_events(&forwarder)
             }));
             let outcome = match outcome {
-                Ok(Ok(())) if cancellation.is_cancelled() => WorkerOutcome::Cancelled,
+                Ok(Ok(())) if forwarder.cancellation.is_cancelled() => WorkerOutcome::Cancelled,
                 Ok(Ok(())) => WorkerOutcome::Completed,
                 Ok(Err(error)) => WorkerOutcome::Failed(error),
                 Err(_) => WorkerOutcome::Panicked,
@@ -613,17 +609,18 @@ fn spawn_event_forwarder(
         })
 }
 
-#[allow(clippy::too_many_arguments)]
-fn forward_capture_events(
-    app: &AppHandle,
-    supervisor: &Arc<Mutex<prollyglot_application_runtime::SessionSupervisor>>,
-    status: &SharedAudioStatus,
-    session_id: SessionId,
-    cancellation: &CancellationToken,
-    events: &crossbeam_channel::Receiver<CaptureEvent>,
-    audio_sender: &crossbeam_channel::Sender<AudioFrame>,
-    overflow_audio_receiver: &crossbeam_channel::Receiver<AudioFrame>,
-) -> Result<(), ApplicationError> {
+fn forward_capture_events(forwarder: &AudioEventForwarder) -> Result<(), ApplicationError> {
+    let AudioEventForwarder {
+        app,
+        supervisor,
+        status,
+        session_id,
+        cancellation,
+        events,
+        audio_sender,
+        overflow_audio_receiver,
+    } = forwarder;
+    let session_id = *session_id;
     let mut last_peak_publish = None::<Instant>;
     let mut last_drop_publish = None::<Instant>;
     let mut inference_backlog_started = None::<Instant>;
@@ -640,11 +637,11 @@ fn forward_capture_events(
             Err(RecvTimeoutError::Disconnected) => return Ok(()),
         };
         match event {
-            CaptureEvent::State(CaptureState::Starting) => {}
-            CaptureEvent::State(CaptureState::Capturing) => {
+            CaptureEvent::State(BackendCaptureState::Starting) => {}
+            CaptureEvent::State(BackendCaptureState::Capturing) => {
                 resume_if_needed(app, supervisor, status, session_id);
             }
-            CaptureEvent::State(CaptureState::Waiting) => {
+            CaptureEvent::State(BackendCaptureState::Waiting) => {
                 mark_waiting(
                     app,
                     supervisor,
@@ -653,7 +650,7 @@ fn forward_capture_events(
                     "The selected audio source is temporarily unavailable.",
                 );
             }
-            CaptureEvent::State(CaptureState::Stopping | CaptureState::Stopped) => {
+            CaptureEvent::State(BackendCaptureState::Stopping | BackendCaptureState::Stopped) => {
                 if !cancellation.is_cancelled() {
                     return Err(application_error(
                         ApplicationErrorCode::CaptureFailed,
@@ -665,7 +662,7 @@ fn forward_capture_events(
                 }
                 return Ok(());
             }
-            CaptureEvent::State(CaptureState::Failed) => {
+            CaptureEvent::State(BackendCaptureState::Failed) => {
                 return Err(application_error(
                     ApplicationErrorCode::CaptureFailed,
                     "The audio capture worker reported a failure.",
@@ -978,6 +975,9 @@ fn publish_runtime_snapshot(
     status: &SharedAudioStatus,
     snapshot: RuntimeSnapshot,
 ) {
+    if !crate::runtime::publish_snapshot(app, &snapshot) {
+        return;
+    }
     let mut published = status.lock();
     let published_revision = published.runtime_revision;
     let Some(next) = published.apply_snapshot(&snapshot) else {
@@ -988,14 +988,6 @@ fn publish_runtime_snapshot(
         );
         return;
     };
-    if let Err(error) = app.emit(
-        prollyglot_application_runtime::ipc::STATE_EVENT,
-        RuntimeStateEvent {
-            snapshot: snapshot.clone(),
-        },
-    ) {
-        tracing::warn!(%error, "could not emit runtime state");
-    }
     emit_capture_status(app, next);
 }
 
@@ -1050,7 +1042,10 @@ fn publish_metrics(
 }
 
 fn emit_capture_status(app: &AppHandle, next: CaptureStatus) {
-    if let Err(error) = app.emit(CAPTURE_STATUS_EVENT, next) {
+    if let Err(error) = app.emit(
+        prollyglot_application_runtime::ipc::CAPTURE_STATUS_EVENT,
+        next,
+    ) {
         tracing::warn!(%error, "could not emit capture status");
     }
 }
@@ -1071,20 +1066,32 @@ fn fail_and_publish(
 fn session_source(selection: &CaptureSelection) -> SessionSource {
     match selection {
         CaptureSelection::SystemDefault => SessionSource::new(
-            selection.source_id().to_string(),
+            "default-output",
             SessionSourceKind::SystemOutput,
             "Follow system default",
         ),
         CaptureSelection::SystemOutput { device_id } => SessionSource::new(
-            selection.source_id().to_string(),
+            device_id.clone(),
             SessionSourceKind::SystemOutput,
-            device_id.to_string(),
+            device_id.clone(),
         ),
         CaptureSelection::Application { process_id } => SessionSource::new(
-            selection.source_id().to_string(),
+            format!("process:{process_id}"),
             SessionSourceKind::Application,
             format!("Application {process_id}"),
         ),
+    }
+}
+
+fn backend_capture_selection(selection: &CaptureSelection) -> BackendCaptureSelection {
+    match selection {
+        CaptureSelection::SystemDefault => BackendCaptureSelection::SystemDefault,
+        CaptureSelection::SystemOutput { device_id } => BackendCaptureSelection::SystemOutput {
+            device_id: prollyglot_core::SourceId::new(device_id.clone()),
+        },
+        CaptureSelection::Application { process_id } => BackendCaptureSelection::Application {
+            process_id: *process_id,
+        },
     }
 }
 

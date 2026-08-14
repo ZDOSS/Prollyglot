@@ -15,15 +15,22 @@ import type {
   RuntimeBootstrap,
   RuntimeSnapshot,
   RuntimeStateEvent,
+  ShowVisualRegionSelectorCommand,
   SourceSnapshot,
+  StartCaptureCommand,
+  StartVisualTranslationCommand,
   TranscriptSnapshot,
+  UpdateVisualOverlayOutputCommand,
   VisualCaptureCapabilities,
   VisualCaptureSelection,
   VisualDetectionMode,
   VisualModelCatalogStatus,
   VisualOutputPayload,
+  VisualRegionSelected,
+  VisualRegionSelectorRequest,
   VisualSourceSnapshot,
   VisualStatus,
+  VisualTextClear,
   VisualTextUpdate
 } from "./types";
 
@@ -51,6 +58,8 @@ const mockSnapshot: SourceSnapshot = {
 
 let mockStatus: CaptureStatus = { state: "stopped", peak: 0, droppedFrames: 0 };
 let mockRuntimeRevision = 0;
+let mockNextSessionId = 1;
+let mockActiveSessionId: number | null = null;
 const mockRuntimeListeners = new Set<(snapshot: RuntimeSnapshot) => void>();
 const mockStatusListeners = new Set<(status: CaptureStatus) => void>();
 let mockTimer: number | undefined;
@@ -210,7 +219,7 @@ let mockVisualStatus: VisualStatus = {
 };
 const mockVisualStatusListeners = new Set<(status: VisualStatus) => void>();
 const mockVisualTextListeners = new Set<(update: VisualTextUpdate) => void>();
-const mockVisualClearListeners = new Set<() => void>();
+const mockVisualClearListeners = new Set<(event: VisualTextClear) => void>();
 let mockVisualTimers: number[] = [];
 let mockTranscript: TranscriptSnapshot = { revision: 0, committed: [] };
 const mockTranscriptListeners = new Set<(snapshot: TranscriptSnapshot) => void>();
@@ -219,30 +228,44 @@ const publishMockStatus = () => {
   for (const listener of mockStatusListeners) listener(mockStatus);
 };
 
-const mockRuntimeSnapshot = (): RuntimeSnapshot => ({
-  contractVersion: RUNTIME_CONTRACT_VERSION,
-  revision: mockRuntimeRevision,
-  sessionId: mockStatus.state === "stopped" ? null : 1,
-  mode: mockStatus.state === "stopped" ? null : "audioCaptions",
-  source: mockStatus.state === "stopped"
-    ? null
-    : { id: "default-output", kind: "systemOutput", label: "System default" },
-  lifecycle: mockStatus.state === "capturing" ? "running" : mockStatus.state,
-  health: {
-    level: mockStatus.state === "waiting" ? "recovering" : mockStatus.state === "failed" ? "degraded" : "healthy",
-    progress: mockStatus.state === "capturing"
-      ? "live"
-      : mockStatus.state === "waiting"
-        ? "waitingForSource"
-        : mockStatus.state === "starting"
-          ? "preparingModel"
-          : mockStatus.state === "stopped"
-            ? "idle"
-            : mockStatus.state,
-    message: mockStatus.message ?? null
-  },
-  failure: null
-});
+const mockRuntimeSnapshot = (): RuntimeSnapshot => {
+  const visualOwnsRuntime = mockVisualStatus.state !== "stopped";
+  const audioOwnsRuntime = !visualOwnsRuntime && mockStatus.state !== "stopped";
+  const mode = visualOwnsRuntime
+    ? "visualTranslation"
+    : audioOwnsRuntime
+      ? "audioCaptions"
+      : null;
+  const state = visualOwnsRuntime ? mockVisualStatus.state : mockStatus.state;
+  const lifecycle = state === "capturing" ? "running" : state;
+  const message = visualOwnsRuntime ? mockVisualStatus.message : mockStatus.message;
+  return {
+    contractVersion: RUNTIME_CONTRACT_VERSION,
+    revision: mockRuntimeRevision,
+    sessionId: mode ? mockActiveSessionId : null,
+    mode,
+    source: mode === "visualTranslation"
+      ? { id: "preview-visual", kind: "applicationWindow", label: mockVisualStatus.sourceLabel ?? "Preview window" }
+      : mode === "audioCaptions"
+        ? { id: "default-output", kind: "systemOutput", label: "System default" }
+        : null,
+    lifecycle,
+    health: {
+      level: state === "waiting" ? "recovering" : state === "failed" ? "degraded" : "healthy",
+      progress: state === "capturing"
+        ? "live"
+        : state === "waiting"
+          ? "waitingForSource"
+          : state === "starting"
+            ? "preparingModel"
+            : state === "stopped"
+              ? "idle"
+              : state,
+      message: message ?? null
+    },
+    failure: null
+  };
+};
 
 const publishMockRuntime = () => {
   mockRuntimeRevision += 1;
@@ -291,15 +314,19 @@ if (!isTauri() && import.meta.env.DEV) {
 
 export async function sourceSnapshot(): Promise<SourceSnapshot> {
   if (!isTauri()) return structuredClone(mockSnapshot);
-  return invoke<SourceSnapshot>("source_snapshot");
+  return invoke<SourceSnapshot>(RUNTIME_COMMANDS.sourceSnapshot);
 }
 
 export async function startCapture(selection: CaptureSelection, language: string): Promise<void> {
   if (isTauri()) {
-    await invoke("start_capture", { selection, language });
+    await invoke(
+      RUNTIME_COMMANDS.startCapture,
+      { selection, language } satisfies StartCaptureCommand
+    );
     return;
   }
 
+  mockActiveSessionId = mockNextSessionId++;
   mockStatus = { state: "starting", peak: 0, droppedFrames: 0 };
   mockTranscript = { revision: mockTranscript.revision + 1, committed: [] };
   publishMockTranscript();
@@ -352,7 +379,7 @@ export async function startCapture(selection: CaptureSelection, language: string
 
 export async function stopCapture(): Promise<void> {
   if (isTauri()) {
-    await invoke("stop_capture");
+    await invoke(RUNTIME_COMMANDS.stopCapture);
     return;
   }
 
@@ -362,7 +389,11 @@ export async function stopCapture(): Promise<void> {
   mockCaptionTimers = [];
   mockTimer = undefined;
   mockStartTimer = undefined;
+  mockStatus = { ...mockStatus, state: "stopping", peak: 0 };
+  publishMockStatus();
+  publishMockRuntime();
   mockStatus = { state: "stopped", peak: 0, droppedFrames: 0 };
+  mockActiveSessionId = null;
   publishMockStatus();
   publishMockRuntime();
 }
@@ -430,12 +461,12 @@ export async function onModelStatus(
 
 export async function visualCapabilities(): Promise<VisualCaptureCapabilities> {
   if (!isTauri()) return structuredClone(mockVisualCapabilities);
-  return invoke<VisualCaptureCapabilities>("visual_capabilities");
+  return invoke<VisualCaptureCapabilities>(RUNTIME_COMMANDS.visualCapabilities);
 }
 
 export async function visualSourceSnapshot(): Promise<VisualSourceSnapshot> {
   if (!isTauri()) return structuredClone(mockVisualSources);
-  return invoke<VisualSourceSnapshot>("visual_source_snapshot");
+  return invoke<VisualSourceSnapshot>(RUNTIME_COMMANDS.visualSourceSnapshot);
 }
 
 export async function pickVisualRegion(displayId: string): Promise<PixelRect | undefined> {
@@ -462,17 +493,17 @@ export async function pickVisualRegion(displayId: string): Promise<PixelRect | u
     };
 
     void Promise.all([
-      listen<{ displayId: string; region: PixelRect }>("visual-region-selected", ({ payload }) => {
+      listen<VisualRegionSelected>(RUNTIME_EVENTS.visualRegionSelected, ({ payload }) => {
         if (payload.displayId === displayId) finish(payload.region);
       }),
-      listen("visual-region-selection-cancelled", () => finish())
+      listen(RUNTIME_EVENTS.visualRegionSelectionCancelled, () => finish())
     ]).then(async (listeners) => {
       unlisten.push(...listeners);
-      const request = await invoke<{ displayId: string; width: number; height: number }>(
-        "show_visual_region_selector",
-        { displayId }
+      const request = await invoke<VisualRegionSelectorRequest>(
+        RUNTIME_COMMANDS.showVisualRegionSelector,
+        { displayId } satisfies ShowVisualRegionSelectorCommand
       );
-      await emit("visual-region-selector-request", request);
+      await emit(RUNTIME_EVENTS.visualRegionSelectorRequest, request);
     }).catch((error) => finish(undefined, error));
   });
 }
@@ -531,7 +562,7 @@ export async function onVisualModelStatus(
 
 export async function visualStatus(): Promise<VisualStatus> {
   if (!isTauri()) return structuredClone(mockVisualStatus);
-  return invoke<VisualStatus>("visual_status");
+  return invoke<VisualStatus>(RUNTIME_COMMANDS.visualStatus);
 }
 
 export async function startVisualTranslation(
@@ -541,7 +572,15 @@ export async function startVisualTranslation(
   detectionMode: VisualDetectionMode
 ): Promise<void> {
   if (isTauri()) {
-    await invoke("start_visual_translation", { selection, sourceLanguage, targetLanguage, detectionMode });
+    await invoke(
+      RUNTIME_COMMANDS.startVisualTranslation,
+      {
+        selection,
+        sourceLanguage,
+        targetLanguage,
+        detectionMode
+      } satisfies StartVisualTranslationCommand
+    );
     return;
   }
   void detectionMode;
@@ -554,6 +593,8 @@ export async function startVisualTranslation(
     : mockVisualSources.displays.find(({ id }) =>
       id === (selection.kind === "display" ? selection.sourceId : selection.displayId));
   if (!selectedSource) throw new Error("The selected visual source is unavailable.");
+  const sessionId = mockNextSessionId++;
+  mockActiveSessionId = sessionId;
   const geometry = selection.kind === "region"
     ? {
         label: `${selectedSource.label} · Region`,
@@ -582,6 +623,7 @@ export async function startVisualTranslation(
     message: "Loading local visual text recognition…"
   };
   publishMockVisualStatus();
+  publishMockRuntime();
   mockVisualTimers = [
     window.setTimeout(() => {
       mockVisualStatus = {
@@ -590,6 +632,7 @@ export async function startVisualTranslation(
         message: `Watching the live source, recognizing ${sourceLanguage} text, and translating to ${targetLanguage}.`
       };
       publishMockVisualStatus();
+      publishMockRuntime();
     }, 300),
     window.setTimeout(() => {
       const region = {
@@ -609,6 +652,8 @@ export async function startVisualTranslation(
       };
       publishMockVisualStatus();
       publishMockVisualText({
+        sessionId,
+        runtimeRevision: mockRuntimeRevision,
         source: geometry,
         visible: [region],
         translationRequests: [region],
@@ -620,11 +665,24 @@ export async function startVisualTranslation(
 
 export async function stopVisualTranslation(): Promise<void> {
   if (isTauri()) {
-    await invoke("stop_visual_translation");
+    await invoke(RUNTIME_COMMANDS.stopVisualTranslation);
     return;
   }
   for (const timer of mockVisualTimers) window.clearTimeout(timer);
   mockVisualTimers = [];
+  mockVisualStatus = {
+    ...mockVisualStatus,
+    active: true,
+    state: "stopping",
+    message: "Cancelling recognition and stopping screen capture…"
+  };
+  publishMockVisualStatus();
+  publishMockRuntime();
+  const sessionId = mockActiveSessionId;
+  if (sessionId !== null) {
+    const clear = { sessionId, runtimeRevision: mockRuntimeRevision };
+    for (const listener of mockVisualClearListeners) listener(clear);
+  }
   mockVisualStatus = {
     active: false,
     state: "stopped",
@@ -635,14 +693,17 @@ export async function stopVisualTranslation(): Promise<void> {
     visibleRegions: 0,
     overlayRegions: 0
   };
+  mockActiveSessionId = null;
   publishMockVisualStatus();
-  for (const listener of mockVisualClearListeners) listener();
+  publishMockRuntime();
 }
 
 export async function onVisualStatus(
   callback: (status: VisualStatus) => void
 ): Promise<UnlistenFn> {
-  if (isTauri()) return listen<VisualStatus>("visual-status", ({ payload }) => callback(payload));
+  if (isTauri()) {
+    return listen<VisualStatus>(RUNTIME_EVENTS.visualStatus, ({ payload }) => callback(payload));
+  }
   mockVisualStatusListeners.add(callback);
   return () => mockVisualStatusListeners.delete(callback);
 }
@@ -650,13 +711,19 @@ export async function onVisualStatus(
 export async function onVisualTextUpdate(
   callback: (update: VisualTextUpdate) => void
 ): Promise<UnlistenFn> {
-  if (isTauri()) return listen<VisualTextUpdate>("visual-text-update", ({ payload }) => callback(payload));
+  if (isTauri()) {
+    return listen<VisualTextUpdate>(RUNTIME_EVENTS.visualText, ({ payload }) => callback(payload));
+  }
   mockVisualTextListeners.add(callback);
   return () => mockVisualTextListeners.delete(callback);
 }
 
-export async function onVisualTextClear(callback: () => void): Promise<UnlistenFn> {
-  if (isTauri()) return listen("visual-text-clear", callback);
+export async function onVisualTextClear(
+  callback: (event: VisualTextClear) => void
+): Promise<UnlistenFn> {
+  if (isTauri()) {
+    return listen<VisualTextClear>(RUNTIME_EVENTS.visualClear, ({ payload }) => callback(payload));
+  }
   mockVisualClearListeners.add(callback);
   return () => mockVisualClearListeners.delete(callback);
 }
@@ -666,7 +733,10 @@ export async function updateVisualOutput(output: VisualOutputPayload): Promise<v
     window.__PROLLYGLOT_PREVIEW__.visualOutput = structuredClone(output);
   }
   if (isTauri()) {
-    await invoke("update_visual_overlay_output", { output });
+    await invoke(
+      RUNTIME_COMMANDS.updateVisualOverlayOutput,
+      { output } satisfies UpdateVisualOverlayOutputCommand
+    );
     return;
   }
   if (mockVisualStatus.active && mockVisualStatus.state === "capturing") {
@@ -704,7 +774,7 @@ export async function onTranscriptUpdate(
 
 export async function captureStatus(): Promise<CaptureStatus> {
   if (!isTauri()) return mockStatus;
-  return invoke<CaptureStatus>("capture_status");
+  return invoke<CaptureStatus>(RUNTIME_COMMANDS.captureStatus);
 }
 
 export async function runtimeBootstrap(): Promise<RuntimeBootstrap> {
@@ -727,7 +797,9 @@ export async function onRuntimeState(
 export async function onCaptureStatus(
   callback: (status: CaptureStatus) => void
 ): Promise<UnlistenFn> {
-  if (isTauri()) return listen<CaptureStatus>("capture-status", ({ payload }) => callback(payload));
+  if (isTauri()) {
+    return listen<CaptureStatus>(RUNTIME_EVENTS.captureStatus, ({ payload }) => callback(payload));
+  }
   mockStatusListeners.add(callback);
   return () => mockStatusListeners.delete(callback);
 }

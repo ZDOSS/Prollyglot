@@ -9,9 +9,12 @@ export function isApplicationError(error: unknown): error is ApplicationError {
     && typeof candidate.suggestedAction === "string";
 }
 
-export function errorMessage(error: unknown): string {
+export function errorMessage(
+  error: unknown,
+  fallback = "Prollyglot could not complete that action."
+): string {
   if (error instanceof Error) return error.message;
   if (isApplicationError(error)) return error.message;
   if (typeof error === "string") return error;
-  return "Prollyglot could not complete that action.";
+  return fallback;
 }
