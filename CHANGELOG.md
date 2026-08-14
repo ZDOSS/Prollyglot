@@ -5,6 +5,15 @@ Versioning while it is in the `0.x` pre-release line.
 
 ## [Unreleased]
 
+### Added
+
+- A platform-neutral application runtime foundation with typed audio/visual
+  session identity, legal lifecycle transitions, startup cancellation,
+  idempotent stopping, supervised worker completion, and structured recovery
+  errors.
+- Deterministic Rust-derived TypeScript runtime contracts plus local and Windows
+  checks that fail when the checked-in bindings are stale.
+
 ## [0.1.2] - 2026-08-11
 
 ### Fixed

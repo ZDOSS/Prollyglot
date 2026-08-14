@@ -1,3 +1,5 @@
+export * from "./generated/runtime";
+
 export type SourceId = string;
 
 export interface PlaybackDevice {

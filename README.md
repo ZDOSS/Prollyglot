@@ -48,6 +48,10 @@ draw between us.
 
 The repository currently contains:
 
+- a Tauri-free application-runtime foundation for one mutually exclusive,
+  revisioned audio/visual session lifecycle, with startup cancellation,
+  supervised worker completion, structured errors, and generated TypeScript
+  contracts; production command cutover is the active structural milestone;
 - a Tauri 2 desktop shell and customizable caption-overlay proof;
 - Windows playback-device capture through WASAPI loopback;
 - Windows application/process-tree capture through the documented process-loopback API;

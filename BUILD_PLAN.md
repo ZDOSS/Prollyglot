@@ -36,7 +36,7 @@ Why this direction:
 
 | Milestone | Integrated outcome | Status |
 | --- | --- | --- |
-| S. Structural integrity program | Replace patched orchestration with supervised sessions, bounded translation and presentation work, generated contracts, maintainable desktop pages, unified local state, and portable capture boundaries | Planned next; S1 and S2 gate further feature expansion |
+| S. Structural integrity program | Replace patched orchestration with supervised sessions, bounded translation and presentation work, generated contracts, maintainable desktop pages, unified local state, and portable capture boundaries | In progress; S1 runtime foundation integrated, production audio/visual cutovers next |
 | 1. Windows capture foundation | A real Windows desktop shell can enumerate and capture either a selected output device or selected application | Selected-device Windows smoke passed; application and lifecycle validation remain |
 | 2. Live English captions | Captured audio becomes stable partial and final English captions locally | Device-to-caption and corrected UI/context re-smokes passed; accented/conversational model evidence and application/lifecycle validation remain |
 | 3. Minimal customizable Windows app | The complete daily-use interface, overlay customization, transcript view, and controls work together | Pending |
@@ -166,6 +166,17 @@ implementations.
   selection, status, and error shape.
 - The normal local check runs the new runtime tests, and the Windows check runs
   supported desktop orchestration tests in addition to the real native link.
+
+### Progress — 2026-08-14
+
+The first S1 integration point is present as the Tauri-free
+`prollyglot-application-runtime` crate. It owns opaque session identity,
+monotonic snapshots, mutually exclusive audio/visual transitions, cancellation
+allocated before startup work, idempotent Stop requests, supervised worker
+completion, and structured recovery errors. Deterministic Rust-derived
+TypeScript contracts are checked by both local scripts. Production audio and
+visual commands still use their existing state owners until their complete
+vertical cutovers; S1 is not yet complete.
 
 ## S2 — Bounded translation, unified model storage, and authoritative overlays
 

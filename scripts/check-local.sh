@@ -6,6 +6,7 @@ cd "$project_root"
 
 cargo fmt --all -- --check
 cargo test --locked \
+  -p prollyglot-application-runtime \
   -p prollyglot-core \
   -p prollyglot-audio-pipeline \
   -p prollyglot-asr \
@@ -17,6 +18,7 @@ cargo test --locked \
   -p prollyglot-visual-windows \
   --all-targets
 cargo clippy --locked \
+  -p prollyglot-application-runtime \
   -p prollyglot-core \
   -p prollyglot-audio-pipeline \
   -p prollyglot-asr \
@@ -31,4 +33,5 @@ cargo check --locked -p prollyglot-audio-windows
 cargo clippy --locked -p prollyglot-audio-windows --target x86_64-pc-windows-msvc -- -D warnings
 cargo clippy --locked -p prollyglot-visual-windows --target x86_64-pc-windows-msvc --all-targets -- -D warnings
 cargo clippy --locked -p prollyglot-asr-sherpa --target x86_64-pc-windows-msvc --lib -- -D warnings
+cargo run --locked -p prollyglot-application-runtime --bin export-runtime-bindings -- --check
 pnpm --dir apps/desktop build

@@ -6,6 +6,7 @@ Push-Location $ProjectRoot
 try {
     cargo fmt --all -- --check
     cargo test --locked `
+        -p prollyglot-application-runtime `
         -p prollyglot-core `
         -p prollyglot-audio-pipeline `
         -p prollyglot-asr `
@@ -16,6 +17,7 @@ try {
         -p prollyglot-visual-ocr-rapid `
         -p prollyglot-visual-windows `
         --all-targets
+    cargo run --locked -p prollyglot-application-runtime --bin export-runtime-bindings -- --check
     pnpm --dir apps/desktop build
     # This must perform a real MSVC link. `cargo check` and Clippy did not catch
     # collisions between the native speech and OCR inference runtimes.
