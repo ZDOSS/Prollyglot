@@ -38,7 +38,8 @@ pub struct PlaybackDevice {
 pub struct ApplicationSource {
     pub id: SourceId,
     pub name: String,
-    pub process_id: u32,
+    /// More than one matching process tree is unsafe to select automatically.
+    pub instance_count: u32,
     /// Playback devices on which an active session for this process was observed.
     pub device_ids: Vec<SourceId>,
 }
@@ -64,11 +65,15 @@ pub struct AudioCaptureCapabilities {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum CaptureSelection {
     SystemDefault,
     SystemOutput { device_id: SourceId },
-    Application { process_id: u32 },
+    Application { source_id: SourceId },
 }
 
 impl CaptureSelection {
@@ -76,7 +81,7 @@ impl CaptureSelection {
         match self {
             Self::SystemDefault => SourceId::new("default-output"),
             Self::SystemOutput { device_id } => device_id.clone(),
-            Self::Application { process_id } => SourceId::new(format!("process:{process_id}")),
+            Self::Application { source_id } => source_id.clone(),
         }
     }
 }
@@ -173,9 +178,27 @@ pub enum CaptureState {
 pub enum CaptureEvent {
     State(CaptureState),
     Frame(AudioFrame),
-    Warning(String),
+    Recovery(CaptureRecovery),
     FramesDropped { total: u64 },
     Error(String),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CaptureRecoveryKind {
+    PlaybackDeviceUnavailable,
+    DefaultPlaybackDeviceChanged,
+    ApplicationExited,
+    ApplicationUnavailable,
+    ApplicationAmbiguous,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CaptureRecovery {
+    pub kind: CaptureRecoveryKind,
+    pub message: String,
+    pub retry_after_millis: u64,
 }
 
 #[derive(Debug, Error)]
@@ -184,6 +207,8 @@ pub enum CaptureError {
     UnsupportedPlatform,
     #[error("the selected source is unavailable: {0}")]
     SourceUnavailable(String),
+    #[error("the selected source matches multiple running applications: {0}")]
+    AmbiguousSource(String),
     #[error("invalid native audio format: {0}")]
     InvalidFormat(String),
     #[error("the capture stream is already running")]
@@ -260,6 +285,17 @@ mod tests {
             CaptureSelection::SystemDefault.source_id(),
             SourceId::new("default-output")
         );
+    }
+
+    #[test]
+    fn application_selection_preserves_only_the_opaque_backend_identity() {
+        let selection = CaptureSelection::Application {
+            source_id: SourceId::new("app:0123456789abcdef"),
+        };
+        assert_eq!(selection.source_id(), SourceId::new("app:0123456789abcdef"));
+        let json = serde_json::to_value(selection).expect("serialize application selection");
+        assert_eq!(json["sourceId"], "app:0123456789abcdef");
+        assert!(json.get("processId").is_none());
     }
 
     #[test]

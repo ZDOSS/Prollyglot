@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { planCaptionOutput, planTranslationTargets } from "../src/caption-form.ts";
+import {
+  planApplicationSourceOptions,
+  planCaptionOutput,
+  planTranslationTargets
+} from "../src/caption-form.ts";
 
 test("automatic recognition keeps translation unavailable until segments report language", () => {
   const plan = planTranslationTargets("auto", "en");
@@ -23,4 +27,19 @@ test("caption output exposes bilingual choices only for a valid route", () => {
   assert.equal(enabled.help.includes("starts from live partial speech"), true);
   assert.equal(disabled.disabled, true);
   assert.equal(disabled.selected, "original");
+});
+
+test("application choices use opaque identities and refuse ambiguous process trees", () => {
+  const options = planApplicationSourceOptions([
+    { id: "app:stable", name: "Player", instanceCount: 1, deviceIds: [] },
+    { id: "app:duplicate", name: "Browser", instanceCount: 2, deviceIds: [] }
+  ]);
+  assert.deepEqual(options, [
+    { value: "application:app:stable", label: "Only Player", disabled: false },
+    {
+      value: "application:app:duplicate",
+      label: "Browser · close duplicate instances",
+      disabled: true
+    }
+  ]);
 });

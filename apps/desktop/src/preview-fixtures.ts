@@ -38,7 +38,7 @@ export function previewSourceSnapshot(): SourceSnapshot {
       {
         id: "preview-browser",
         name: "Browser preview",
-        processId: 4_028,
+        instanceCount: 1,
         deviceIds: ["preview-speakers"]
       }
     ]

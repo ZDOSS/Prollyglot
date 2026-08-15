@@ -1,6 +1,6 @@
 // Generated from prollyglot-application-runtime. Do not edit by hand.
 
-export const RUNTIME_CONTRACT_VERSION = 3 as const;
+export const RUNTIME_CONTRACT_VERSION = 4 as const;
 export const RUNTIME_COMMANDS = { configurationSnapshot: "configuration_snapshot", updateConfiguration: "update_configuration", bootstrap: "runtime_bootstrap", sourceSnapshot: "source_snapshot", startCapture: "start_capture", stopCapture: "stop_capture", captureStatus: "capture_status", visualCapabilities: "visual_capabilities", visualSourceSnapshot: "visual_source_snapshot", visualStatus: "visual_status", showVisualRegionSelector: "show_visual_region_selector", completeVisualRegionSelection: "complete_visual_region_selection", cancelVisualRegionSelection: "cancel_visual_region_selection", startVisualTranslation: "start_visual_translation", stopVisualTranslation: "stop_visual_translation", updateCaptionPresentation: "update_caption_presentation", updateVisualPresentation: "update_visual_presentation" } as const;
 export const RUNTIME_EVENTS = { state: "runtime-state", captureStatus: "capture-status", visualStatus: "visual-status", visualText: "visual-text-update", visualClear: "visual-text-clear", visualRegionSelected: "visual-region-selected", visualRegionSelectionCancelled: "visual-region-selection-cancelled", visualRegionSelectorRequest: "visual-region-selector-request", captionPresentation: "caption-presentation", visualPresentation: "visual-presentation", configuration: "configuration-updated" } as const;
 
@@ -58,13 +58,13 @@ export type ApplicationError = { code: ApplicationErrorCode, message: string, re
 
 export type StartSessionRequest = { mode: SessionMode, source: SessionSource, };
 
-export type CaptureSelection = { "kind": "systemDefault" } | { "kind": "systemOutput", deviceId: string, } | { "kind": "application", processId: number, };
+export type CaptureSelection = { "kind": "systemDefault" } | { "kind": "systemOutput", deviceId: string, } | { "kind": "application", sourceId: string, };
 
 export type CaptureState = "starting" | "capturing" | "waiting" | "stopping" | "stopped" | "failed";
 
 export type PlaybackDevice = { id: string, name: string, isDefault: boolean, };
 
-export type ApplicationSource = { id: string, name: string, processId: number, deviceIds: Array<string>, };
+export type ApplicationSource = { id: string, name: string, instanceCount: number, deviceIds: Array<string>, };
 
 export type SourceSnapshot = { playbackDevices: Array<PlaybackDevice>, applications: Array<ApplicationSource>, };
 

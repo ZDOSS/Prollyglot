@@ -13,15 +13,16 @@ use std::{
 use crossbeam_channel::{Sender, TrySendError};
 use prollyglot_audio_pipeline::{SignalActivity, normalize_interleaved};
 use prollyglot_core::{
-    ApplicationSource, CaptureError, CaptureEvent, CaptureSelection, CaptureSession, CaptureState,
-    NativeAudioFormat, PlaybackDevice, ResolvedCaptureSelection, SampleFormat, SourceId,
-    SourceSnapshot,
+    ApplicationSource, CaptureError, CaptureEvent, CaptureRecovery, CaptureRecoveryKind,
+    CaptureSelection, CaptureSession, CaptureState, NativeAudioFormat, PlaybackDevice,
+    ResolvedCaptureSelection, SampleFormat, SourceId, SourceSnapshot,
 };
 use windows::{
     Win32::{
         Devices::FunctionDiscovery::PKEY_Device_FriendlyName,
         Foundation::{
-            CloseHandle, E_POINTER, HANDLE, RPC_E_CHANGED_MODE, S_OK, WAIT_FAILED, WAIT_OBJECT_0,
+            APPMODEL_ERROR_NO_APPLICATION, CloseHandle, E_POINTER, ERROR_INSUFFICIENT_BUFFER,
+            ERROR_SUCCESS, HANDLE, RPC_E_CHANGED_MODE, S_OK, WAIT_FAILED, WAIT_OBJECT_0,
             WAIT_TIMEOUT,
         },
         Media::Audio::{
@@ -39,6 +40,7 @@ use windows::{
             VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK, WAVE_FORMAT_PCM, WAVEFORMATEX,
             WAVEFORMATEXTENSIBLE, WAVEFORMATEXTENSIBLE_0, eConsole, eRender,
         },
+        Storage::Packaging::Appx::{GetApplicationUserModelId, GetPackageFamilyName},
         System::{
             Com::{
                 BLOB, CLSCTX_ALL, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx,
@@ -64,6 +66,8 @@ use windows::{
     },
 };
 
+use crate::identity::{IdentityKind, stable_application_id};
+
 const WAVE_FORMAT_IEEE_FLOAT: u16 = 3;
 const WAVE_FORMAT_EXTENSIBLE: u16 = 0xfffe;
 const KSDATAFORMAT_SUBTYPE_IEEE_FLOAT: GUID =
@@ -75,6 +79,8 @@ const CAPTURE_WAIT_MILLIS: u32 = 250;
 const LOOPBACK_BUFFER_DURATION_100NS: i64 = 5 * 10_000_000;
 const DEFAULT_DEVICE_POLL_INTERVAL: Duration = Duration::from_secs(1);
 const ENDPOINT_RECONNECT_INTERVAL: Duration = Duration::from_secs(3);
+const APPLICATION_RECONNECT_MIN_INTERVAL: Duration = Duration::from_secs(1);
+const APPLICATION_RECONNECT_MAX_INTERVAL: Duration = Duration::from_secs(5);
 const STOP_POLL_INTERVAL: Duration = Duration::from_millis(50);
 const SILENCE_TIMEOUT: Duration = Duration::from_secs(2);
 const SIGNAL_THRESHOLD: f32 = 0.000_1;
@@ -202,6 +208,18 @@ impl ProcessIndex {
     }
 }
 
+#[derive(Default)]
+struct DiscoveredApplication {
+    name: String,
+    process_ids: HashSet<u32>,
+    device_ids: Vec<SourceId>,
+}
+
+struct EnumeratedAudioSources {
+    snapshot: SourceSnapshot,
+    application_targets: HashMap<SourceId, Vec<u32>>,
+}
+
 struct WindowsCaptureSession {
     selection: CaptureSelection,
     stop_requested: Arc<AtomicBool>,
@@ -238,13 +256,18 @@ impl Drop for WindowsCaptureSession {
 
 pub(crate) fn source_snapshot() -> Result<SourceSnapshot, CaptureError> {
     let _apartment = ComApartment::initialize()?;
-    unsafe { enumerate_sources() }.map_err(|error| windows_error("enumerate audio sources", error))
+    unsafe { enumerate_sources() }
+        .map(|sources| sources.snapshot)
+        .map_err(|error| windows_error("enumerate audio sources", error))
 }
 
 pub(crate) fn resolve_selection(
     selection: &CaptureSelection,
 ) -> Result<ResolvedCaptureSelection, CaptureError> {
-    let snapshot = source_snapshot()?;
+    let _apartment = ComApartment::initialize()?;
+    let sources = unsafe { enumerate_sources() }
+        .map_err(|error| windows_error("enumerate audio sources", error))?;
+    let snapshot = &sources.snapshot;
     match selection {
         CaptureSelection::SystemDefault => {
             let device = snapshot
@@ -274,14 +297,15 @@ pub(crate) fn resolve_selection(
                 display_name: device.name.clone(),
             })
         }
-        CaptureSelection::Application { process_id } => {
+        CaptureSelection::Application { source_id } => {
             let application = snapshot
                 .applications
                 .iter()
-                .find(|application| application.process_id == *process_id)
-                .ok_or_else(|| {
-                    CaptureError::SourceUnavailable(format!("application process {process_id}"))
-                })?;
+                .find(|application| application.id == *source_id)
+                .ok_or_else(|| CaptureError::SourceUnavailable(source_id.to_string()))?;
+            if application.instance_count > 1 {
+                return Err(CaptureError::AmbiguousSource(application.name.clone()));
+            }
             Ok(ResolvedCaptureSelection {
                 selection: selection.clone(),
                 source_id: application.id.clone(),
@@ -291,7 +315,7 @@ pub(crate) fn resolve_selection(
     }
 }
 
-unsafe fn enumerate_sources() -> windows::core::Result<SourceSnapshot> {
+unsafe fn enumerate_sources() -> windows::core::Result<EnumeratedAudioSources> {
     let enumerator: IMMDeviceEnumerator =
         unsafe { CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)? };
     let default_id = unsafe {
@@ -305,7 +329,7 @@ unsafe fn enumerate_sources() -> windows::core::Result<SourceSnapshot> {
     let processes = ProcessIndex::snapshot();
 
     let mut playback_devices = Vec::with_capacity(device_count as usize);
-    let mut applications = HashMap::<u32, ApplicationSource>::new();
+    let mut applications = HashMap::<SourceId, DiscoveredApplication>::new();
 
     for index in 0..device_count {
         let Ok(device) = (unsafe { collection.Item(index) }) else {
@@ -356,20 +380,22 @@ unsafe fn enumerate_sources() -> windows::core::Result<SourceSnapshot> {
 
             let capture_process_id = processes.capture_root(process_id);
             let session_name = unsafe { session_display_name(&control) }.unwrap_or_default();
-            let name = process_name(capture_process_id)
-                .or_else(|| processes.executable_name(capture_process_id))
+            let Some((source_id, process_name)) =
+                application_identity(capture_process_id, &processes)
+            else {
+                continue;
+            };
+            let name = process_name
                 .filter(|value| !value.is_empty())
                 .or_else(|| (!session_name.is_empty()).then_some(session_name))
-                .unwrap_or_else(|| format!("Application {capture_process_id}"));
-            let entry =
-                applications
-                    .entry(capture_process_id)
-                    .or_insert_with(|| ApplicationSource {
-                        id: SourceId::new(format!("process:{capture_process_id}")),
-                        name,
-                        process_id: capture_process_id,
-                        device_ids: Vec::new(),
-                    });
+                .unwrap_or_else(|| "Application".into());
+            let entry = applications
+                .entry(source_id)
+                .or_insert_with(|| DiscoveredApplication {
+                    name,
+                    ..DiscoveredApplication::default()
+                });
+            entry.process_ids.insert(capture_process_id);
             let device_id = SourceId::new(id.clone());
             if !entry.device_ids.contains(&device_id) {
                 entry.device_ids.push(device_id);
@@ -383,33 +409,32 @@ unsafe fn enumerate_sources() -> windows::core::Result<SourceSnapshot> {
             .cmp(&left.is_default)
             .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
     });
-    let mut applications = applications.into_values().collect::<Vec<_>>();
-    let mut application_name_counts = HashMap::<String, usize>::new();
-    for application in &applications {
-        *application_name_counts
-            .entry(application.name.to_lowercase())
-            .or_default() += 1;
+    let mut application_targets = HashMap::with_capacity(applications.len());
+    let mut application_sources = Vec::with_capacity(applications.len());
+    for (source_id, application) in applications {
+        let mut process_ids = application.process_ids.into_iter().collect::<Vec<_>>();
+        process_ids.sort_unstable();
+        application_sources.push(ApplicationSource {
+            id: source_id.clone(),
+            name: application.name,
+            instance_count: process_ids.len() as u32,
+            device_ids: application.device_ids,
+        });
+        application_targets.insert(source_id, process_ids);
     }
-    for application in &mut applications {
-        if application_name_counts
-            .get(&application.name.to_lowercase())
-            .copied()
-            .unwrap_or_default()
-            > 1
-        {
-            application.name = format!("{} ({})", application.name, application.process_id);
-        }
-    }
-    applications.sort_by(|left, right| {
+    application_sources.sort_by(|left, right| {
         left.name
             .to_lowercase()
             .cmp(&right.name.to_lowercase())
-            .then(left.process_id.cmp(&right.process_id))
+            .then(left.id.0.cmp(&right.id.0))
     });
 
-    Ok(SourceSnapshot {
-        playback_devices,
-        applications,
+    Ok(EnumeratedAudioSources {
+        snapshot: SourceSnapshot {
+            playback_devices,
+            applications: application_sources,
+        },
+        application_targets,
     })
 }
 
@@ -510,10 +535,43 @@ fn wide_buffer(buffer: &[u16]) -> String {
     String::from_utf16_lossy(&buffer[..length])
 }
 
-fn process_name(process_id: u32) -> Option<String> {
-    let handle = OwnedHandle(unsafe {
-        OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, process_id).ok()?
-    });
+fn application_identity(
+    process_id: u32,
+    processes: &ProcessIndex,
+) -> Option<(SourceId, Option<String>)> {
+    let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, process_id) }
+        .ok()
+        .map(OwnedHandle);
+    let path = handle.as_ref().and_then(process_path);
+    let display_name = path
+        .as_deref()
+        .and_then(|path| Path::new(path).file_stem())
+        .map(|name| name.to_string_lossy().into_owned())
+        .or_else(|| processes.executable_name(process_id));
+    let identity = handle
+        .as_ref()
+        .and_then(|handle| unsafe { process_application_user_model_id(handle.0) })
+        .map(|value| (IdentityKind::ApplicationUserModel, value))
+        .or_else(|| {
+            handle
+                .as_ref()
+                .and_then(|handle| unsafe { process_package_family_name(handle.0) })
+                .map(|value| (IdentityKind::PackageFamily, value))
+        })
+        .or_else(|| {
+            path.clone()
+                .map(|value| (IdentityKind::ExecutablePath, value))
+        })
+        .or_else(|| {
+            processes
+                .entries
+                .get(&process_id)
+                .map(|entry| (IdentityKind::ExecutableName, entry.executable.clone()))
+        })?;
+    Some((stable_application_id(identity.0, &identity.1), display_name))
+}
+
+fn process_path(handle: &OwnedHandle) -> Option<String> {
     let mut path = vec![0_u16; 32_768];
     let mut length = path.len() as u32;
     unsafe {
@@ -525,10 +583,41 @@ fn process_name(process_id: u32) -> Option<String> {
         )
         .ok()?;
     }
-    let path = String::from_utf16_lossy(&path[..length as usize]);
-    Path::new(&path)
-        .file_stem()
-        .map(|name| name.to_string_lossy().into_owned())
+    Some(String::from_utf16_lossy(&path[..length as usize]))
+}
+
+unsafe fn process_application_user_model_id(handle: HANDLE) -> Option<String> {
+    let mut length = 0_u32;
+    let probe = unsafe { GetApplicationUserModelId(handle, &mut length, None) };
+    if probe == APPMODEL_ERROR_NO_APPLICATION
+        || (probe != ERROR_INSUFFICIENT_BUFFER && probe != ERROR_SUCCESS)
+        || length == 0
+    {
+        return None;
+    }
+    let mut buffer = vec![0_u16; length as usize];
+    let result =
+        unsafe { GetApplicationUserModelId(handle, &mut length, Some(PWSTR(buffer.as_mut_ptr()))) };
+    (result == ERROR_SUCCESS)
+        .then(|| wide_buffer(&buffer))
+        .filter(|value| !value.is_empty())
+}
+
+unsafe fn process_package_family_name(handle: HANDLE) -> Option<String> {
+    let mut length = 0_u32;
+    let probe = unsafe { GetPackageFamilyName(handle, &mut length, None) };
+    if probe == APPMODEL_ERROR_NO_APPLICATION
+        || (probe != ERROR_INSUFFICIENT_BUFFER && probe != ERROR_SUCCESS)
+        || length == 0
+    {
+        return None;
+    }
+    let mut buffer = vec![0_u16; length as usize];
+    let result =
+        unsafe { GetPackageFamilyName(handle, &mut length, Some(PWSTR(buffer.as_mut_ptr()))) };
+    (result == ERROR_SUCCESS)
+        .then(|| wide_buffer(&buffer))
+        .filter(|value| !value.is_empty())
 }
 
 fn windows_error(context: &str, error: windows::core::Error) -> CaptureError {
@@ -549,14 +638,10 @@ pub(crate) fn start_capture(
     let target = match &selection {
         CaptureSelection::SystemDefault => CaptureTarget::DefaultEndpoint,
         CaptureSelection::SystemOutput { device_id } => CaptureTarget::Endpoint(device_id.clone()),
-        CaptureSelection::Application { process_id } if *process_id != 0 => {
-            CaptureTarget::Process(*process_id)
-        }
-        CaptureSelection::Application { .. } => {
-            return Err(CaptureError::SourceUnavailable(
-                "process identifier must be non-zero".into(),
-            ));
-        }
+        CaptureSelection::Application { source_id } => CaptureTarget::Application {
+            source_id: source_id.clone(),
+            process_id: Some(resolve_application_process(source_id)?),
+        },
     };
     start_wasapi_capture(selection, target, events)
 }
@@ -565,7 +650,10 @@ pub(crate) fn start_capture(
 enum CaptureTarget {
     DefaultEndpoint,
     Endpoint(SourceId),
-    Process(u32),
+    Application {
+        source_id: SourceId,
+        process_id: Option<u32>,
+    },
 }
 
 impl CaptureTarget {
@@ -573,19 +661,58 @@ impl CaptureTarget {
         match self {
             Self::DefaultEndpoint => SourceId::new("default-output"),
             Self::Endpoint(device_id) => device_id.clone(),
-            Self::Process(process_id) => SourceId::new(format!("process:{process_id}")),
+            Self::Application { source_id, .. } => source_id.clone(),
         }
     }
 
     fn worker_name(&self) -> &'static str {
         match self {
             Self::DefaultEndpoint | Self::Endpoint(_) => "wasapi-endpoint-loopback",
-            Self::Process(_) => "wasapi-process-loopback",
+            Self::Application { .. } => "wasapi-process-loopback",
         }
     }
 
     const fn is_endpoint(&self) -> bool {
         matches!(self, Self::DefaultEndpoint | Self::Endpoint(_))
+    }
+
+    const fn is_application(&self) -> bool {
+        matches!(self, Self::Application { .. })
+    }
+
+    fn clear_application_process(&mut self) {
+        if let Self::Application { process_id, .. } = self {
+            *process_id = None;
+        }
+    }
+
+    fn resolve_application_process(&mut self) -> Result<(), CaptureError> {
+        let Self::Application {
+            source_id,
+            process_id,
+        } = self
+        else {
+            return Ok(());
+        };
+        if process_id.is_none() {
+            *process_id = Some(resolve_application_process(source_id)?);
+        }
+        Ok(())
+    }
+}
+
+fn resolve_application_process(source_id: &SourceId) -> Result<u32, CaptureError> {
+    let _apartment = ComApartment::initialize()?;
+    let sources = unsafe { enumerate_sources() }
+        .map_err(|error| windows_error("re-enumerate application audio sources", error))?;
+    let process_ids = sources
+        .application_targets
+        .get(source_id)
+        .ok_or_else(|| CaptureError::SourceUnavailable(source_id.to_string()))?;
+    match process_ids.as_slice() {
+        [process_id] => Ok(*process_id),
+        [] => Err(CaptureError::SourceUnavailable(source_id.to_string())),
+        _ => Err(CaptureError::AmbiguousSource(source_id.to_string())),
     }
 }
 
@@ -626,7 +753,7 @@ fn start_wasapi_capture(
 }
 
 fn capture_worker(
-    target: CaptureTarget,
+    mut target: CaptureTarget,
     events: Sender<CaptureEvent>,
     stop_requested: Arc<AtomicBool>,
     ready: Sender<Result<(), CaptureError>>,
@@ -641,11 +768,32 @@ fn capture_worker(
     let source_id = target.source_id();
     let mut starting = true;
     let mut last_recovery_message = None::<String>;
+    let mut application_retry_interval = APPLICATION_RECONNECT_MIN_INTERVAL;
 
     loop {
         if stop_requested.load(Ordering::Acquire) {
             let _ = events.try_send(CaptureEvent::State(CaptureState::Stopped));
             return Ok(());
+        }
+
+        if let Err(error) = target.resolve_application_process() {
+            if starting {
+                let _ = ready.send(Err(error));
+                return Ok(());
+            }
+            publish_application_recovery(
+                &events,
+                &error,
+                application_retry_interval,
+                &mut last_recovery_message,
+            )?;
+            if wait_for_stop(&stop_requested, application_retry_interval) {
+                let _ = events.try_send(CaptureEvent::State(CaptureState::Stopped));
+                return Ok(());
+            }
+            application_retry_interval =
+                (application_retry_interval * 2).min(APPLICATION_RECONNECT_MAX_INTERVAL);
+            continue;
         }
 
         let stream = match unsafe { WasapiCaptureStream::open(&target) }.and_then(|stream| {
@@ -666,6 +814,22 @@ fn capture_worker(
                 }
                 continue;
             }
+            Err(error) if target.is_application() => {
+                target.clear_application_process();
+                publish_application_recovery(
+                    &events,
+                    &error,
+                    application_retry_interval,
+                    &mut last_recovery_message,
+                )?;
+                if wait_for_stop(&stop_requested, application_retry_interval) {
+                    let _ = events.try_send(CaptureEvent::State(CaptureState::Stopped));
+                    return Ok(());
+                }
+                application_retry_interval =
+                    (application_retry_interval * 2).min(APPLICATION_RECONNECT_MAX_INTERVAL);
+                continue;
+            }
             Err(error) => return publish_terminal_capture_error(&events, error),
         };
 
@@ -677,6 +841,7 @@ fn capture_worker(
             starting = false;
         }
         last_recovery_message = None;
+        application_retry_interval = APPLICATION_RECONNECT_MIN_INTERVAL;
         publish_event(&events, CaptureEvent::State(CaptureState::Capturing))?;
 
         let capture_result = unsafe { stream.capture(&source_id, &events, &stop_requested) };
@@ -699,12 +864,23 @@ fn capture_worker(
             ),
         };
 
-        if !target.is_endpoint() {
+        if target.is_application() {
             let error = match cycle_end {
                 CaptureCycleEnd::Error(error) => error,
-                CaptureCycleEnd::Reconnect(reason) => CaptureError::Worker(reason),
+                CaptureCycleEnd::Reconnect(reason) => CaptureError::SourceUnavailable(reason),
             };
-            return publish_terminal_capture_error(&events, error);
+            target.clear_application_process();
+            publish_application_recovery(
+                &events,
+                &error,
+                application_retry_interval,
+                &mut last_recovery_message,
+            )?;
+            if wait_for_stop(&stop_requested, application_retry_interval) {
+                let _ = events.try_send(CaptureEvent::State(CaptureState::Stopped));
+                return Ok(());
+            }
+            continue;
         }
 
         let recovery_reason = match cycle_end {
@@ -728,7 +904,52 @@ fn publish_endpoint_recovery(
         "{reason}. Prollyglot is waiting for the playback endpoint and will retry automatically."
     );
     if last_message.as_deref() != Some(message.as_str()) {
-        publish_event(events, CaptureEvent::Warning(message.clone()))?;
+        let kind = if reason.contains("default playback device changed") {
+            CaptureRecoveryKind::DefaultPlaybackDeviceChanged
+        } else {
+            CaptureRecoveryKind::PlaybackDeviceUnavailable
+        };
+        publish_event(
+            events,
+            CaptureEvent::Recovery(CaptureRecovery {
+                kind,
+                message: message.clone(),
+                retry_after_millis: ENDPOINT_RECONNECT_INTERVAL.as_millis() as u64,
+            }),
+        )?;
+        *last_message = Some(message);
+    }
+    Ok(())
+}
+
+fn publish_application_recovery(
+    events: &Sender<CaptureEvent>,
+    error: &CaptureError,
+    retry_after: Duration,
+    last_message: &mut Option<String>,
+) -> Result<(), CaptureError> {
+    let kind = match error {
+        CaptureError::AmbiguousSource(_) => CaptureRecoveryKind::ApplicationAmbiguous,
+        CaptureError::SourceUnavailable(message) if message.contains("exited") => {
+            CaptureRecoveryKind::ApplicationExited
+        }
+        _ => CaptureRecoveryKind::ApplicationUnavailable,
+    };
+    let message = match kind {
+        CaptureRecoveryKind::ApplicationAmbiguous => {
+            "More than one running application matches the selection. Close the duplicate instance; Prollyglot will not choose one silently.".to_string()
+        }
+        _ => "The selected application closed or stopped producing audio. Prollyglot is waiting for the same application to return.".to_string(),
+    };
+    if last_message.as_deref() != Some(message.as_str()) {
+        publish_event(
+            events,
+            CaptureEvent::Recovery(CaptureRecovery {
+                kind,
+                message: message.clone(),
+                retry_after_millis: retry_after.as_millis() as u64,
+            }),
+        )?;
         *last_message = Some(message);
     }
     Ok(())
@@ -884,7 +1105,15 @@ impl WasapiCaptureStream {
         match target {
             CaptureTarget::DefaultEndpoint => unsafe { Self::open_endpoint(None) },
             CaptureTarget::Endpoint(device_id) => unsafe { Self::open_endpoint(Some(device_id)) },
-            CaptureTarget::Process(process_id) => unsafe { Self::open_process(*process_id) },
+            CaptureTarget::Application {
+                process_id: Some(process_id),
+                ..
+            } => unsafe { Self::open_process(*process_id) },
+            CaptureTarget::Application {
+                process_id: None, ..
+            } => Err(CaptureError::SourceUnavailable(
+                "selected application has not been resolved".into(),
+            )),
         }
     }
 

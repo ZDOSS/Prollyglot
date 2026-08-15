@@ -3,7 +3,7 @@ use std::{error::Error, fmt};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const APPLICATION_RUNTIME_CONTRACT_VERSION: u16 = 3;
+pub const APPLICATION_RUNTIME_CONTRACT_VERSION: u16 = 4;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 pub struct SessionId(pub u32);
@@ -325,9 +325,9 @@ pub enum CaptureSelection {
         device_id: String,
     },
     Application {
-        #[serde(rename = "processId")]
-        #[ts(rename = "processId")]
-        process_id: u32,
+        #[serde(rename = "sourceId")]
+        #[ts(rename = "sourceId")]
+        source_id: String,
     },
 }
 
@@ -358,7 +358,7 @@ pub struct PlaybackDevice {
 pub struct ApplicationSource {
     pub id: String,
     pub name: String,
-    pub process_id: u32,
+    pub instance_count: u32,
     pub device_ids: Vec<String>,
 }
 
@@ -885,6 +885,16 @@ mod tests {
         assert_eq!(command_json["selection"]["kind"], "systemOutput");
         assert_eq!(command_json["selection"]["deviceId"], "device:primary");
 
+        let application_command = StartCaptureCommand {
+            selection: CaptureSelection::Application {
+                source_id: "app:example".into(),
+            },
+            language: "es".into(),
+        };
+        let application_json = assert_json_round_trip(&application_command);
+        assert_eq!(application_json["selection"]["sourceId"], "app:example");
+        assert!(application_json["selection"].get("processId").is_none());
+
         let sources = SourceSnapshot {
             playback_devices: vec![PlaybackDevice {
                 id: "device:primary".into(),
@@ -892,15 +902,16 @@ mod tests {
                 is_default: true,
             }],
             applications: vec![ApplicationSource {
-                id: "process:42".into(),
+                id: "app:example".into(),
                 name: "Player".into(),
-                process_id: 42,
+                instance_count: 1,
                 device_ids: vec!["device:primary".into()],
             }],
         };
         let sources_json = assert_json_round_trip(&sources);
         assert_eq!(sources_json["playbackDevices"][0]["isDefault"], true);
-        assert_eq!(sources_json["applications"][0]["processId"], 42);
+        assert_eq!(sources_json["applications"][0]["id"], "app:example");
+        assert_eq!(sources_json["applications"][0]["instanceCount"], 1);
 
         let status = CaptureStatus {
             state: CaptureState::Capturing,

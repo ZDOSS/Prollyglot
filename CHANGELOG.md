@@ -5,6 +5,36 @@ Versioning while it is in the `0.x` pre-release line.
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-08-14
+
+### Added
+
+- A platform-neutral audio-capture backend contract covering capabilities,
+  source enumeration, selection resolution, session start, recovery events,
+  and stop.
+- Stable opaque Windows application identities derived from available package,
+  application-model, or executable identity without exposing process IDs or
+  private executable paths.
+- Bounded application restart recovery that enters Waiting and reconnects to
+  the same unambiguous application identity after its process tree changes.
+- A WSL Windows-SDK resource-compiler adapter so the local suite can type-check
+  the complete native Tauri desktop target without consuming hosted CI.
+
+### Changed
+
+- Route desktop audio orchestration exclusively through `AudioCaptureBackend`
+  instead of invoking the Windows crate directly.
+- Advance the generated runtime contract to version 4 and replace application
+  `processId` fields with opaque `sourceId` values.
+
+### Fixed
+
+- Refuse to bind silently when multiple current process trees match the same
+  application identity; the source picker explains that duplicate instances
+  must be closed.
+- Keep ordinary application exit/restart in a recoverable session rather than
+  failing captions permanently when the replacement process receives a new PID.
+
 ## [0.1.10] - 2026-08-14
 
 ### Added

@@ -177,7 +177,7 @@ pub fn source_snapshot(state: State<'_, RuntimeState>) -> Result<SourceSnapshot,
             .map(|application| ApplicationSource {
                 id: application.id.0,
                 name: application.name,
-                process_id: application.process_id,
+                instance_count: application.instance_count,
                 device_ids: application.device_ids.into_iter().map(|id| id.0).collect(),
             })
             .collect(),
@@ -781,9 +781,13 @@ fn forward_capture_events(forwarder: &AudioEventForwarder) -> Result<(), Applica
                     capture_dropped.saturating_add(inference_dropped),
                 );
             }
-            CaptureEvent::Warning(message) => {
-                tracing::warn!(%message, "capture is waiting to recover");
-                mark_waiting(app, supervisor, status, session_id, message);
+            CaptureEvent::Recovery(recovery) => {
+                tracing::warn!(
+                    ?recovery.kind,
+                    retry_after_millis = recovery.retry_after_millis,
+                    "capture is waiting for its selected source"
+                );
+                mark_waiting(app, supervisor, status, session_id, recovery.message);
             }
             CaptureEvent::FramesDropped { total } => {
                 capture_dropped = total;
@@ -1107,8 +1111,8 @@ fn backend_capture_selection(selection: &CaptureSelection) -> BackendCaptureSele
         CaptureSelection::SystemOutput { device_id } => BackendCaptureSelection::SystemOutput {
             device_id: prollyglot_core::SourceId::new(device_id.clone()),
         },
-        CaptureSelection::Application { process_id } => BackendCaptureSelection::Application {
-            process_id: *process_id,
+        CaptureSelection::Application { source_id } => BackendCaptureSelection::Application {
+            source_id: prollyglot_core::SourceId::new(source_id.clone()),
         },
     }
 }

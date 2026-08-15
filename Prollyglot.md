@@ -1915,7 +1915,7 @@ AudioSource {
     id
     name
     source_type
-    process_id?
+    instance_count?
     icon?
     active
 }
@@ -1929,7 +1929,12 @@ Application
 Input
 ```
 
-Application-level details should not leak outside platform capture modules.
+Application IDs are stable, opaque backend identities. Process IDs, executable
+paths, package identities, and current process-tree roots remain inside the
+platform adapter. If more than one current process tree matches an identity,
+the selection is ambiguous and Prollyglot must wait or ask the user rather than
+choosing one silently. An ordinary application restart keeps the session in
+Waiting and re-resolves the same identity with bounded backoff.
 
 ---
 

@@ -475,14 +475,24 @@ assumptions without interrupting sessions.
 
 ### Progress — 2026-08-14
 
-The first S4 capture-boundary checkpoint is in place. The shared core defines
+The first S4 capture-boundary checkpoint is complete. The shared core defines
 an object-safe `AudioCaptureBackend` for capabilities, source enumeration,
 selection resolution, session start, events, and stop. The WASAPI adapter
 implements that boundary on Windows and explicitly reports itself unavailable
 on other hosts. Desktop orchestration owns the adapter through the interface and
 contains no direct source-enumeration or capture-start call into the Windows
-crate. The next compatibility step replaces the PID-bearing public application
-selection with an opaque stable identity and restart resolver behind this seam.
+crate.
+
+Pre-release 0.1.11 completes the identity and recovery cutover. Application
+sources and selections now carry only opaque IDs derived from available Windows
+application-model, package-family, or executable identity. PIDs and paths stay
+inside the adapter. The capture worker moves to Waiting after ordinary exit,
+re-enumerates with bounded backoff, and resumes only when the same identity has
+one safe process-tree match; ambiguous matches are surfaced and never chosen
+silently. Runtime contract version 4 removes `processId`. The WSL local gate
+also discovers Microsoft `rc.exe` and now checks the complete Tauri Windows
+library instead of skipping it. Native owner smoke remains the acceptance proof
+for exit/restart behavior.
 
 ### Acceptance boundary
 

@@ -11,7 +11,7 @@ Prollyglot is a free and open-source desktop utility that captures audio from a 
 > [!IMPORTANT]
 > Prollyglot is in active pre-release development. There is not yet a supported binary release. Windows 11 is the primary target; the first Windows owner smoke confirmed that **Everything I hear** captions audible output from the selected playback device, while broader application, lifecycle, and release validation remains in progress.
 >
-> Current pre-release: **0.1.10**. See the [changelog](CHANGELOG.md) and
+> Current pre-release: **0.1.11**. See the [changelog](CHANGELOG.md) and
 > [versioning policy](docs/VERSIONING.md).
 
 ## Why Prollyglot exists
@@ -37,7 +37,7 @@ draw between us.
 ## What it is building toward
 
 - **Everything I hear:** caption the mixed audio rendered through one selected playback device, with an option to follow the Windows system default.
-- **Only this application:** caption the selected Windows process and its process tree without including unrelated application audio.
+- **Only this application:** caption the selected Windows application and its current process tree without including unrelated application audio. If it restarts, Prollyglot waits for the same application identity and resumes only when the match is unambiguous.
 - **Local by default:** no account, telemetry requirement, cloud transcription, audio upload, or transcript upload.
 - **Minimal and customizable:** one focused Start/Stop path plus an independent always-on-top overlay with readable appearance controls.
 - **Selectable local speech models:** three English choices; smaller dedicated streaming models for Chinese, French, Korean, and Bengali; and an optional higher-resource Nemotron model covering 28 languages plus automatic detection.
@@ -56,7 +56,7 @@ The repository currently contains:
   visual-text payload;
 - a Tauri 2 desktop shell and customizable caption-overlay proof;
 - Windows playback-device capture through WASAPI loopback;
-- Windows application/process-tree capture through the documented process-loopback API;
+- Windows application/process-tree capture through the documented process-loopback API, using opaque identities and bounded exit/restart recovery;
 - follow-default-device behavior, endpoint reconnection, bounded capture queues, and local diagnostic logging;
 - mono PCM normalization, band-limited streaming resampling to model rate, bounded low-latency buffering, energy VAD, and phrase boundaries;
 - short-utterance-friendly speech gating with quiet-speech recall, pre-roll, and trailing decoder context;

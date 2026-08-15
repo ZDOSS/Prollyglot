@@ -4,6 +4,7 @@ import {
   supportedTranslationLanguage
 } from "./language-catalog.ts";
 import type {
+  ApplicationSource,
   AudioSourcePreference,
   CaptionOutputMode,
   CaptureSelection,
@@ -36,6 +37,24 @@ export interface CaptionOutputPlan {
   options: Array<{ value: CaptionOutputMode; label: string }>;
   selected: CaptionOutputMode;
   help: string;
+}
+
+export interface ApplicationSourceOptionPlan {
+  value: string;
+  label: string;
+  disabled: boolean;
+}
+
+export function planApplicationSourceOptions(
+  applications: ApplicationSource[]
+): ApplicationSourceOptionPlan[] {
+  return applications.map((application) => ({
+    value: `application:${application.id}`,
+    label: application.instanceCount > 1
+      ? `${application.name} · close duplicate instances`
+      : `Only ${application.name}`,
+    disabled: application.instanceCount > 1
+  }));
 }
 
 export function planTranslationTargets(
@@ -167,10 +186,10 @@ export class CaptionForm {
       configured.kind === "playbackDevice" ? configured.deviceId : FOLLOW_SYSTEM_DEFAULT
     );
     this.elements.source.replaceChildren(option("system", "Everything I hear"));
-    for (const application of snapshot.applications) {
-      this.elements.source.append(
-        option(`application:${application.processId}`, `Only ${application.name}`)
-      );
+    for (const application of planApplicationSourceOptions(snapshot.applications)) {
+      const applicationOption = option(application.value, application.label);
+      applicationOption.disabled = application.disabled;
+      this.elements.source.append(applicationOption);
     }
     if ([...this.elements.source.options].some(({ value }) => value === previousSource)) {
       this.elements.source.value = previousSource;
@@ -207,9 +226,9 @@ export class CaptionForm {
       if (this.elements.device.value === FOLLOW_SYSTEM_DEFAULT) return { kind: "systemDefault" };
       return { kind: "systemOutput", deviceId: this.elements.device.value };
     }
-    const processId = Number(this.elements.source.value.split(":")[1]);
-    if (!Number.isInteger(processId)) throw new Error("The selected application is unavailable.");
-    return { kind: "application", processId };
+    const sourceId = this.elements.source.value.slice("application:".length);
+    if (!sourceId) throw new Error("The selected application is unavailable.");
+    return { kind: "application", sourceId };
   }
 
   renderLanguageGuidance(): void {

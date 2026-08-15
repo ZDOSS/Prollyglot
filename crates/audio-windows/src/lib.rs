@@ -9,6 +9,9 @@ use prollyglot_core::{
     CaptureSession, ResolvedCaptureSelection, SourceSnapshot,
 };
 
+#[cfg(any(target_os = "windows", test))]
+mod identity;
+
 #[cfg(target_os = "windows")]
 mod platform;
 
@@ -29,7 +32,7 @@ impl AudioCaptureBackend for WindowsAudioCaptureBackend {
             system_default: cfg!(target_os = "windows"),
             playback_devices: cfg!(target_os = "windows"),
             applications: cfg!(target_os = "windows"),
-            application_restart_recovery: false,
+            application_restart_recovery: cfg!(target_os = "windows"),
         }
     }
 
@@ -104,6 +107,9 @@ mod tests {
         assert_eq!(capabilities.backend, "wasapi");
         assert_eq!(capabilities.available, cfg!(target_os = "windows"));
         assert_eq!(capabilities.applications, cfg!(target_os = "windows"));
-        assert!(!capabilities.application_restart_recovery);
+        assert_eq!(
+            capabilities.application_restart_recovery,
+            cfg!(target_os = "windows")
+        );
     }
 }
