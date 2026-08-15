@@ -5,6 +5,40 @@ Versioning while it is in the `0.x` pre-release line.
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-08-14
+
+### Added
+
+- A native schema-v1 configuration repository with validated defaults,
+  immutable revision files, atomic publication, retained fallback revisions,
+  corrupt-file quarantine, and version-zero migration.
+- Generated TypeScript configuration types, command/event names, and defaults
+  from the Rust contract, plus deterministic migration, stale-write, readback,
+  recovery, and rapid-change coalescing tests.
+
+### Changed
+
+- Make one native configuration snapshot authoritative for full/compact mode,
+  caption and translation choices, playback-device preference, visual setup,
+  caption appearance, and selected models across every WebView.
+- Move speech-model selection out of standalone preference files. Existing
+  files are imported and removed only after the accepted native selection is
+  read back successfully.
+- Import valid legacy WebView settings once, discard invalid values with a
+  diagnostic, and remove old keys only after native write and readback agree.
+- Route Appearance, caption overlay, caption controls, and visual controls
+  through the shared configuration controller; rapid changes are coalesced and
+  stale writes rebase over concurrent native model updates.
+- Include the configuration crate in both local validation scripts and advance
+  the generated application runtime contract to version 3.
+
+### Fixed
+
+- Prevent separate WebViews and legacy storage keys from silently competing as
+  durable settings authorities.
+- Recover from an incomplete or corrupt newest configuration revision by using
+  the retained last-good revision instead of poisoning later launches.
+
 ## [0.1.8] - 2026-08-14
 
 ### Added

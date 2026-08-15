@@ -283,8 +283,14 @@ visual, navigation, preference, and notice state no longer live as independent
 module-level authorities in the entry point. Native Tauri access and the
 browser development preview implement the same typed bridge; preview catalogs
 are small fictional fixtures rather than a hand-copied production inventory.
-The persistent full-workspace page cutover and native versioned configuration
-migration remain the next application-integrity work.
+Durable preferences now use one native schema-v1 configuration repository with
+validated defaults, immutable atomic revision publication, a retained fallback,
+corrupt-revision recovery, and generated TypeScript contracts. Existing WebView
+values and selected-model files migrate only through verified write/readback;
+accepted revisions are broadcast to every WebView, rapid changes coalesce, and
+stale frontend writes rebase without erasing a newer native model selection.
+The persistent full-workspace page cutover and feature/style extraction remain
+the next application-integrity work.
 
 ---
 

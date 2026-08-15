@@ -7,6 +7,7 @@ import {
   reduceAppState
 } from "../src/app-store.ts";
 import { RUNTIME_CONTRACT_VERSION } from "../src/generated/runtime.ts";
+import { DEFAULT_APPLICATION_CONFIGURATION } from "../src/generated/runtime.ts";
 import type { RuntimeSnapshot } from "../src/types.ts";
 
 function runtime(revision: number, lifecycle: RuntimeSnapshot["lifecycle"]): RuntimeSnapshot {
@@ -122,5 +123,35 @@ test("navigation, preferences, notices, and subscriptions have one owner", () =>
   assert.deepEqual(store.getState().notices.settings, {
     message: "Installed",
     tone: "success"
+  });
+});
+
+test("accepted configuration revisions update derived navigation and caption preferences", () => {
+  const store = new AppStore(createInitialAppState());
+  const config = structuredClone(DEFAULT_APPLICATION_CONFIGURATION);
+  config.viewMode = "compact";
+  config.captions.spokenLanguage = "ja";
+  config.captions.outputMode = "both";
+  config.captions.translationTarget = "en";
+
+  store.dispatch({
+    type: "configuration/accepted",
+    snapshot: { revision: 4, config }
+  });
+  const stale = store.dispatch({
+    type: "configuration/accepted",
+    snapshot: {
+      revision: 3,
+      config: { ...config, viewMode: "full" }
+    }
+  });
+
+  assert.equal(stale.changed, false);
+  assert.equal(store.getState().configuration?.revision, 4);
+  assert.equal(store.getState().navigation.viewMode, "compact");
+  assert.deepEqual(store.getState().preferences, {
+    acceptedSpokenLanguage: "ja",
+    captionMode: "both",
+    translationTarget: "en"
   });
 });

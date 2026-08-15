@@ -3,7 +3,7 @@ use std::{error::Error, fmt};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const APPLICATION_RUNTIME_CONTRACT_VERSION: u16 = 2;
+pub const APPLICATION_RUNTIME_CONTRACT_VERSION: u16 = 3;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 pub struct SessionId(pub u32);

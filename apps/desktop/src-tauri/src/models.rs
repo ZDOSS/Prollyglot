@@ -17,7 +17,7 @@ use prollyglot_model_manager::{
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
-use crate::RuntimeState;
+use crate::{RuntimeState, configuration::ConfigurationRuntime};
 
 const MODEL_STATUS_EVENT: &str = "model-status";
 const SELECTED_MODEL_FILE: &str = "selected-speech-model.txt";
@@ -100,8 +100,8 @@ pub fn models_root(app: &AppHandle) -> Result<PathBuf, String> {
         .map_err(|error| format!("Could not resolve the local model directory: {error}"))
 }
 
-pub fn initialize(app: &AppHandle, runtime: &ModelRuntime) {
-    let selected_model_id = read_selected_model(app);
+pub fn initialize(app: &AppHandle, runtime: &ModelRuntime, configuration: &ConfigurationRuntime) {
+    let selected_model_id = resolve_selected_model(app, configuration);
     let checking = speech_model_manifests()
         .map(|manifests| ModelCatalogStatus {
             selected_model_id: selected_model_id.clone(),
@@ -215,7 +215,12 @@ pub fn select_speech_model(
     let _control = state.control.lock();
     require_stopped(&state)?;
     require_catalog_ready(&state)?;
-    persist_selected_model(&app, &manifest.id)?;
+    let accepted =
+        crate::configuration::set_speech_model(&app, &state.configuration, manifest.id.clone())?;
+    if accepted.config.models.speech_model_id.as_deref() != Some(manifest.id.as_str()) {
+        return Err("The selected speech model was not accepted by local configuration.".into());
+    }
+    remove_legacy_selected_model_files(&app);
 
     let next = {
         let mut catalog = state.model.catalog.lock();
@@ -448,7 +453,43 @@ fn product_metadata(model_id: &str) -> (&'static str, &'static str) {
     }
 }
 
-fn read_selected_model(app: &AppHandle) -> String {
+fn resolve_selected_model(app: &AppHandle, configuration: &ConfigurationRuntime) -> String {
+    match configuration.snapshot() {
+        Ok(snapshot) => {
+            if let Some(model_id) = snapshot.config.models.speech_model_id {
+                match speech_manifest(&model_id) {
+                    Ok(_) => {
+                        remove_legacy_selected_model_files(app);
+                        return model_id;
+                    }
+                    Err(error) => {
+                        tracing::warn!(%error, "resetting an unknown configured speech model");
+                    }
+                }
+            }
+        }
+        Err(error) => {
+            tracing::warn!(%error, "could not read the selected speech model from configuration")
+        }
+    }
+
+    let model_id =
+        read_legacy_selected_model(app).unwrap_or_else(|| DEFAULT_SPEECH_MODEL_ID.into());
+    match crate::configuration::set_speech_model(app, configuration, model_id.clone()) {
+        Ok(snapshot)
+            if snapshot.config.models.speech_model_id.as_deref() == Some(model_id.as_str()) =>
+        {
+            remove_legacy_selected_model_files(app);
+        }
+        Ok(_) => tracing::warn!("the selected speech model did not survive configuration readback"),
+        Err(error) => {
+            tracing::warn!(%error, "could not migrate the selected speech model into configuration")
+        }
+    }
+    model_id
+}
+
+fn read_legacy_selected_model(app: &AppHandle) -> Option<String> {
     let paths = [
         (SELECTED_MODEL_FILE, false),
         (LEGACY_SELECTED_MODEL_FILE, true),
@@ -458,7 +499,7 @@ fn read_selected_model(app: &AppHandle) -> String {
             Ok(path) => path,
             Err(error) => {
                 tracing::warn!(%error, "could not resolve the selected-model preference");
-                return DEFAULT_SPEECH_MODEL_ID.into();
+                return None;
             }
         };
         let value = match fs::read_to_string(&path) {
@@ -466,46 +507,44 @@ fn read_selected_model(app: &AppHandle) -> String {
             Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
             Err(error) => {
                 tracing::warn!(%error, path = %path.display(), "could not read the selected-model preference");
-                return DEFAULT_SPEECH_MODEL_ID.into();
+                return None;
             }
         };
         let model_id = value.trim();
         match speech_manifest(model_id) {
             Ok(_) => {
-                if legacy && let Err(error) = persist_selected_model(app, model_id) {
-                    tracing::warn!(%error, "could not migrate the selected-model preference");
+                if legacy {
+                    tracing::info!("found the legacy English speech-model preference");
                 }
-                return model_id.into();
+                return Some(model_id.into());
             }
             Err(error) => {
                 tracing::warn!(%error, "ignoring an unknown selected-model preference");
             }
         }
     }
-    DEFAULT_SPEECH_MODEL_ID.into()
+    None
 }
 
-fn persist_selected_model(app: &AppHandle, model_id: &str) -> Result<(), String> {
-    let path = selected_model_path(app)?;
-    let parent = path
-        .parent()
-        .ok_or("The selected-model preference path is invalid.")?;
-    fs::create_dir_all(parent).map_err(|error| {
-        format!(
-            "Could not create the local preferences directory {}: {error}",
-            parent.display()
-        )
-    })?;
-    fs::write(&path, format!("{model_id}\n")).map_err(|error| {
-        format!(
-            "Could not save the selected speech model to {}: {error}",
-            path.display()
-        )
-    })
-}
-
-fn selected_model_path(app: &AppHandle) -> Result<PathBuf, String> {
-    selected_model_path_for(app, SELECTED_MODEL_FILE)
+fn remove_legacy_selected_model_files(app: &AppHandle) {
+    for file_name in [SELECTED_MODEL_FILE, LEGACY_SELECTED_MODEL_FILE] {
+        let path = match selected_model_path_for(app, file_name) {
+            Ok(path) => path,
+            Err(error) => {
+                tracing::warn!(%error, "could not resolve a legacy selected-model preference");
+                continue;
+            }
+        };
+        match fs::remove_file(&path) {
+            Ok(()) => {
+                tracing::info!(path = %path.display(), "removed migrated selected-model preference")
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => {
+                tracing::warn!(%error, path = %path.display(), "could not remove migrated selected-model preference")
+            }
+        }
+    }
 }
 
 fn selected_model_path_for(app: &AppHandle, file_name: &str) -> Result<PathBuf, String> {

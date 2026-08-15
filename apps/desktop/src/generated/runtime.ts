@@ -1,8 +1,36 @@
 // Generated from prollyglot-application-runtime. Do not edit by hand.
 
-export const RUNTIME_CONTRACT_VERSION = 2 as const;
-export const RUNTIME_COMMANDS = { bootstrap: "runtime_bootstrap", sourceSnapshot: "source_snapshot", startCapture: "start_capture", stopCapture: "stop_capture", captureStatus: "capture_status", visualCapabilities: "visual_capabilities", visualSourceSnapshot: "visual_source_snapshot", visualStatus: "visual_status", showVisualRegionSelector: "show_visual_region_selector", completeVisualRegionSelection: "complete_visual_region_selection", cancelVisualRegionSelection: "cancel_visual_region_selection", startVisualTranslation: "start_visual_translation", stopVisualTranslation: "stop_visual_translation", updateCaptionPresentation: "update_caption_presentation", updateVisualPresentation: "update_visual_presentation" } as const;
-export const RUNTIME_EVENTS = { state: "runtime-state", captureStatus: "capture-status", visualStatus: "visual-status", visualText: "visual-text-update", visualClear: "visual-text-clear", visualRegionSelected: "visual-region-selected", visualRegionSelectionCancelled: "visual-region-selection-cancelled", visualRegionSelectorRequest: "visual-region-selector-request", captionPresentation: "caption-presentation", visualPresentation: "visual-presentation" } as const;
+export const RUNTIME_CONTRACT_VERSION = 3 as const;
+export const RUNTIME_COMMANDS = { configurationSnapshot: "configuration_snapshot", updateConfiguration: "update_configuration", bootstrap: "runtime_bootstrap", sourceSnapshot: "source_snapshot", startCapture: "start_capture", stopCapture: "stop_capture", captureStatus: "capture_status", visualCapabilities: "visual_capabilities", visualSourceSnapshot: "visual_source_snapshot", visualStatus: "visual_status", showVisualRegionSelector: "show_visual_region_selector", completeVisualRegionSelection: "complete_visual_region_selection", cancelVisualRegionSelection: "cancel_visual_region_selection", startVisualTranslation: "start_visual_translation", stopVisualTranslation: "stop_visual_translation", updateCaptionPresentation: "update_caption_presentation", updateVisualPresentation: "update_visual_presentation" } as const;
+export const RUNTIME_EVENTS = { state: "runtime-state", captureStatus: "capture-status", visualStatus: "visual-status", visualText: "visual-text-update", visualClear: "visual-text-clear", visualRegionSelected: "visual-region-selected", visualRegionSelectionCancelled: "visual-region-selection-cancelled", visualRegionSelectorRequest: "visual-region-selector-request", captionPresentation: "caption-presentation", visualPresentation: "visual-presentation", configuration: "configuration-updated" } as const;
+
+export type ViewMode = "full" | "compact";
+
+export type CaptionOutputPreference = "original" | "translated" | "both";
+
+export type BilingualLayout = "stacked" | "sideBySide";
+
+export type OverlayPosition = "topCenter" | "bottomCenter" | "bottomLeft" | "bottomRight";
+
+export type OverlaySettings = { fontFamily: string, fontSize: number, textColor: string, translatedTextColor: string, bilingualLayout: BilingualLayout, backgroundOpacity: number, width: number, maximumLines: number, readingTimeSeconds: number, fadeDurationMs: number, position: OverlayPosition, clickThrough: boolean, };
+
+export type AudioSourcePreference = { "kind": "followSystemDefault" } | { "kind": "playbackDevice", deviceId: string, };
+
+export type CaptionPreferences = { spokenLanguage: string, outputMode: CaptionOutputPreference, translationTarget?: string, audioSource: AudioSourcePreference, };
+
+export type VisualSourcePreference = "applicationWindow" | "display" | "region";
+
+export type VisualDetectionPreference = "focused" | "allText";
+
+export type VisualPreferences = { sourceMode: VisualSourcePreference, sourceLanguage: string, targetLanguage: string, detectionMode: VisualDetectionPreference, windowId?: string, displayId?: string, };
+
+export type ModelPreferences = { speechModelId?: string, visualModelId?: string, };
+
+export type ApplicationConfiguration = { schemaVersion: number, legacyWebviewImported: boolean, viewMode: ViewMode, captions: CaptionPreferences, overlay: OverlaySettings, visual: VisualPreferences, models: ModelPreferences, };
+
+export type ConfigurationSnapshot = { revision: number, config: ApplicationConfiguration, diagnostic?: string, };
+
+export type UpdateConfigurationCommand = { expectedRevision: number, config: ApplicationConfiguration, };
 
 export type SessionId = number;
 
@@ -103,3 +131,6 @@ export type RuntimeSnapshot = { contractVersion: number, revision: number, sessi
 export type RuntimeBootstrap = { snapshot: RuntimeSnapshot, };
 
 export type RuntimeStateEvent = { snapshot: RuntimeSnapshot, };
+
+
+export const DEFAULT_APPLICATION_CONFIGURATION = {"schemaVersion":1,"legacyWebviewImported":false,"viewMode":"full","captions":{"spokenLanguage":"en","outputMode":"original","translationTarget":"en","audioSource":{"kind":"followSystemDefault"}},"overlay":{"fontFamily":"\"Segoe UI Variable\", \"Segoe UI\", sans-serif","fontSize":36,"textColor":"#f4f6f5","translatedTextColor":"#86e3b0","bilingualLayout":"stacked","backgroundOpacity":0.75,"width":720,"maximumLines":3,"readingTimeSeconds":15,"fadeDurationMs":800,"position":"bottomCenter","clickThrough":true},"visual":{"sourceMode":"applicationWindow","sourceLanguage":"ja","targetLanguage":"en","detectionMode":"focused"},"models":{}} as const satisfies ApplicationConfiguration;

@@ -4,6 +4,10 @@ import { desktopBridge, isTauri } from "./bridge";
 import { CaptionOutputController, supportedSourceLanguage } from "./caption-output";
 import { AppearancePanel } from "./appearance-panel";
 import {
+  initializeConfiguration,
+  type ConfigurationMutation
+} from "./configuration";
+import {
   AppStore,
   FALLBACK_SPEECH_MODEL,
   createInitialAppState,
@@ -40,11 +44,7 @@ import type {
   VisualSourceSnapshot,
   VisualStatus
 } from "./types";
-import {
-  DEFAULT_OVERLAY_SETTINGS,
-  RUNTIME_CONTRACT_VERSION,
-  type OverlaySettings
-} from "./types";
+import { RUNTIME_CONTRACT_VERSION } from "./types";
 
 const {
   captureStatus,
@@ -76,7 +76,6 @@ const {
   stopVisualTranslation,
   transcriptSnapshot,
   updateCaptionPresentation,
-  updateOverlaySettings,
   updateVisualPresentation,
   visualCapabilities,
   visualModelStatus,
@@ -277,27 +276,34 @@ const appWindow = requireElement<HTMLElement>(".main-window");
 const viewModeToggle = requireElement<HTMLButtonElement>("#view-mode-toggle");
 const sessionPreviewContent = requireElement<HTMLElement>("#session-preview-content");
 const captionWorkspace = requireElement<HTMLElement>("#caption-workspace");
-const CAPTION_MODE_STORAGE_KEY = "prollyglot.caption-output";
-const TRANSLATION_TARGET_STORAGE_KEY = "prollyglot.translation-target";
-const VIEW_MODE_STORAGE_KEY = "prollyglot.view-mode";
-
 type DialogPanel = Exclude<AppDestination, "captions">;
 
 const useMockTranslation = !isTauri()
   && !new URLSearchParams(window.location.search).has("realTranslation");
 const translationService = new TranslationService(useMockTranslation);
+const configuration = await initializeConfiguration(
+  desktopBridge,
+  localStorage,
+  (message) => {
+    void reportFrontendDiagnostic("configuration", message);
+  }
+);
 const appStore = new AppStore(createInitialAppState({
-  viewMode: storedViewMode(),
-  acceptedSpokenLanguage: "en",
-  captionMode: storedCaptionMode(),
-  translationTarget: storedTranslationTarget(),
+  configuration: structuredClone(configuration.snapshot()),
   translations: translationService.snapshot()
 }));
 const appState = () => appStore.getState();
 const FOLLOW_SYSTEM_DEFAULT = "__follow-system-default__";
 const TRANSCRIPT_BOTTOM_THRESHOLD = 48;
 const settingsPanel = new SettingsPanel();
-const visualPanel = new VisualPanel();
+const visualPanel = new VisualPanel(
+  structuredClone(configuration.snapshot().config.visual),
+  (preferences) => {
+    void persistConfiguration((config) => {
+      config.visual = structuredClone(preferences);
+    });
+  }
+);
 const appearancePanel = new AppearancePanel();
 const captionOutput = new CaptionOutputController(
   translationService,
@@ -325,10 +331,40 @@ const visualTranslation = new VisualTranslationController(
   }
 );
 
+configuration.subscribe((snapshot) => {
+  const previous = appState();
+  appStore.dispatch({ type: "configuration/accepted", snapshot: structuredClone(snapshot) });
+  const next = appState();
+  if (previous.navigation.viewMode !== next.navigation.viewMode) renderViewMode();
+  if (
+    previous.preferences.acceptedSpokenLanguage
+      !== next.preferences.acceptedSpokenLanguage
+    || previous.preferences.translationTarget !== next.preferences.translationTarget
+    || previous.preferences.captionMode !== next.preferences.captionMode
+  ) {
+    spokenLanguage.value = next.preferences.acceptedSpokenLanguage;
+    populateTranslationTargets();
+    translationTarget.value = next.preferences.translationTarget;
+    captionOutput.setOutputMode(next.preferences.captionMode);
+    const target = supportedTranslationLanguage(next.preferences.translationTarget);
+    if (target) captionOutput.setTranslationTarget(target);
+    renderLanguageGuidance();
+    renderCaptionOutputControl();
+  }
+});
+
 function requireElement<T extends Element>(selector: string): T {
   const element = document.querySelector<T>(selector);
   if (!element) throw new Error(`missing element: ${selector}`);
   return element;
+}
+
+async function persistConfiguration(mutate: ConfigurationMutation): Promise<void> {
+  try {
+    await configuration.update(mutate);
+  } catch (error) {
+    setCaptureNotice(`Could not save settings: ${errorMessage(error)}`, "error");
+  }
 }
 
 function option(value: string, label: string, selected = false): HTMLOptionElement {
@@ -337,21 +373,6 @@ function option(value: string, label: string, selected = false): HTMLOptionEleme
   element.textContent = label;
   element.selected = selected;
   return element;
-}
-
-function storedCaptionMode(): CaptionOutputMode {
-  const stored = localStorage.getItem(CAPTION_MODE_STORAGE_KEY);
-  if (stored === "english") return "translated";
-  return stored === "translated" || stored === "both" ? stored : "original";
-}
-
-function storedTranslationTarget(): string {
-  const stored = localStorage.getItem(TRANSLATION_TARGET_STORAGE_KEY);
-  return stored === "off" || (stored && supportedTranslationLanguage(stored)) ? stored : "en";
-}
-
-function storedViewMode(): AppViewMode {
-  return localStorage.getItem(VIEW_MODE_STORAGE_KEY) === "compact" ? "compact" : "full";
 }
 
 function renderViewMode(): void {
@@ -371,7 +392,7 @@ async function changeViewMode(next: AppViewMode): Promise<void> {
   if (next === appState().navigation.viewMode) return;
   if (dialog.open) dialog.close();
   appStore.dispatch({ type: "navigation/view-mode", viewMode: next });
-  localStorage.setItem(VIEW_MODE_STORAGE_KEY, next);
+  await persistConfiguration((config) => { config.viewMode = next; });
   renderViewMode();
   setActiveNavigation("captions");
   try {
@@ -418,22 +439,16 @@ function populateTranslationTargets(): void {
       : `Translation to ${languageLabel(translationTarget.value)} runs locally.`;
 }
 
-function storedOverlaySettings(): OverlaySettings {
-  try {
-    const stored = localStorage.getItem("prollyglot.overlay");
-    return stored
-      ? { ...DEFAULT_OVERLAY_SETTINGS, ...(JSON.parse(stored) as Partial<OverlaySettings>) }
-      : { ...DEFAULT_OVERLAY_SETTINGS };
-  } catch {
-    return { ...DEFAULT_OVERLAY_SETTINGS };
-  }
-}
-
 function populateSources(nextSnapshot: SourceSnapshot) {
   appStore.dispatch({ type: "sources/replaced", snapshot: nextSnapshot });
   const sources = appState().sources;
   const previousSource = sourceSelect.value;
-  const previousDevice = deviceSelect.value;
+  const configuredAudioSource = configuration.snapshot().config.captions.audioSource;
+  const previousDevice = deviceSelect.value || (
+    configuredAudioSource.kind === "playbackDevice"
+      ? configuredAudioSource.deviceId
+      : FOLLOW_SYSTEM_DEFAULT
+  );
 
   sourceSelect.replaceChildren(option("system", "Everything I hear"));
   for (const application of sources.applications) {
@@ -1343,7 +1358,12 @@ function renderVisualPanel(): void {
 }
 
 function renderAppearancePanel(): void {
-  appearancePanel.render(dialogContent());
+  appearancePanel.render(dialogContent(), {
+    settings: structuredClone(configuration.snapshot().config.overlay),
+    onChange: (settings) => configuration.update((config) => {
+      config.overlay = structuredClone(settings);
+    }).then(() => undefined)
+  });
 }
 
 function renderSettingsNotice() {
@@ -1382,6 +1402,7 @@ async function updateSpokenLanguage() {
   const current = selectedModel();
   if (modelSupportsLanguage(current, language)) {
     appStore.dispatch({ type: "preferences/spoken-language", language });
+    void persistConfiguration((config) => { config.captions.spokenLanguage = language; });
     renderModelStatus(appState().speechModels);
     return;
   }
@@ -1402,6 +1423,7 @@ async function updateSpokenLanguage() {
   try {
     await selectSpeechModel(candidate.modelId);
     appStore.dispatch({ type: "preferences/spoken-language", language });
+    await persistConfiguration((config) => { config.captions.spokenLanguage = language; });
     renderModelStatus(await modelStatus());
   } catch (error) {
     spokenLanguage.value = appState().preferences.acceptedSpokenLanguage;
@@ -1413,14 +1435,34 @@ async function updateSpokenLanguage() {
 }
 
 sourceSelect.addEventListener("change", updateSourceMode);
+deviceSelect.addEventListener("change", () => {
+  const deviceId = deviceSelect.value;
+  void persistConfiguration((config) => {
+    config.captions.audioSource = deviceId === FOLLOW_SYSTEM_DEFAULT
+      ? { kind: "followSystemDefault" }
+      : { kind: "playbackDevice", deviceId };
+  });
+});
 spokenLanguage.addEventListener("change", () => void updateSpokenLanguage());
 translationTarget.addEventListener("change", () => {
+  const requestedTarget = translationTarget.value;
   appStore.dispatch({
     type: "preferences/translation-target",
-    language: translationTarget.value
+    language: requestedTarget
   });
-  localStorage.setItem(TRANSLATION_TARGET_STORAGE_KEY, translationTarget.value);
-  const targetLanguage = supportedTranslationLanguage(translationTarget.value);
+  if (requestedTarget === "off") {
+    appStore.dispatch({ type: "preferences/caption-mode", mode: "original" });
+    captionOutput.setOutputMode("original");
+  }
+  void persistConfiguration((config) => {
+    if (requestedTarget === "off") {
+      delete config.captions.translationTarget;
+      config.captions.outputMode = "original";
+    } else {
+      config.captions.translationTarget = requestedTarget;
+    }
+  });
+  const targetLanguage = supportedTranslationLanguage(requestedTarget);
   if (targetLanguage) captionOutput.setTranslationTarget(targetLanguage);
   requireElement<HTMLElement>("#translation-target-help").textContent = targetLanguage
     ? `Translation to ${languageLabel(targetLanguage)} runs locally.`
@@ -1432,7 +1474,7 @@ captionLanguage.addEventListener("change", () => {
   const mode = captionLanguage.value as CaptionOutputMode;
   if (mode !== "original" && mode !== "translated" && mode !== "both") return;
   appStore.dispatch({ type: "preferences/caption-mode", mode });
-  localStorage.setItem(CAPTION_MODE_STORAGE_KEY, mode);
+  void persistConfiguration((config) => { config.captions.outputMode = mode; });
   captionOutput.setOutputMode(mode);
   renderCaptionOutputControl();
   if (dialog.open && dialog.dataset.panel === "transcript") renderTranscriptPanel();
@@ -1669,10 +1711,6 @@ function acceptsVisualSessionEvent(
 }
 
 void Promise.all([
-  updateOverlaySettings(storedOverlaySettings()).catch((error) => {
-    const message = error instanceof Error ? error.message : String(error);
-    void reportFrontendDiagnostic("overlay-settings", `startup restore: ${message}`);
-  }),
   refreshSources(),
   visualCapabilities().then((capabilities) => {
     appStore.dispatch({ type: "visual/capabilities", capabilities });

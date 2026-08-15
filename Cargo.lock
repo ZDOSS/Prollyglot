@@ -2891,8 +2891,9 @@ dependencies = [
 
 [[package]]
 name = "prollyglot-application-runtime"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
+ "prollyglot-config",
  "serde",
  "serde_json",
  "ts-rs",
@@ -2900,7 +2901,7 @@ dependencies = [
 
 [[package]]
 name = "prollyglot-asr"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "serde",
  "serde_json",
@@ -2909,7 +2910,7 @@ dependencies = [
 
 [[package]]
 name = "prollyglot-asr-sherpa"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "prollyglot-asr",
  "prollyglot-audio-pipeline",
@@ -2920,7 +2921,7 @@ dependencies = [
 
 [[package]]
 name = "prollyglot-audio-pipeline"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "prollyglot-core",
  "rubato",
@@ -2929,7 +2930,7 @@ dependencies = [
 
 [[package]]
 name = "prollyglot-audio-windows"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "crossbeam-channel",
  "prollyglot-audio-pipeline",
@@ -2939,8 +2940,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "prollyglot-config"
+version = "0.1.9"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
+ "ts-rs",
+]
+
+[[package]]
 name = "prollyglot-core"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "serde",
  "serde_json",
@@ -2949,7 +2961,7 @@ dependencies = [
 
 [[package]]
 name = "prollyglot-desktop"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "crossbeam-channel",
  "parking_lot",
@@ -2958,6 +2970,7 @@ dependencies = [
  "prollyglot-asr-sherpa",
  "prollyglot-audio-pipeline",
  "prollyglot-audio-windows",
+ "prollyglot-config",
  "prollyglot-core",
  "prollyglot-model-manager",
  "prollyglot-transcript",
@@ -2974,7 +2987,7 @@ dependencies = [
 
 [[package]]
 name = "prollyglot-model-manager"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "prollyglot-asr",
  "serde",
@@ -2987,7 +3000,7 @@ dependencies = [
 
 [[package]]
 name = "prollyglot-transcript"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "prollyglot-asr",
  "serde",
@@ -2995,7 +3008,7 @@ dependencies = [
 
 [[package]]
 name = "prollyglot-visual-ocr-rapid"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "image",
  "prollyglot-visual-pipeline",
@@ -3004,7 +3017,7 @@ dependencies = [
 
 [[package]]
 name = "prollyglot-visual-pipeline"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "crossbeam-channel",
  "serde",
@@ -3013,7 +3026,7 @@ dependencies = [
 
 [[package]]
 name = "prollyglot-visual-windows"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "crossbeam-channel",
  "prollyglot-visual-pipeline",

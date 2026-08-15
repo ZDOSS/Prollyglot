@@ -36,7 +36,7 @@ Why this direction:
 
 | Milestone | Integrated outcome | Status |
 | --- | --- | --- |
-| S. Structural integrity program | Replace patched orchestration with supervised sessions, bounded translation and presentation work, generated contracts, maintainable desktop pages, unified local state, and portable capture boundaries | In progress; S1–S2 complete, first S3 integration point complete, persistent workspace/configuration next |
+| S. Structural integrity program | Replace patched orchestration with supervised sessions, bounded translation and presentation work, generated contracts, maintainable desktop pages, unified local state, and portable capture boundaries | In progress; S1–S2 and the S3 store/bridge/configuration cutovers are complete, persistent workspace/modules next |
 | 1. Windows capture foundation | A real Windows desktop shell can enumerate and capture either a selected output device or selected application | Selected-device Windows smoke passed; application and lifecycle validation remain |
 | 2. Live English captions | Captured audio becomes stable partial and final English captions locally | Device-to-caption and corrected UI/context re-smokes passed; accented/conversational model evidence and application/lifecycle validation remain |
 | 3. Minimal customizable Windows app | The complete daily-use interface, overlay customization, transcript view, and controls work together | Pending |
@@ -358,7 +358,7 @@ Move one full-view destination at a time into the persistent shell while compact
 mode remains available as a fallback. Route all new pages through the store before
 removing their old global variables. Configuration migration first reads and
 validates old values without deleting them; legacy keys are removed only after a
-successful atomic write and restart readback.
+successful atomic write and native readback.
 
 ### Progress — 2026-08-14
 
@@ -377,9 +377,21 @@ builders using the generated runtime contract. The old mixed bridge and copied
 production-like speech catalog are gone, and translation control accepts an
 injected bridge. Production TypeScript compilation, 25 frontend tests, and a
 rendered preview start/live-transcript/Stop plus full/compact state-retention
-pass are green. Persistent full-view pages, feature-module extraction,
-stylesheet layers, and native versioned configuration remain the second S3
-integration point.
+pass are green.
+
+Pre-release 0.1.9 adds the next S3 integration point. One native schema-v1
+configuration repository now owns durable caption, translation, visual,
+appearance, layout, source-default, and model preferences. It publishes
+immutable revision files atomically, retains a last-good fallback, quarantines
+corrupt revisions, validates and migrates old values, and broadcasts one
+generated snapshot contract to every WebView. Legacy WebView keys and selected
+speech-model files are removed only after accepted native readback. A
+replaceable-latest writer coalesces rapid controls and rebases a stale UI update
+over concurrent native model selection. Repository/configuration tests plus the
+standard local suite now total 32 frontend tests; rendered preview checks cover
+migration cleanup, reload persistence, rapid Appearance input, language/output
+choices, and full/compact restoration. Persistent full-view pages,
+feature-module extraction, and stylesheet layers remain the final S3 work.
 
 ### Acceptance boundary
 
@@ -486,15 +498,16 @@ from one to the next while the milestone direction remains clear.
 | S2 | Native translation-store cutover | Every model kind has one inventory and legacy cache data remains deliberately recoverable during transition |
 | S2 | Caption and visual presentation-protocol cutover | Each overlay has one versioned authority and old event routes are removed in the same integration |
 | S3 | Application store plus separate native/preview bridges | Feature code stops depending on globals and copied production fixtures before the DOM shell moves |
-| S3 | Persistent full workspace and configuration migration | The new page structure and durable settings land together with interaction and migration tests |
+| S3 | Versioned native configuration migration | Every WebView consumes one validated durable snapshot before the DOM shell moves |
+| S3 | Persistent full workspace and feature/style extraction | Full navigation retains page state while compact utilities remain deliberately contained |
 | S4 | Capture-backend and stable-application-identity cutover | Windows behavior remains complete behind the interface the later PipeWire adapter will implement |
 | S4 | Resource enforcement, documentation, and Windows soak | The implemented architecture is documented and the full structural program receives native acceptance |
 
 Published: all three S1 integration points, all three S2 implementation points,
-and the first S3 application-store/bridge point are complete through pre-release
-0.1.8. Native Windows S2 acceptance remains pending; continue with persistent
-workspace pages and configuration migration without expanding capture or model
-scope.
+and the S3 application-store/bridge and native-configuration points are complete
+through pre-release 0.1.9. Native Windows S2 acceptance remains pending;
+continue with persistent workspace pages and feature/style extraction without
+expanding capture or model scope.
 
 - This documentation-only planning commit does not change the application
   version. Each later user-visible integrated correction follows

@@ -1,6 +1,10 @@
-import { RUNTIME_CONTRACT_VERSION } from "./generated/runtime.ts";
+import {
+  DEFAULT_APPLICATION_CONFIGURATION,
+  RUNTIME_CONTRACT_VERSION
+} from "./generated/runtime.ts";
 import { SPOKEN_LANGUAGES } from "./language-catalog.ts";
 import type {
+  ConfigurationSnapshot,
   CaptureStatus,
   ModelCatalogStatus,
   RuntimeSnapshot,
@@ -11,6 +15,17 @@ import type {
   VisualSourceSnapshot,
   VisualStatus
 } from "./types";
+
+export function previewConfigurationSnapshot(): ConfigurationSnapshot {
+  return {
+    revision: 1,
+    config: {
+      ...structuredClone(DEFAULT_APPLICATION_CONFIGURATION),
+      legacyWebviewImported: false,
+      models: { speechModelId: "preview-speech-english" }
+    }
+  };
+}
 
 /** Preview data is intentionally small and fictional; it is not a copied model inventory. */
 export function previewSourceSnapshot(): SourceSnapshot {

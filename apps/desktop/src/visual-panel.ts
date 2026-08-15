@@ -13,6 +13,7 @@ import type {
   VisualDetectionMode,
   VisualCaptureSelection,
   VisualModelCatalogStatus,
+  VisualPreferences,
   VisualSource,
   VisualSourceSnapshot,
   VisualStatus
@@ -45,17 +46,6 @@ export interface VisualPanelActions {
   openSettings: () => void;
   report: (message: string) => void;
 }
-
-interface StoredVisualPreferences {
-  mode?: VisualSourceMode;
-  sourceLanguage?: string;
-  targetLanguage?: string;
-  windowId?: string;
-  displayId?: string;
-  detectionMode?: VisualDetectionMode;
-}
-
-const STORAGE_KEY = "prollyglot.visual-translation";
 
 function create<K extends keyof HTMLElementTagNameMap>(
   tagName: K,
@@ -99,14 +89,6 @@ function selectField(label: string, select: HTMLSelectElement, help?: string): H
   return field;
 }
 
-function readPreferences(): StoredVisualPreferences {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}") as StoredVisualPreferences;
-  } catch {
-    return {};
-  }
-}
-
 export class VisualPanel {
   private mode: VisualSourceMode;
   private sourceLanguage: string;
@@ -121,18 +103,22 @@ export class VisualPanel {
   private container?: HTMLElement;
   private state?: VisualPanelState;
   private actions?: VisualPanelActions;
+  private readonly onPreferencesChange: (preferences: VisualPreferences) => void;
 
-  constructor() {
-    const stored = readPreferences();
-    this.mode = stored.mode === "display" || stored.mode === "region"
-      ? stored.mode
+  constructor(
+    preferences: VisualPreferences,
+    onPreferencesChange: (preferences: VisualPreferences) => void = () => undefined
+  ) {
+    this.mode = preferences.sourceMode === "display" || preferences.sourceMode === "region"
+      ? preferences.sourceMode
       : "applicationWindow";
-    this.sourceLanguage = supportedTranslationLanguage(stored.sourceLanguage ?? "ja") ?? "ja";
-    this.targetLanguage = supportedTranslationLanguage(stored.targetLanguage ?? "en") ?? "en";
+    this.sourceLanguage = supportedTranslationLanguage(preferences.sourceLanguage) ?? "ja";
+    this.targetLanguage = supportedTranslationLanguage(preferences.targetLanguage) ?? "en";
     if (this.sourceLanguage === this.targetLanguage) this.targetLanguage = "en";
-    this.windowId = stored.windowId;
-    this.displayId = stored.displayId;
-    this.detectionMode = stored.detectionMode === "allText" ? "allText" : "focused";
+    this.windowId = preferences.windowId;
+    this.displayId = preferences.displayId;
+    this.detectionMode = preferences.detectionMode === "allText" ? "allText" : "focused";
+    this.onPreferencesChange = onPreferencesChange;
   }
 
   render(
@@ -619,13 +605,13 @@ export class VisualPanel {
   }
 
   private persist(): void {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      mode: this.mode,
+    this.onPreferencesChange({
+      sourceMode: this.mode,
       sourceLanguage: this.sourceLanguage,
       targetLanguage: this.targetLanguage,
       windowId: this.windowId,
       displayId: this.displayId,
       detectionMode: this.detectionMode
-    } satisfies StoredVisualPreferences));
+    });
   }
 }

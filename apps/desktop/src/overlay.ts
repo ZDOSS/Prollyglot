@@ -2,7 +2,7 @@ import "./styles.css";
 
 import { listen } from "@tauri-apps/api/event";
 
-import { isTauri } from "./bridge";
+import { desktopBridge, isTauri } from "./bridge";
 import { languageLabel } from "./language-catalog";
 import { PresentationCursor, captionDisplayState } from "./presentation-state";
 import {
@@ -199,18 +199,11 @@ function applySettings(settings: OverlaySettings): void {
   applyVisibility();
 }
 
-function storedSettings(): OverlaySettings {
-  try {
-    const stored = localStorage.getItem("prollyglot.overlay");
-    return stored
-      ? { ...DEFAULT_OVERLAY_SETTINGS, ...(JSON.parse(stored) as Partial<OverlaySettings>) }
-      : { ...DEFAULT_OVERLAY_SETTINGS };
-  } catch {
-    return { ...DEFAULT_OVERLAY_SETTINGS };
-  }
-}
-
-applySettings(storedSettings());
+applySettings({ ...DEFAULT_OVERLAY_SETTINGS });
+void desktopBridge.configurationSnapshot()
+  .then(({ config }) => applySettings(config.overlay))
+  .catch((error) => console.error("Could not load caption appearance.", error));
+void desktopBridge.onConfiguration(({ config }) => applySettings(config.overlay));
 if (!isTauri()) {
   handlePresentation({
     sessionId: 1,
@@ -239,5 +232,4 @@ if (isTauri()) {
     RUNTIME_EVENTS.captionPresentation,
     ({ payload }) => handlePresentation(payload)
   );
-  void listen<OverlaySettings>("overlay-settings", ({ payload }) => applySettings(payload));
 }

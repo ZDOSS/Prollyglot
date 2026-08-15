@@ -2,6 +2,7 @@ import "./styles.css";
 
 import { desktopBridge } from "./bridge";
 import { AppearancePanel } from "./appearance-panel";
+import { initializeConfiguration } from "./configuration";
 import { icons } from "./icons";
 
 const {
@@ -33,6 +34,14 @@ root.innerHTML = `
 
 let dismissing = false;
 
+const configuration = await initializeConfiguration(
+  desktopBridge,
+  localStorage,
+  (message) => {
+    void reportFrontendDiagnostic("configuration", message);
+  }
+);
+
 async function dismissAppearance(): Promise<void> {
   if (dismissing) return;
   dismissing = true;
@@ -53,7 +62,14 @@ async function dismissAppearance(): Promise<void> {
 
 new AppearancePanel().render(
   document.querySelector<HTMLElement>("#standalone-appearance-panel")!,
-  { showHeading: true, onDone: dismissAppearance }
+  {
+    settings: structuredClone(configuration.snapshot().config.overlay),
+    onChange: (settings) => configuration.update((config) => {
+      config.overlay = structuredClone(settings);
+    }).then(() => undefined),
+    showHeading: true,
+    onDone: dismissAppearance
+  }
 );
 
 for (const button of document.querySelectorAll<HTMLButtonElement>("[data-window-action]")) {

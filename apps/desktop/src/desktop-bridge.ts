@@ -1,9 +1,10 @@
 import type {
   CaptionPresentationFrame,
+  ApplicationConfiguration,
+  ConfigurationSnapshot,
   CaptureSelection,
   CaptureStatus,
   ModelCatalogStatus,
-  OverlaySettings,
   PixelRect,
   RuntimeBootstrap,
   RuntimeSnapshot,
@@ -33,6 +34,15 @@ export type WindowLayout = "full" | "compact";
  */
 export interface DesktopBridge {
   readonly kind: "native" | "preview";
+
+  configurationSnapshot(): Promise<ConfigurationSnapshot>;
+  updateConfiguration(
+    expectedRevision: number,
+    config: ApplicationConfiguration
+  ): Promise<ConfigurationSnapshot>;
+  onConfiguration(
+    callback: (snapshot: ConfigurationSnapshot) => void
+  ): Promise<Unsubscribe>;
 
   sourceSnapshot(): Promise<SourceSnapshot>;
   startCapture(selection: CaptureSelection, language: string): Promise<void>;
@@ -84,7 +94,6 @@ export interface DesktopBridge {
 
   updateCaptionPresentation(frame: CaptionPresentationFrame): Promise<void>;
   updateVisualPresentation(frame: VisualPresentationFrame): Promise<void>;
-  updateOverlaySettings(settings: OverlaySettings): Promise<void>;
 
   showAppearance(): Promise<void>;
   closeAppearance(): Promise<void>;

@@ -7,6 +7,7 @@ cd "$project_root"
 cargo fmt --all -- --check
 cargo test --locked \
   -p prollyglot-application-runtime \
+  -p prollyglot-config \
   -p prollyglot-core \
   -p prollyglot-audio-pipeline \
   -p prollyglot-asr \
@@ -19,6 +20,7 @@ cargo test --locked \
   --all-targets
 cargo clippy --locked \
   -p prollyglot-application-runtime \
+  -p prollyglot-config \
   -p prollyglot-core \
   -p prollyglot-audio-pipeline \
   -p prollyglot-asr \

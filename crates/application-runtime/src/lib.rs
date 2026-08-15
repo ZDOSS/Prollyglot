@@ -25,6 +25,12 @@ pub use contracts::{
     VisualSource, VisualSourceKind, VisualSourceSnapshot, VisualState, VisualStatus,
     VisualTextClear, VisualTextUpdate,
 };
+pub use prollyglot_config::{
+    ApplicationConfiguration, AudioSourcePreference, BilingualLayout, CONFIGURATION_SCHEMA_VERSION,
+    CaptionOutputPreference, CaptionPreferences, ConfigurationSnapshot, ModelPreferences,
+    OverlayPosition, OverlaySettings, UpdateConfigurationCommand, ViewMode,
+    VisualDetectionPreference, VisualPreferences, VisualSourcePreference,
+};
 pub use supervisor::{
     CancellationToken, SessionSupervisor, StartPermit, StopPermit, WorkerLifetime, WorkerOutcome,
     WorkerReporter, WorkerRole,
@@ -32,6 +38,8 @@ pub use supervisor::{
 
 /// Stable IPC names shared by the native adapter and generated TypeScript.
 pub mod ipc {
+    pub const CONFIGURATION_SNAPSHOT_COMMAND: &str = "configuration_snapshot";
+    pub const UPDATE_CONFIGURATION_COMMAND: &str = "update_configuration";
     pub const BOOTSTRAP_COMMAND: &str = "runtime_bootstrap";
     pub const SOURCE_SNAPSHOT_COMMAND: &str = "source_snapshot";
     pub const START_CAPTURE_COMMAND: &str = "start_capture";
@@ -58,4 +66,5 @@ pub mod ipc {
     pub const VISUAL_REGION_SELECTOR_REQUEST_EVENT: &str = "visual-region-selector-request";
     pub const CAPTION_PRESENTATION_EVENT: &str = "caption-presentation";
     pub const VISUAL_PRESENTATION_EVENT: &str = "visual-presentation";
+    pub const CONFIGURATION_EVENT: &str = "configuration-updated";
 }

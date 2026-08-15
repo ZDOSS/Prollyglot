@@ -21,6 +21,7 @@ prollyglot-asr = { path = "../../../crates/asr" }
 prollyglot-asr-sherpa = { path = "../../../crates/asr-sherpa" }
 prollyglot-audio-pipeline = { path = "../../../crates/audio-pipeline" }
 prollyglot-audio-windows = { path = "../../../crates/audio-windows" }
+prollyglot-config = { path = "../../../crates/config" }
 prollyglot-core = { path = "../../../crates/prollyglot-core" }
 prollyglot-model-manager = { path = "../../../crates/model-manager" }
 prollyglot-transcript = { path = "../../../crates/transcript" }

@@ -6,8 +6,10 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { DesktopBridge } from "./desktop-bridge";
 import { RUNTIME_COMMANDS, RUNTIME_EVENTS } from "./types";
 import type {
+  ApplicationConfiguration,
   CaptionPresentationFrame,
   CaptureStatus,
+  ConfigurationSnapshot,
   ModelCatalogStatus,
   PixelRect,
   RuntimeBootstrap,
@@ -18,6 +20,7 @@ import type {
   StartVisualTranslationCommand,
   TranscriptSnapshot,
   TranslationStorageCatalog,
+  UpdateConfigurationCommand,
   UpdateCaptionPresentationCommand,
   UpdateVisualPresentationCommand,
   VisualCaptureCapabilities,
@@ -33,6 +36,18 @@ import type {
 export function createNativeBridge(): DesktopBridge {
   return {
     kind: "native",
+
+    configurationSnapshot: () => invoke<ConfigurationSnapshot>(
+      RUNTIME_COMMANDS.configurationSnapshot
+    ),
+    updateConfiguration: (expectedRevision, config: ApplicationConfiguration) =>
+      invoke<ConfigurationSnapshot>(RUNTIME_COMMANDS.updateConfiguration, {
+        command: { expectedRevision, config } satisfies UpdateConfigurationCommand
+      }),
+    onConfiguration: (callback) => listen<ConfigurationSnapshot>(
+      RUNTIME_EVENTS.configuration,
+      ({ payload }) => callback(payload)
+    ),
 
     sourceSnapshot: () => invoke<SourceSnapshot>(RUNTIME_COMMANDS.sourceSnapshot),
     startCapture: async (selection, language) => {
@@ -161,10 +176,6 @@ export function createNativeBridge(): DesktopBridge {
         { frame } satisfies UpdateVisualPresentationCommand
       );
     },
-    updateOverlaySettings: async (settings) => {
-      await invoke("update_overlay_settings", { settings });
-    },
-
     showAppearance: async () => {
       await invoke("show_appearance_window");
     },

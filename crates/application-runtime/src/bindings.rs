@@ -1,18 +1,22 @@
 use ts_rs::{Config, TS};
 
 use crate::{
-    ApplicationError, ApplicationErrorCode, ApplicationSource, CaptionOutputMode,
-    CaptionPresentationEntry, CaptionPresentationFrame, CaptionPresentationPhase, CaptureSelection,
-    CaptureState, CaptureStatus, CompleteVisualRegionSelectionCommand, ErrorRecoverability,
-    PixelRect, PlaybackDevice, RecoveryAction, RuntimeBootstrap, RuntimeHealth, RuntimeSnapshot,
-    RuntimeStateEvent, SessionHealthLevel, SessionId, SessionLifecycle, SessionMode,
-    SessionProgress, SessionSource, SessionSourceKind, ShowVisualRegionSelectorCommand,
-    SourceSnapshot, StableVisualTextRegion, StartCaptureCommand, StartSessionRequest,
-    StartVisualTranslationCommand, UpdateCaptionPresentationCommand,
-    UpdateVisualPresentationCommand, VisualCaptureCapabilities, VisualCaptureGeometry,
-    VisualCaptureSelection, VisualDetectionMode, VisualPresentationFrame, VisualPresentationRegion,
-    VisualRect, VisualRegionSelected, VisualRegionSelectorRequest, VisualSource, VisualSourceKind,
-    VisualSourceSnapshot, VisualState, VisualStatus, VisualTextClear, VisualTextUpdate, ipc,
+    ApplicationConfiguration, ApplicationError, ApplicationErrorCode, ApplicationSource,
+    AudioSourcePreference, BilingualLayout, CaptionOutputMode, CaptionOutputPreference,
+    CaptionPreferences, CaptionPresentationEntry, CaptionPresentationFrame,
+    CaptionPresentationPhase, CaptureSelection, CaptureState, CaptureStatus,
+    CompleteVisualRegionSelectionCommand, ConfigurationSnapshot, ErrorRecoverability,
+    ModelPreferences, OverlayPosition, OverlaySettings, PixelRect, PlaybackDevice, RecoveryAction,
+    RuntimeBootstrap, RuntimeHealth, RuntimeSnapshot, RuntimeStateEvent, SessionHealthLevel,
+    SessionId, SessionLifecycle, SessionMode, SessionProgress, SessionSource, SessionSourceKind,
+    ShowVisualRegionSelectorCommand, SourceSnapshot, StableVisualTextRegion, StartCaptureCommand,
+    StartSessionRequest, StartVisualTranslationCommand, UpdateCaptionPresentationCommand,
+    UpdateConfigurationCommand, UpdateVisualPresentationCommand, ViewMode,
+    VisualCaptureCapabilities, VisualCaptureGeometry, VisualCaptureSelection, VisualDetectionMode,
+    VisualDetectionPreference, VisualPreferences, VisualPresentationFrame,
+    VisualPresentationRegion, VisualRect, VisualRegionSelected, VisualRegionSelectorRequest,
+    VisualSource, VisualSourceKind, VisualSourcePreference, VisualSourceSnapshot, VisualState,
+    VisualStatus, VisualTextClear, VisualTextUpdate, ipc,
 };
 
 const GENERATED_HEADER: &str =
@@ -29,6 +33,7 @@ pub fn typescript_bindings() -> String {
     output.push_str(&format!(
         concat!(
             "export const RUNTIME_COMMANDS = {{ ",
+            "configurationSnapshot: {:?}, updateConfiguration: {:?}, ",
             "bootstrap: {:?}, sourceSnapshot: {:?}, startCapture: {:?}, stopCapture: {:?}, ",
             "captureStatus: {:?}, visualCapabilities: {:?}, visualSourceSnapshot: {:?}, ",
             "visualStatus: {:?}, showVisualRegionSelector: {:?}, ",
@@ -37,6 +42,8 @@ pub fn typescript_bindings() -> String {
             "updateCaptionPresentation: {:?}, updateVisualPresentation: {:?} ",
             "}} as const;\n"
         ),
+        ipc::CONFIGURATION_SNAPSHOT_COMMAND,
+        ipc::UPDATE_CONFIGURATION_COMMAND,
         ipc::BOOTSTRAP_COMMAND,
         ipc::SOURCE_SNAPSHOT_COMMAND,
         ipc::START_CAPTURE_COMMAND,
@@ -59,7 +66,7 @@ pub fn typescript_bindings() -> String {
             "visualStatus: {:?}, visualText: {:?}, visualClear: {:?}, ",
             "visualRegionSelected: {:?}, visualRegionSelectionCancelled: {:?}, ",
             "visualRegionSelectorRequest: {:?}, captionPresentation: {:?}, ",
-            "visualPresentation: {:?} }} as const;\n\n"
+            "visualPresentation: {:?}, configuration: {:?} }} as const;\n\n"
         ),
         ipc::STATE_EVENT,
         ipc::CAPTURE_STATUS_EVENT,
@@ -71,8 +78,23 @@ pub fn typescript_bindings() -> String {
         ipc::VISUAL_REGION_SELECTOR_REQUEST_EVENT,
         ipc::CAPTION_PRESENTATION_EVENT,
         ipc::VISUAL_PRESENTATION_EVENT,
+        ipc::CONFIGURATION_EVENT,
     ));
 
+    push_declaration::<ViewMode>(&config, &mut output);
+    push_declaration::<CaptionOutputPreference>(&config, &mut output);
+    push_declaration::<BilingualLayout>(&config, &mut output);
+    push_declaration::<OverlayPosition>(&config, &mut output);
+    push_declaration::<OverlaySettings>(&config, &mut output);
+    push_declaration::<AudioSourcePreference>(&config, &mut output);
+    push_declaration::<CaptionPreferences>(&config, &mut output);
+    push_declaration::<VisualSourcePreference>(&config, &mut output);
+    push_declaration::<VisualDetectionPreference>(&config, &mut output);
+    push_declaration::<VisualPreferences>(&config, &mut output);
+    push_declaration::<ModelPreferences>(&config, &mut output);
+    push_declaration::<ApplicationConfiguration>(&config, &mut output);
+    push_declaration::<ConfigurationSnapshot>(&config, &mut output);
+    push_declaration::<UpdateConfigurationCommand>(&config, &mut output);
     push_declaration::<SessionId>(&config, &mut output);
     push_declaration::<SessionMode>(&config, &mut output);
     push_declaration::<SessionLifecycle>(&config, &mut output);
@@ -126,6 +148,11 @@ pub fn typescript_bindings() -> String {
     while output.ends_with("\n\n") {
         output.pop();
     }
+    let default_configuration = serde_json::to_string(&ApplicationConfiguration::default())
+        .expect("default application configuration must serialize");
+    output.push_str("\n\nexport const DEFAULT_APPLICATION_CONFIGURATION = ");
+    output.push_str(&default_configuration);
+    output.push_str(" as const satisfies ApplicationConfiguration;\n");
     output
 }
 
@@ -153,6 +180,8 @@ mod tests {
         let output = typescript_bindings();
 
         assert!(output.contains("runtime_bootstrap"));
+        assert!(output.contains("configuration_snapshot"));
+        assert!(output.contains("configuration-updated"));
         assert!(output.contains("runtime-state"));
         assert!(output.contains("start_capture"));
         assert!(output.contains("start_visual_translation"));
@@ -160,6 +189,9 @@ mod tests {
         assert!(output.contains("caption-presentation"));
         assert!(output.contains("visual-text-update"));
         assert!(output.contains("export type RuntimeSnapshot"));
+        assert!(output.contains("export type ApplicationConfiguration"));
+        assert!(output.contains("export type ConfigurationSnapshot"));
+        assert!(output.contains("export const DEFAULT_APPLICATION_CONFIGURATION"));
         assert!(output.contains("export type ApplicationError"));
         assert!(output.contains("export type CaptureSelection"));
         assert!(output.contains("export type VisualCaptureSelection"));

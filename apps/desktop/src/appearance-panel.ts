@@ -1,10 +1,9 @@
-import { desktopBridge } from "./bridge";
 import { icons } from "./icons";
 import { DEFAULT_OVERLAY_SETTINGS, type OverlaySettings } from "./types";
 
-const { updateOverlaySettings } = desktopBridge;
-
 export interface AppearancePanelOptions {
+  settings: OverlaySettings;
+  onChange: (settings: OverlaySettings) => void | Promise<void>;
   showHeading?: boolean;
   doneLabel?: string;
   onDone?: () => void | Promise<void>;
@@ -12,9 +11,10 @@ export interface AppearancePanelOptions {
 
 export class AppearancePanel {
   private container?: HTMLElement;
-  private options: AppearancePanelOptions = {};
+  private options?: AppearancePanelOptions;
+  private lastSave: Promise<void> = Promise.resolve();
 
-  render(container: HTMLElement, options: AppearancePanelOptions = {}): void {
+  render(container: HTMLElement, options: AppearancePanelOptions): void {
     this.container = container;
     this.options = options;
     container.className = "appearance-panel-host";
@@ -102,15 +102,15 @@ export class AppearancePanel {
     for (const control of this.all<HTMLInputElement | HTMLSelectElement>(
       ".appearance-controls input, .appearance-controls select"
     )) {
-      control.addEventListener("input", () => this.apply(this.readSettings()));
+      control.addEventListener("input", () => this.apply(this.readSettings(), true));
     }
     this.required<HTMLButtonElement>("[data-appearance-reset]").addEventListener("click", () => {
-      this.writeSettings({ ...DEFAULT_OVERLAY_SETTINGS });
+      this.writeSettings({ ...DEFAULT_OVERLAY_SETTINGS }, true);
     });
     this.query<HTMLButtonElement>("[data-appearance-done]")?.addEventListener("click", () => {
       void this.finish();
     });
-    this.writeSettings(this.readStoredSettings());
+    this.writeSettings(options.settings, false);
   }
 
   settings(): OverlaySettings {
@@ -134,16 +134,6 @@ export class AppearancePanel {
     </span>`;
   }
 
-  private readStoredSettings(): OverlaySettings {
-    const stored = localStorage.getItem("prollyglot.overlay");
-    if (!stored) return { ...DEFAULT_OVERLAY_SETTINGS };
-    try {
-      return { ...DEFAULT_OVERLAY_SETTINGS, ...(JSON.parse(stored) as Partial<OverlaySettings>) };
-    } catch {
-      return { ...DEFAULT_OVERLAY_SETTINGS };
-    }
-  }
-
   private readSettings(): OverlaySettings {
     return {
       fontFamily: this.required<HTMLSelectElement>("#font-family").value,
@@ -161,7 +151,7 @@ export class AppearancePanel {
     };
   }
 
-  private writeSettings(settings: OverlaySettings): void {
+  private writeSettings(settings: OverlaySettings, notify: boolean): void {
     this.writeSelect("#font-family", settings.fontFamily, DEFAULT_OVERLAY_SETTINGS.fontFamily);
     this.writeSelect("#font-size", settings.fontSize, DEFAULT_OVERLAY_SETTINGS.fontSize);
     this.required<HTMLInputElement>("#text-color").value = settings.textColor;
@@ -174,7 +164,7 @@ export class AppearancePanel {
     this.writeSelect("#fade-duration", settings.fadeDurationMs, DEFAULT_OVERLAY_SETTINGS.fadeDurationMs);
     this.writeSelect("#overlay-position", settings.position, DEFAULT_OVERLAY_SETTINGS.position);
     this.required<HTMLInputElement>("#click-through").checked = settings.clickThrough;
-    this.apply(this.readSettings());
+    this.apply(this.readSettings(), notify);
   }
 
   private writeSelect(selector: string, value: string | number, fallback: string | number): void {
@@ -183,7 +173,7 @@ export class AppearancePanel {
     if (!select.value) select.value = String(fallback);
   }
 
-  private apply(settings: OverlaySettings): void {
+  private apply(settings: OverlaySettings, notify: boolean): void {
     const preview = this.required<HTMLElement>("#preview-caption");
     this.required<HTMLOutputElement>("#opacity-output").value = `${Math.round(settings.backgroundOpacity * 100)}%`;
     preview.style.fontFamily = settings.fontFamily;
@@ -201,15 +191,20 @@ export class AppearancePanel {
       entry.dataset.historyDepth = String(entries.length - index - 1);
     });
     this.required<HTMLElement>("#preview-desktop").dataset.position = settings.position;
-    void updateOverlaySettings(settings);
+    if (notify && this.options) {
+      this.lastSave = Promise.resolve(this.options.onChange(structuredClone(settings)))
+        .catch((error) => {
+          console.error("Could not save caption appearance.", error);
+        });
+    }
   }
 
   private async finish(): Promise<void> {
     const button = this.query<HTMLButtonElement>("[data-appearance-done]");
     if (button) button.disabled = true;
     try {
-      await updateOverlaySettings(this.readSettings());
-      await this.options.onDone?.();
+      await this.lastSave;
+      await this.options?.onDone?.();
     } finally {
       if (button) button.disabled = false;
     }

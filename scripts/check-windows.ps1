@@ -7,6 +7,7 @@ try {
     cargo fmt --all -- --check
     cargo test --locked `
         -p prollyglot-application-runtime `
+        -p prollyglot-config `
         -p prollyglot-core `
         -p prollyglot-audio-pipeline `
         -p prollyglot-asr `

@@ -5,6 +5,7 @@ import {
   type RuntimeReduction
 } from "./runtime-state.ts";
 import type {
+  ConfigurationSnapshot,
   CaptionOutputMode,
   CaptureStatus,
   ModelCatalogStatus,
@@ -41,6 +42,7 @@ export interface AppPreferences {
 }
 
 export interface AppState {
+  configuration?: ConfigurationSnapshot;
   runtime: RuntimeCursor;
   runtimeContractMismatch?: number;
   sources: SourceSnapshot;
@@ -77,6 +79,7 @@ export const FALLBACK_SPEECH_MODEL: ModelStatus = {
 };
 
 export interface InitialAppStateOptions {
+  configuration?: ConfigurationSnapshot;
   viewMode?: AppViewMode;
   acceptedSpokenLanguage?: string;
   captionMode?: CaptionOutputMode;
@@ -85,7 +88,11 @@ export interface InitialAppStateOptions {
 }
 
 export function createInitialAppState(options: InitialAppStateOptions = {}): AppState {
+  const configured = options.configuration?.config;
   return {
+    configuration: options.configuration
+      ? structuredClone(options.configuration)
+      : undefined,
     runtime: initialRuntimeCursor(),
     sources: { playbackDevices: [], applications: [] },
     captureStatus: { state: "stopped", peak: 0, droppedFrames: 0 },
@@ -105,13 +112,17 @@ export function createInitialAppState(options: InitialAppStateOptions = {}): App
     visualModels: { models: [] },
     visualStatus: stoppedVisualStatus(),
     navigation: {
-      viewMode: options.viewMode ?? "full",
+      viewMode: configured?.viewMode ?? options.viewMode ?? "full",
       destination: "captions"
     },
     preferences: {
-      acceptedSpokenLanguage: options.acceptedSpokenLanguage ?? "en",
-      captionMode: options.captionMode ?? "original",
-      translationTarget: options.translationTarget ?? "en"
+      acceptedSpokenLanguage: configured?.captions.spokenLanguage
+        ?? options.acceptedSpokenLanguage
+        ?? "en",
+      captionMode: configured?.captions.outputMode ?? options.captionMode ?? "original",
+      translationTarget: configured?.captions.translationTarget
+        ?? options.translationTarget
+        ?? "off"
     },
     notices: {},
     transcriptFollowLatest: true
@@ -119,6 +130,7 @@ export function createInitialAppState(options: InitialAppStateOptions = {}): App
 }
 
 export type AppAction =
+  | { type: "configuration/accepted"; snapshot: ConfigurationSnapshot }
   | { type: "runtime/received"; snapshot: RuntimeSnapshot; expectedContractVersion: number }
   | { type: "sources/replaced"; snapshot: SourceSnapshot }
   | { type: "capture/status"; status: CaptureStatus }
@@ -185,6 +197,28 @@ interface AppReduction {
 
 export function reduceAppState(state: AppState, action: AppAction): AppReduction {
   switch (action.type) {
+    case "configuration/accepted": {
+      if (
+        state.configuration
+        && action.snapshot.revision < state.configuration.revision
+      ) return { state };
+      const snapshot = structuredClone(action.snapshot);
+      return {
+        state: {
+          ...state,
+          configuration: snapshot,
+          navigation: {
+            ...state.navigation,
+            viewMode: snapshot.config.viewMode
+          },
+          preferences: {
+            acceptedSpokenLanguage: snapshot.config.captions.spokenLanguage,
+            captionMode: snapshot.config.captions.outputMode,
+            translationTarget: snapshot.config.captions.translationTarget ?? "off"
+          }
+        }
+      };
+    }
     case "runtime/received": {
       const runtime = reduceRuntimeSnapshot(
         state.runtime,

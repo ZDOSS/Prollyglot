@@ -1,4 +1,5 @@
 mod audio;
+mod configuration;
 mod models;
 mod presentation;
 mod runtime;
@@ -9,65 +10,14 @@ mod visual;
 use std::{fs, sync::Arc};
 
 use parking_lot::Mutex;
-use prollyglot_application_runtime::SessionSupervisor;
+use prollyglot_application_runtime::{
+    BilingualLayout, ConfigurationSnapshot, OverlayPosition, OverlaySettings, SessionSupervisor,
+};
 use prollyglot_transcript::{TranscriptSnapshot, TranscriptStore};
-use serde::{Deserialize, Serialize};
 use tauri::{
     Emitter, LogicalSize, Manager, PhysicalPosition, PhysicalRect, PhysicalSize, State,
     WebviewWindow,
 };
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct OverlaySettings {
-    font_family: String,
-    font_size: u16,
-    text_color: String,
-    translated_text_color: String,
-    bilingual_layout: BilingualLayout,
-    background_opacity: f32,
-    width: u32,
-    maximum_lines: u8,
-    reading_time_seconds: u16,
-    fade_duration_ms: u16,
-    position: OverlayPosition,
-    click_through: bool,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-enum OverlayPosition {
-    TopCenter,
-    BottomCenter,
-    BottomLeft,
-    BottomRight,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-enum BilingualLayout {
-    Stacked,
-    SideBySide,
-}
-
-impl Default for OverlaySettings {
-    fn default() -> Self {
-        Self {
-            font_family: r#""Segoe UI Variable", "Segoe UI", sans-serif"#.into(),
-            font_size: 36,
-            text_color: "#f4f6f5".into(),
-            translated_text_color: "#86e3b0".into(),
-            bilingual_layout: BilingualLayout::Stacked,
-            background_opacity: 0.75,
-            width: 720,
-            maximum_lines: 3,
-            reading_time_seconds: 15,
-            fade_duration_ms: 800,
-            position: OverlayPosition::BottomCenter,
-            click_through: true,
-        }
-    }
-}
 
 #[derive(Default)]
 struct RuntimeState {
@@ -77,8 +27,8 @@ struct RuntimeState {
     audio: audio::AudioRuntime,
     transcript: Arc<Mutex<TranscriptStore>>,
     caption_presentation: presentation::CaptionPresentationRuntime,
+    configuration: configuration::ConfigurationRuntime,
     model: models::ModelRuntime,
-    overlay_settings: Mutex<OverlaySettings>,
     translation: translation::TranslationRuntime,
     visual: visual::VisualRuntime,
 }
@@ -172,37 +122,6 @@ fn close_appearance_window(
     Ok(())
 }
 
-fn validated_settings(settings: OverlaySettings) -> Result<OverlaySettings, String> {
-    if !(18..=96).contains(&settings.font_size) {
-        return Err("Caption size must be between 18 and 96 pixels.".into());
-    }
-    if !(320..=1600).contains(&settings.width) {
-        return Err("Caption width must be between 320 and 1600 pixels.".into());
-    }
-    if !(1..=4).contains(&settings.maximum_lines) {
-        return Err("Maximum lines must be between 1 and 4.".into());
-    }
-    if !(3..=60).contains(&settings.reading_time_seconds) {
-        return Err("Caption reading time must be between 3 and 60 seconds.".into());
-    }
-    if settings.fade_duration_ms > 5_000 {
-        return Err("Caption fade duration must be at most 5 seconds.".into());
-    }
-    if !(0.0..=1.0).contains(&settings.background_opacity) {
-        return Err("Background opacity must be between 0 and 1.".into());
-    }
-    if !is_hex_color(&settings.text_color) || !is_hex_color(&settings.translated_text_color) {
-        return Err("Caption colors must be six-digit hex colors.".into());
-    }
-    Ok(settings)
-}
-
-fn is_hex_color(value: &str) -> bool {
-    value.len() == 7
-        && value.starts_with('#')
-        && value[1..].bytes().all(|byte| byte.is_ascii_hexdigit())
-}
-
 fn configure_overlay_window(
     overlay: &WebviewWindow,
     settings: &OverlaySettings,
@@ -279,7 +198,7 @@ fn show_overlay_with_presentation(
     let overlay = app
         .get_webview_window("overlay")
         .ok_or("Caption overlay is unavailable.")?;
-    let settings = state.overlay_settings.lock().clone();
+    let settings = state.configuration.snapshot()?.config.overlay;
     configure_overlay_window(&overlay, &settings)?;
     overlay
         .emit("overlay-settings", settings)
@@ -322,22 +241,19 @@ fn anchored_overlay_position(
     )
 }
 
-#[tauri::command]
-fn update_overlay_settings(
-    app: tauri::AppHandle,
-    state: State<'_, RuntimeState>,
-    settings: OverlaySettings,
-) -> Result<(), String> {
-    let settings = validated_settings(settings)?;
-    let overlay = app
-        .get_webview_window("overlay")
-        .ok_or("Caption overlay is unavailable.")?;
-    configure_overlay_window(&overlay, &settings)?;
-    overlay
-        .emit("overlay-settings", &settings)
-        .map_err(|error| error.to_string())?;
-    *state.overlay_settings.lock() = settings;
-    Ok(())
+pub(crate) fn apply_configuration_snapshot(
+    app: &tauri::AppHandle,
+    snapshot: &ConfigurationSnapshot,
+) {
+    let Some(overlay) = app.get_webview_window("overlay") else {
+        return;
+    };
+    if let Err(error) = configure_overlay_window(&overlay, &snapshot.config.overlay) {
+        tracing::warn!(%error, "could not apply the accepted overlay configuration");
+    }
+    if let Err(error) = overlay.emit("overlay-settings", &snapshot.config.overlay) {
+        tracing::warn!(%error, "could not publish the accepted overlay configuration");
+    }
 }
 
 #[tauri::command]
@@ -361,7 +277,9 @@ pub fn run() {
         .setup(|app| {
             initialize_logging(app)?;
             let runtime = app.state::<RuntimeState>();
-            models::initialize(app.handle(), &runtime.model);
+            let configuration = runtime.configuration.initialize(app.handle())?;
+            apply_configuration_snapshot(app.handle(), &configuration);
+            models::initialize(app.handle(), &runtime.model, &runtime.configuration);
             translation::initialize(app.handle(), &runtime.translation);
             visual::initialize(app.handle(), &runtime.visual);
             Ok(())
@@ -372,6 +290,8 @@ pub fn run() {
             audio::stop_capture,
             audio::capture_status,
             runtime::runtime_bootstrap,
+            configuration::configuration_snapshot,
+            configuration::update_configuration,
             transcript_snapshot,
             clear_transcript,
             models::model_status,
@@ -384,7 +304,6 @@ pub fn run() {
             translation::remove_translation_model,
             show_appearance_window,
             close_appearance_window,
-            update_overlay_settings,
             report_frontend_diagnostic,
             visual::visual_capabilities,
             visual::visual_source_snapshot,
@@ -417,23 +336,17 @@ mod tests {
 
     #[test]
     fn overlay_settings_reject_unsafe_ranges() {
-        let settings = OverlaySettings {
-            background_opacity: 1.5,
-            ..OverlaySettings::default()
-        };
-        assert!(validated_settings(settings).is_err());
+        let mut config = prollyglot_application_runtime::ApplicationConfiguration::default();
+        config.overlay.background_opacity = 1.5;
+        assert!(config.validate().is_err());
 
-        let settings = OverlaySettings {
-            reading_time_seconds: 2,
-            ..OverlaySettings::default()
-        };
-        assert!(validated_settings(settings).is_err());
+        config = prollyglot_application_runtime::ApplicationConfiguration::default();
+        config.overlay.reading_time_seconds = 2;
+        assert!(config.validate().is_err());
 
-        let settings = OverlaySettings {
-            fade_duration_ms: 5_001,
-            ..OverlaySettings::default()
-        };
-        assert!(validated_settings(settings).is_err());
+        config = prollyglot_application_runtime::ApplicationConfiguration::default();
+        config.overlay.fade_duration_ms = 5_001;
+        assert!(config.validate().is_err());
     }
 
     #[test]

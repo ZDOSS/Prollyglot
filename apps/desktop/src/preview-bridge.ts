@@ -1,6 +1,7 @@
 import type { DesktopBridge } from "./desktop-bridge";
 import {
   previewCaptureStatus,
+  previewConfigurationSnapshot,
   previewRuntimeSnapshot,
   previewSourceSnapshot,
   previewSpeechCatalog,
@@ -11,6 +12,7 @@ import {
   previewVisualStatus
 } from "./preview-fixtures";
 import type {
+  ConfigurationSnapshot,
   CaptionPresentationFrame,
   CaptureStatus,
   ModelCatalogStatus,
@@ -34,8 +36,27 @@ export function createPreviewBridge(): PreviewDesktopBridge {
   const visualSources = previewVisualSources();
   const capabilities = previewVisualCapabilities();
   let audioStatus = previewCaptureStatus();
+  let configuration = previewConfigurationSnapshot();
+  try {
+    const stored = localStorage.getItem("prollyglot.preview-configuration");
+    if (stored) {
+      const parsed = JSON.parse(stored) as ConfigurationSnapshot;
+      if (
+        Number.isSafeInteger(parsed.revision)
+        && parsed.revision > 0
+        && parsed.config?.schemaVersion === configuration.config.schemaVersion
+      ) configuration = parsed;
+    }
+  } catch {
+    localStorage.removeItem("prollyglot.preview-configuration");
+  }
   let visualStatus = previewVisualStatus();
   let speechCatalog = previewSpeechCatalog();
+  const configuredSpeechModel = configuration.config.models.speechModelId;
+  if (
+    configuredSpeechModel
+    && speechCatalog.models.some(({ modelId }) => modelId === configuredSpeechModel)
+  ) speechCatalog.selectedModelId = configuredSpeechModel;
   let visualCatalog = previewVisualModelCatalog();
   let transcript = previewTranscript();
   let runtimeRevision = 0;
@@ -49,6 +70,7 @@ export function createPreviewBridge(): PreviewDesktopBridge {
   let visualTimers: number[] = [];
 
   const runtimeListeners = new Set<(snapshot: RuntimeSnapshot) => void>();
+  const configurationListeners = new Set<(snapshot: ConfigurationSnapshot) => void>();
   const captureListeners = new Set<(status: CaptureStatus) => void>();
   const modelListeners = new Set<(status: ModelCatalogStatus) => void>();
   const transcriptListeners = new Set<(snapshot: TranscriptSnapshot) => void>();
@@ -107,6 +129,28 @@ export function createPreviewBridge(): PreviewDesktopBridge {
 
   const bridge: PreviewDesktopBridge = {
     kind: "preview",
+
+    configurationSnapshot: async () => structuredClone(configuration),
+    updateConfiguration: async (expectedRevision, config) => {
+      if (expectedRevision !== configuration.revision) {
+        throw new Error(
+          `Configuration revision ${expectedRevision} is stale; current revision is ${configuration.revision}.`
+        );
+      }
+      configuration = {
+        revision: configuration.revision + 1,
+        config: structuredClone(config)
+      };
+      localStorage.setItem("prollyglot.preview-configuration", JSON.stringify(configuration));
+      for (const listener of configurationListeners) {
+        listener(structuredClone(configuration));
+      }
+      return structuredClone(configuration);
+    },
+    onConfiguration: async (callback) => {
+      configurationListeners.add(callback);
+      return () => configurationListeners.delete(callback);
+    },
 
     sourceSnapshot: async () => structuredClone(sources),
     startCapture: async (_selection, language) => {
@@ -184,6 +228,17 @@ export function createPreviewBridge(): PreviewDesktopBridge {
     selectSpeechModel: async (modelId) => {
       requiredSpeechModel(modelId);
       speechCatalog = { ...speechCatalog, selectedModelId: modelId };
+      configuration = {
+        revision: configuration.revision + 1,
+        config: {
+          ...configuration.config,
+          models: { ...configuration.config.models, speechModelId: modelId }
+        }
+      };
+      localStorage.setItem("prollyglot.preview-configuration", JSON.stringify(configuration));
+      for (const listener of configurationListeners) {
+        listener(structuredClone(configuration));
+      }
       publishModels();
     },
     installSpeechModel: async (modelId) => {
@@ -391,10 +446,6 @@ export function createPreviewBridge(): PreviewDesktopBridge {
         publishVisualStatus();
       }
     },
-    updateOverlaySettings: async (settings) => {
-      localStorage.setItem("prollyglot.overlay", JSON.stringify(settings));
-    },
-
     showAppearance: async () => {
       window.location.href = "/appearance.html";
     },

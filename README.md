@@ -11,7 +11,7 @@ Prollyglot is a free and open-source desktop utility that captures audio from a 
 > [!IMPORTANT]
 > Prollyglot is in active pre-release development. There is not yet a supported binary release. Windows 11 is the primary target; the first Windows owner smoke confirmed that **Everything I hear** captions audible output from the selected playback device, while broader application, lifecycle, and release validation remains in progress.
 >
-> Current pre-release: **0.1.8**. See the [changelog](CHANGELOG.md) and
+> Current pre-release: **0.1.9**. See the [changelog](CHANGELOG.md) and
 > [versioning policy](docs/VERSIONING.md).
 
 ## Why Prollyglot exists
@@ -81,6 +81,10 @@ The repository currently contains:
 - one reducer-backed desktop application store for runtime, model inventories,
   transcript, translation, visual state, navigation, and notices, plus separate
   native and browser-preview bridges behind the same typed host contract;
+- one native, schema-versioned configuration document for caption, translation,
+  visual, overlay, window-layout, source-default, and model preferences, using
+  atomic revision publication, last-good recovery, validated one-time migration,
+  and a generated TypeScript contract shared by every WebView;
 - reproducible English and multilingual comparison tooling covering the same model choices exposed by the app;
 - a bounded capture-to-inference bridge with visible backpressure and recovery behavior; and
 - live provisional/final transcript updates wired to a latest-following, scrollback-safe transcript view and a customizable always-on-top overlay that retains bounded, line-separated conversational context.
@@ -138,7 +142,15 @@ pending. The corrections pass local pipeline and rendered queue/recovery checks,
 but native Windows speed, OCR quality, DPI/multi-monitor positioning, and
 representative media usefulness still require re-testing.
 
-The control app now opens as a full desktop workspace with persistent navigation for Captions, Screen translation, Transcript, Models, Appearance, and Settings. Captions and screen translation use desktop-width grouped panels instead of one long mobile-style form, and Appearance is an in-place full-workspace page with a live preview rather than another modal window. A title-bar control switches to a focused compact utility that retains the current Start/Stop path and bottom navigation; compact Appearance remains a separate focused utility window. The app remembers the chosen layout and restores an appropriate window size for each mode.
+The control app now opens with a desktop-width shell and persistent navigation
+for Captions, Screen translation, Transcript, Models, Appearance, and Settings.
+Captions use grouped desktop panels instead of one long mobile-style form. The
+remaining full-view destinations still share a contained utility surface while
+their persistent-page cutover is completed; compact mode deliberately retains
+contained utilities and a separate focused Appearance window. A title-bar
+control switches modes without changing the live session or transcript. The
+chosen layout and all durable feature preferences now come from one native,
+versioned configuration snapshot rather than independent WebView storage.
 
 Installed recognition models are no longer all hashed before the app window appears. Model inspection runs in the background and records a small verification marker after a successful full SHA-256 pass; later launches use file size, modification metadata, and the pinned manifest to avoid re-hashing unchanged model files. Existing installations perform one background full check after this update. Only the selected recognition model is loaded when captions start, so the larger Nemotron choice can still take noticeably longer than an English model at that point; only the translator requested by the current source/output choice is loaded. Startup and translation timing are written to the privacy-safe diagnostic log without caption text. The custom Windows title bar also has the explicit Tauri permissions required for dragging and its minimize, maximize, close, and full/compact sizing controls; native Windows remains the final check for those operating-system interactions.
 
