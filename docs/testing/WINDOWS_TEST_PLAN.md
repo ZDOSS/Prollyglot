@@ -5,6 +5,11 @@ This is the exhaustive validation runbook for formal milestone acceptance, harde
 > [!IMPORTANT]
 > Do not use this document for ordinary pre-release checks. Use the five-minute [Windows development smoke test](WINDOWS_SMOKE_TEST.md), which does not require screenshots, recordings, fixtures, or an evidence bundle for passing behavior. Run this longer plan only when the project is deliberately closing a milestone or validating a release candidate.
 
+For session supervision, recovery, translation timeout, and inference-resource
+changes, use the shorter [Windows lifecycle soak](WINDOWS_LIFECYCLE_SOAK.md).
+That procedure records only failures and material measurements and can audit the
+privacy-safe application log automatically.
+
 Run it on native Windows 11, from an ordinary non-administrator account. Do not run the application from WSL. Installing prerequisites may require administrator approval, but Prollyglot itself must launch and caption without elevation, a virtual audio device, an account, or a cloud transcription service.
 
 Allow roughly two to four hours for the first complete run, including dependency downloads and the 30-minute soak. The representative model comparison takes additional time because its audio samples must have trustworthy transcripts.
@@ -493,9 +498,13 @@ Expected: Edge tab audio is included even when rendered by a child process, whil
 1. With Edge selected and speaking, close every Edge window so the selected application root exits.
 2. Wait for Prollyglot to react.
 3. Confirm the main window remains responsive.
-4. Stop if necessary, reopen Edge, play the WAV briefly, press **Refresh audio sources**, reselect Edge, and start a new session.
+4. Reopen Edge under its normal new process ID and play the WAV briefly without stopping, refreshing sources, or reselecting.
+5. If convenient, open a second matching Edge instance during Waiting, then close the duplicate.
 
-Expected: the active session reports a clear source-exited failure rather than hanging or silently captioning another application, and a fresh session works after refresh/reselection.
+Expected: the active session enters Waiting rather than hanging or captioning
+another application, then resumes the same selection after exactly one safe
+opaque-identity match returns. An ambiguous duplicate match remains Waiting and
+explains the conflict rather than selecting silently.
 
 ## 12. Test the caption overlay and keyboard path
 

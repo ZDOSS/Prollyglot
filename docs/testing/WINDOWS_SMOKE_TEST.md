@@ -76,4 +76,9 @@ Get-Content $LatestLog.FullName -Tail 200
 
 The log includes queue-drop, recovery, recognition-model load timing, and privacy-safe translation queue/inference timing in current builds, but no captured audio or transcript text.
 
-The longer [Windows release and hardening plan](WINDOWS_TEST_PLAN.md) remains available for formal milestone acceptance, installer/release candidates, latency work, routing edge cases, and sustained reliability testing.
+The focused [Windows lifecycle soak](WINDOWS_LIFECYCLE_SOAK.md) covers repeated
+sessions, recovery, inference cleanup, and a deliberate translation timeout
+without requiring screenshots. The longer
+[Windows release and hardening plan](WINDOWS_TEST_PLAN.md) remains available for
+formal milestone acceptance, installer/release candidates, latency work,
+routing edge cases, and sustained reliability testing.

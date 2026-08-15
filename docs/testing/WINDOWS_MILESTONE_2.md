@@ -3,7 +3,7 @@
 This is the manual acceptance run for Prollyglot's first complete English-caption vertical slice. It must run on a real Windows 11 machine: cross-compilation proves the code shape, but cannot prove physical audio routing, caption latency, overlay behavior, or sustained CPU and memory use.
 
 > [!NOTE]
-> This is a formal Milestone 2 acceptance summary, not the routine development loop. Use the [Windows development smoke test](WINDOWS_SMOKE_TEST.md) for ordinary builds. The [release and hardening plan](WINDOWS_TEST_PLAN.md) contains the exhaustive evidence procedure when the milestone is deliberately being closed.
+> This is a formal Milestone 2 acceptance summary, not the routine development loop. Use the [Windows development smoke test](WINDOWS_SMOKE_TEST.md) for ordinary builds and the focused [lifecycle soak](WINDOWS_LIFECYCLE_SOAK.md) for supervision/recovery changes. The [release and hardening plan](WINDOWS_TEST_PLAN.md) contains the exhaustive evidence procedure when the milestone is deliberately being closed.
 
 This is a substantial milestone gate, not a per-commit CI workflow.
 
@@ -73,7 +73,7 @@ Use two applications that can play speech independently, such as Firefox and VLC
 2. Play only the unrelated application. Prollyglot should not produce meaningful text from it.
 3. Play the selected application. Prollyglot should produce partial and final captions.
 4. Play both applications. The transcript should follow only the selected process tree.
-5. Close the selected application while it is talking. Prollyglot must report the source lifecycle failure clearly and permit a new session after refresh/reselection.
+5. Close the selected application while it is talking. Prollyglot must enter Waiting without captioning another application. Restart the same application; the current session should resume when its opaque identity resolves to exactly one safe process tree. Duplicate matches must remain Waiting.
 6. Repeat with the other application selected.
 
 If current OBS Application Audio Capture receives the selected process under equivalent routing and Prollyglot does not, record a Prollyglot defect. Protected-media sources are evaluated by the same parity rule; Prollyglot does not add its own DRM classification or refusal layer.

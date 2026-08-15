@@ -36,7 +36,7 @@ Why this direction:
 
 | Milestone | Integrated outcome | Status |
 | --- | --- | --- |
-| S. Structural integrity program | Replace patched orchestration with supervised sessions, bounded translation and presentation work, generated contracts, maintainable desktop pages, unified local state, and portable capture boundaries | In progress; S1–S3 are complete, S4 portability and lifecycle hardening next |
+| S. Structural integrity program | Replace patched orchestration with supervised sessions, bounded translation and presentation work, generated contracts, maintainable desktop pages, unified local state, and portable capture boundaries | In progress; S1–S3 and S4 implementation/docs are integrated, native Windows lifecycle soak pending |
 | 1. Windows capture foundation | A real Windows desktop shell can enumerate and capture either a selected output device or selected application | Selected-device Windows smoke passed; application and lifecycle validation remain |
 | 2. Live English captions | Captured audio becomes stable partial and final English captions locally | Device-to-caption and corrected UI/context re-smokes passed; accented/conversational model evidence and application/lifecycle validation remain |
 | 3. Minimal customizable Windows app | The complete daily-use interface, overlay customization, transcript view, and controls work together | Pending |
@@ -505,8 +505,11 @@ session before preparing its translator. Privacy-safe diagnostics now include
 model identity, cold-start time, and process resident memory without media text.
 The coordinator, generated contracts, report ordering, idle-load prevention,
 frontend build, and complete Tauri Windows library target pass locally. The
-native Windows lifecycle soak and repository maintainership documents remain
-before S4 can be called complete.
+repository now also includes architecture, build, contribution, and focused
+no-screenshot lifecycle-soak guidance. Runtime revisions, inference ownership,
+post-session resident memory, and privacy invariants can be checked with the
+automated soak-log auditor. The native Windows lifecycle soak remains the final
+external acceptance evidence before S4 can be called complete.
 
 ### Acceptance boundary
 
@@ -547,9 +550,10 @@ from one to the next while the milestone direction remains clear.
 | S4 | Resource enforcement, documentation, and Windows soak | The implemented architecture is documented and the full structural program receives native acceptance |
 
 Published: all three S1 integration points, all three S2 implementation points,
-and S3 is complete through pre-release 0.1.10. Native Windows S2 acceptance
-remains pending; continue with S4 capture portability and lifecycle hardening without
-expanding capture or model scope.
+S3 through pre-release 0.1.10, and the S4 capture, identity/recovery, resource,
+and maintainership implementation points through pre-release 0.1.12. Native
+Windows S2/S4 acceptance remains pending; do not expand capture or model scope
+until that focused lifecycle evidence is available.
 
 - This documentation-only planning commit does not change the application
   version. Each later user-visible integrated correction follows

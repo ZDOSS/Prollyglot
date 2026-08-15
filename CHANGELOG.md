@@ -5,6 +5,22 @@ Versioning while it is in the `0.x` pre-release line.
 
 ## [Unreleased]
 
+### Added
+
+- Architecture, build, and contribution guides describing the implemented
+  runtime boundaries, local-first workflow, Windows prerequisites, generated
+  contracts, and temporary direct-to-main policy.
+- A focused, no-screenshot Windows lifecycle soak and automated log auditor for
+  supervised-session coverage, inference cleanup, privacy fields, and bounded
+  post-stop resident-memory growth.
+
+### Changed
+
+- Log every accepted runtime revision and each session's post-cleanup resident
+  memory so native lifecycle testing can be evaluated without recording media.
+- Provide a development-only translation-delay switch for deterministic timeout
+  and worker-recovery testing; production builds ignore it.
+
 ## [0.1.12] - 2026-08-14
 
 ### Added

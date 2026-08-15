@@ -3,7 +3,7 @@
 This is the manual acceptance run for Prollyglot's Windows capture foundation. It is intentionally run on a real Windows 11 desktop because WSL and hosted CI cannot prove physical audio routing, process isolation, focus behavior, or multi-monitor overlay placement.
 
 > [!NOTE]
-> This is a formal Milestone 1 acceptance summary, not the routine development loop. Use the [Windows development smoke test](WINDOWS_SMOKE_TEST.md) for ordinary builds. The [release and hardening plan](WINDOWS_TEST_PLAN.md) contains the exhaustive evidence procedure when the milestone is deliberately being closed.
+> This is a formal Milestone 1 acceptance summary, not the routine development loop. Use the [Windows development smoke test](WINDOWS_SMOKE_TEST.md) for ordinary builds and the focused [lifecycle soak](WINDOWS_LIFECYCLE_SOAK.md) for supervision/recovery changes. The [release and hardening plan](WINDOWS_TEST_PLAN.md) contains the exhaustive evidence procedure when the milestone is deliberately being closed.
 
 ## Prepare and launch
 
@@ -38,7 +38,7 @@ Use two applications that can play speech independently, such as Firefox and VLC
 2. Select only the first application. With that application paused and the unrelated application playing, Prollyglot should settle to Waiting with no meaningful level response.
 3. Play the selected application. Prollyglot should return to Live and show level activity.
 4. Reverse which application is selected and repeat the isolation check.
-5. Close the selected application during capture. Prollyglot should report that the source exited, remain usable, and allow a new session after sources are refreshed.
+5. Close the selected application during capture. Prollyglot should enter Waiting and remain responsive. Restart the same application under a new process ID; the existing session should resume when the opaque application identity has exactly one safe match. If duplicate instances make the match ambiguous, it must remain Waiting rather than choosing silently.
 
 ## Overlay checks
 

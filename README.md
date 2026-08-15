@@ -200,7 +200,8 @@ For the primary Windows target:
 Clone the repository, then install the UI dependencies and launch the desktop app:
 
 ```powershell
-pnpm --dir apps/desktop install
+Set-Location C:\path\to\Prollyglot
+pnpm --dir apps/desktop install --frozen-lockfile
 pnpm --dir apps/desktop tauri dev
 ```
 
@@ -210,7 +211,7 @@ Run the local Windows code checks from PowerShell when validating a change:
 ./scripts/check-windows.ps1
 ```
 
-For an ordinary native-Windows run, follow the five-minute [Windows development smoke test](docs/testing/WINDOWS_SMOKE_TEST.md). The separate [experimental visual-translation smoke](docs/testing/WINDOWS_VISUAL_SMOKE_TEST.md) is only needed when checking that feature. Neither requires screenshots, recordings, generated fixtures, or an evidence bundle for passing behavior. The exhaustive [Windows release and hardening plan](docs/testing/WINDOWS_TEST_PLAN.md) is reserved for formal milestone and release-candidate validation.
+For an ordinary native-Windows run, follow the five-minute [Windows development smoke test](docs/testing/WINDOWS_SMOKE_TEST.md). Changes to session lifecycle, recovery, inference ownership, or shutdown use the focused [Windows lifecycle soak](docs/testing/WINDOWS_LIFECYCLE_SOAK.md). The separate [experimental visual-translation smoke](docs/testing/WINDOWS_VISUAL_SMOKE_TEST.md) is only needed when checking that feature. None requires screenshots, recordings, generated fixtures, or an evidence bundle for passing behavior. The exhaustive [Windows release and hardening plan](docs/testing/WINDOWS_TEST_PLAN.md) is reserved for formal milestone and release-candidate validation.
 
 On a non-Windows development host, the shared core, frontend, and Windows cross-checks used by the project can be run with:
 
@@ -222,7 +223,10 @@ Physical WASAPI routing, process isolation, device switching, screen capture, DP
 
 ### Windows diagnostic log
 
-Prollyglot writes a rolling local log containing lifecycle, capture, model, and backlog diagnostics. It does not include captured audio or transcript text. From any PowerShell directory, show the newest log with:
+Prollyglot writes a rolling local log containing revisioned lifecycle, capture,
+model-load, resource-ownership, resident-memory, and backlog diagnostics. It does
+not include captured audio, screen frames, caption text, OCR text, or translated
+text. From any PowerShell directory, show the newest log with:
 
 ```powershell
 $LogRoot = Join-Path $env:LOCALAPPDATA "com.prollyglot.desktop\logs"
@@ -234,15 +238,22 @@ Get-Content $LatestLog.FullName -Tail 200
 
 Use this only when troubleshooting a failure. A normal smoke-test pass does not require saving or submitting logs.
 
+After the focused lifecycle soak, `node scripts/check-soak-log.mjs` audits the
+newest log for incomplete resource cleanup, repeated-session memory growth, and
+forbidden media-content fields.
+
 ## Repository map
 
 ```text
 apps/desktop/          Tauri desktop shell, control window, and overlay UI
+crates/application-runtime/ Session supervision, generated contracts, and errors
 crates/audio-windows/  Windows endpoint and process-loopback capture
 crates/audio-pipeline/ PCM normalization, resampling, buffering, and VAD
 crates/asr/            Backend-neutral streaming speech contracts
 crates/asr-sherpa/     sherpa-onnx streaming runtime adapter
+crates/config/         Versioned, atomic local application configuration
 crates/model-manager/  Explicit model installation and integrity checks
+crates/resource-coordinator/ Session-scoped inference-resource ownership
 crates/transcript/     Provisional and committed transcript state
 crates/visual-pipeline/ Frame gating, OCR contracts, and text stabilization
 crates/visual-windows/ Windows window/display/region capture adapter
@@ -251,7 +262,7 @@ assets/                Branding and pinned model manifests
 docs/                  Design, licenses/provenance, and manual test procedures
 ```
 
-The full product definition is in [Prollyglot.md](Prollyglot.md). Product decisions discovered during implementation are kept there, while [BUILD_PLAN.md](BUILD_PLAN.md) defines delivery order and evidence required to complete each milestone.
+The full product definition is in [Prollyglot.md](Prollyglot.md). Product decisions discovered during implementation are kept there, while [BUILD_PLAN.md](BUILD_PLAN.md) defines delivery order and evidence required to complete each milestone. See [ARCHITECTURE.md](ARCHITECTURE.md) for ownership and data flow, [BUILDING.md](BUILDING.md) for the local toolchain and checks, and [CONTRIBUTING.md](CONTRIBUTING.md) for project boundaries and the current repository workflow.
 
 ## Privacy
 

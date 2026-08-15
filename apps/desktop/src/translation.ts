@@ -282,7 +282,11 @@ export class TranslationService {
         sessionId
       );
     }
-    return new WorkerTranslationExecutor(sessionId, this.nativeModelBaseUrl);
+    return new WorkerTranslationExecutor(
+      sessionId,
+      this.nativeModelBaseUrl,
+      developmentTranslationDelayMs()
+    );
   }
 
   private controlRequest(request: TranslationControlCommand): Promise<unknown> {
@@ -449,7 +453,8 @@ class WorkerTranslationExecutor implements TranslationExecutor {
 
   constructor(
     private readonly sessionId: string,
-    private readonly nativeModelBaseUrl?: string
+    private readonly nativeModelBaseUrl?: string,
+    private readonly developmentDelayMs = 0
   ) {
     this.start();
   }
@@ -470,6 +475,9 @@ class WorkerTranslationExecutor implements TranslationExecutor {
     targetLanguage: TranslationLanguage,
     text: string
   ): Promise<string> {
+    if (this.developmentDelayMs > 0) {
+      await new Promise((resolve) => globalThis.setTimeout(resolve, this.developmentDelayMs));
+    }
     const result = await this.request({
       type: "translate",
       sourceLanguage,
@@ -581,6 +589,12 @@ class MockTranslationExecutor implements TranslationExecutor {
   private requireActive(): void {
     if (this.terminated) throw this.terminated;
   }
+}
+
+function developmentTranslationDelayMs(): number {
+  if (!import.meta.env.DEV) return 0;
+  const parsed = Number(import.meta.env.VITE_PROLLYGLOT_TRANSLATION_TEST_DELAY_MS ?? 0);
+  return Number.isFinite(parsed) ? Math.max(0, Math.min(60_000, Math.round(parsed))) : 0;
 }
 
 function mockTranslation(

@@ -20,6 +20,15 @@ impl RuntimeEventPublisher {
             );
             return false;
         }
+        tracing::info!(
+            revision = snapshot.revision,
+            session_id = snapshot.session_id.map_or(0, |session_id| session_id.0),
+            session_active = snapshot.session_id.is_some(),
+            mode = ?snapshot.mode,
+            lifecycle = ?snapshot.lifecycle,
+            progress = ?snapshot.health.progress,
+            "runtime state changed"
+        );
         if let Err(error) = app.emit(
             prollyglot_application_runtime::ipc::STATE_EVENT,
             RuntimeStateEvent {

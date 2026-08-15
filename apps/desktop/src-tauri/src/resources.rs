@@ -61,6 +61,11 @@ impl ResourceRuntime {
         };
         drop(frontend_lease);
         self.coordinator.release_session(session_id);
+        tracing::info!(
+            session_id = %session_id,
+            resident_bytes = process_resident_bytes(),
+            "session inference resources released"
+        );
     }
 
     pub fn snapshot(&self) -> InferenceResourceSnapshot {
