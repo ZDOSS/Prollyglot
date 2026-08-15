@@ -5,6 +5,36 @@ Versioning while it is in the `0.x` pre-release line.
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-08-14
+
+### Added
+
+- Native manifests, inventory, background inspection, download progress,
+  integrity verification, and removal for all four local translation packs.
+- A private, main-window-only model protocol that exposes verified translation
+  artifacts through bounded byte ranges instead of command payloads.
+- Deterministic tests for native range reconstruction, missing artifacts, range
+  limits, safe manifest paths, and the pinned native translation catalog.
+
+### Changed
+
+- Store new translation downloads beside speech and visual OCR models through
+  the native `ModelManager`, using 64 KiB download buffers, verified sidecars,
+  and atomic publication.
+- Read native translation artifacts first while retaining old WebView packs as
+  a read-only migration fallback. Settings identifies legacy packs and offers
+  an explicit **Move to native storage** action.
+- Let native model inventory complete desktop startup without waiting for the
+  legacy-cache worker, and avoid probing model-sized artifacts before a native
+  translator begins loading.
+
+### Fixed
+
+- Remove a legacy translation copy only after its native replacement is
+  verified, while an explicit Remove action clears both stores.
+- Replace a translation session invalidated by timeout or removal before the
+  next caption attempts to use it.
+
 ## [0.1.5] - 2026-08-14
 
 ### Added

@@ -38,6 +38,26 @@ On the development browser host, a second warm universal provisional request dis
 
 These are deterministic integration checks, not representative accuracy scores. They prove the download, cache-only load, model-switch, inference, and display contracts on the available Chromium/WebAssembly development path.
 
+## Native storage integration — 2026-08-14
+
+Pre-release 0.1.6 moves all new translation installs to the native model
+manager. Pinned native manifests cover the same four route classes; downloads
+use bounded buffers, verified sidecars, and atomic publication. A private
+main-WebView-only protocol revalidates the native installation marker and serves
+only manifest-listed artifacts in ranges capped at 4 MiB. Deterministic tests
+reconstruct an artifact across several ranges and reject missing resources,
+invalid ranges, and paths outside the manifest. The previous WebView store is a
+read-only fallback and is deleted only after a replacement verifies or the user
+explicitly removes it.
+
+These checks establish storage and transfer structure, not native model-load
+latency. A real Windows run must still install one compact pack, load it while
+offline, translate through the native protocol, restart and reuse it, migrate an
+older cached pack if present, and remove it successfully. The WebAssembly ONNX
+runtime still materializes its graph in inference memory; bounded range delivery
+avoids a second artifact-sized Tauri command/download buffer rather than making
+the model itself memory-free.
+
 ## Evidence still required
 
 Before production approval, run the feature in the native Windows WebView against familiar media in the languages being evaluated and record only actionable observations:

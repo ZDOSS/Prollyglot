@@ -15,6 +15,7 @@ export interface TranslationModelManifest {
   kind: TranslationModelKind;
   sourceLanguages: readonly TranslationLanguage[];
   targetLanguages: readonly TranslationLanguage[];
+  storageId: string;
   modelId: string;
   displayName: string;
   revision: string;
@@ -37,6 +38,7 @@ export const TRANSLATION_MODELS: readonly TranslationModelManifest[] = [
     kind: "direct",
     sourceLanguages: ["ja"],
     targetLanguages: ["en"],
+    storageId: "translation-opus-mt-ja-en",
     modelId: "Xenova/opus-mt-ja-en",
     displayName: "Japanese to English · Compact",
     revision: "1a906cfaaf7c8f4193f67f5885c082aa6dbd9d16",
@@ -79,6 +81,7 @@ export const TRANSLATION_MODELS: readonly TranslationModelManifest[] = [
     kind: "direct",
     sourceLanguages: ["es"],
     targetLanguages: ["en"],
+    storageId: "translation-opus-mt-es-en",
     modelId: "Xenova/opus-mt-es-en",
     displayName: "Spanish to English · Compact",
     revision: "eadfd7c658a9d8929ac3b8e996b68a68e2c7d480",
@@ -121,6 +124,7 @@ export const TRANSLATION_MODELS: readonly TranslationModelManifest[] = [
     kind: "toEnglish",
     sourceLanguages: NON_ENGLISH_LANGUAGES,
     targetLanguages: ["en"],
+    storageId: "translation-opus-mt-mul-en",
     modelId: "Xenova/opus-mt-mul-en",
     displayName: "Multilingual to English · Compact",
     revision: "72a05e47cee89c718a9db4dc70d02fef3bc39de8",
@@ -163,6 +167,7 @@ export const TRANSLATION_MODELS: readonly TranslationModelManifest[] = [
     kind: "manyToMany",
     sourceLanguages: ALL_TRANSLATION_LANGUAGES,
     targetLanguages: ALL_TRANSLATION_LANGUAGES,
+    storageId: "translation-m2m100-418m",
     modelId: "Xenova/m2m100_418M",
     displayName: "Universal 29-language translator",
     revision: "9c374f0b7aca709787cea97b047bfbbd1559d177",

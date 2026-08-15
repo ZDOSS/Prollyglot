@@ -10,7 +10,7 @@
   },
   "app": {
     "security": {
-      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval' blob:; worker-src 'self' blob:; connect-src 'self' ipc: http://ipc.localhost https://huggingface.co https://*.hf.co"
+      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval' blob:; worker-src 'self' blob:; connect-src 'self' ipc: http://ipc.localhost prollyglot-model: http://prollyglot-model.localhost https://huggingface.co https://*.hf.co"
     },
     "windows": [
       {

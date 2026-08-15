@@ -1,6 +1,6 @@
 # Translation runtime and model provenance
 
-Prollyglot keeps translation models outside the application package. A model downloads only after an explicit user action. Every required artifact is checked against its pinned byte size and SHA-256 digest before an installation marker is written or the model becomes loadable. Exact artifact records and route declarations are in `apps/desktop/src/translation-catalog.ts`.
+Prollyglot keeps translation models outside the application package. A model downloads only after an explicit user action. Every required artifact is checked against its pinned byte size and SHA-256 digest before an installation marker is written or the model becomes loadable. Native artifact and provenance records are in `assets/model-manifests/translation-*.json`; route preference and legacy-cache mappings are in `apps/desktop/src/translation-catalog.ts`.
 
 ## Japanese to English
 
@@ -60,4 +60,13 @@ The universal route is substantially larger than the compact models and may add 
 - ONNX Runtime Web `1.26.0-dev.20260416-b7804b056c` — MIT — <https://github.com/microsoft/onnxruntime>
 - noble-hashes 2.0.1 — MIT — <https://github.com/paulmillr/noble-hashes/tree/2.0.1>
 
-The application bundles the JavaScript runtime and ONNX WebAssembly support, not the translation weights. The worker uses CPU/WebAssembly, loads at most one translator at a time, prefers an installed compact route over the universal model, and allows remote access only during the explicit verified install path. Normal inference is cache-only. Release packaging must include the applicable third-party notices for bundled runtime code.
+The application bundles the JavaScript runtime and ONNX WebAssembly support,
+not the translation weights. New downloads use the native model manager's 64
+KiB transfer buffer, verified sidecars, and atomic rename. Normal inference is
+offline: the worker reads manifest-listed verified files through a private
+main-WebView protocol capped at 4 MiB per range, uses CPU/WebAssembly, loads at
+most one translator at a time, and prefers an installed compact route over the
+universal model. Older WebView-cached packs remain a read-only fallback until a
+verified native replacement is installed or the user removes them. Release
+packaging must include the applicable third-party notices for bundled runtime
+code.

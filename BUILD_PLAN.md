@@ -36,7 +36,7 @@ Why this direction:
 
 | Milestone | Integrated outcome | Status |
 | --- | --- | --- |
-| S. Structural integrity program | Replace patched orchestration with supervised sessions, bounded translation and presentation work, generated contracts, maintainable desktop pages, unified local state, and portable capture boundaries | In progress; S1 complete and S2 scheduler published, native translation storage next |
+| S. Structural integrity program | Replace patched orchestration with supervised sessions, bounded translation and presentation work, generated contracts, maintainable desktop pages, unified local state, and portable capture boundaries | In progress; S1 complete, S2 scheduler and native translation storage published, presentation protocol next |
 | 1. Windows capture foundation | A real Windows desktop shell can enumerate and capture either a selected output device or selected application | Selected-device Windows smoke passed; application and lifecycle validation remain |
 | 2. Live English captions | Captured audio becomes stable partial and final English captions locally | Device-to-caption and corrected UI/context re-smokes passed; accented/conversational model evidence and application/lifecycle validation remain |
 | 3. Minimal customizable Windows app | The complete daily-use interface, overlay customization, transcript view, and controls work together | Pending |
@@ -257,9 +257,18 @@ queued work continues on its replacement.
 Visual presentation publishing now keeps at most one native update in flight
 and one replaceable latest frame instead of replaying every intermediate state.
 Fast, slow, failing, never-resolving, coalescing, replacement, and Stop behavior
-is covered by deterministic frontend tests. The existing verified WebView cache
-remains the temporary read/write model store; native translation storage and the
-authoritative caption/visual presentation contracts are the next S2 cutovers.
+is covered by deterministic frontend tests.
+
+The second S2 integration point is complete in pre-release 0.1.6. All four
+translation packs now use pinned native manifests and the same bounded,
+sidecar-verified, atomically published `ModelManager` lifecycle as speech and
+visual OCR. A private protocol exposes only manifest-listed artifacts to the
+main WebView through ranges capped at 4 MiB; no artifact is copied through a
+Tauri command payload. Inference verifies native readiness before loading and
+retains the old WebView cache as a read-only fallback. Settings labels legacy
+packs and deliberately migrates one by downloading and verifying its native
+replacement before deleting the old copy. The authoritative caption and visual
+presentation contracts are the remaining S2 cutover.
 
 ### Acceptance boundary
 
@@ -442,9 +451,9 @@ from one to the next while the milestone direction remains clear.
 | S4 | Capture-backend and stable-application-identity cutover | Windows behavior remains complete behind the interface the later PipeWire adapter will implement |
 | S4 | Resource enforcement, documentation, and Windows soak | The implemented architecture is documented and the full structural program receives native acceptance |
 
-Published: all three S1 integration points and the S2 session-scoped scheduler
-are complete through pre-release 0.1.5. Continue with the native translation
-store cutover.
+Published: all three S1 integration points plus the S2 session-scoped scheduler
+and native translation-store cutover are complete through pre-release 0.1.6.
+Continue with the caption and visual presentation-protocol cutover.
 
 - This documentation-only planning commit does not change the application
   version. Each later user-visible integrated correction follows

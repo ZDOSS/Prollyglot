@@ -2,6 +2,7 @@ mod audio;
 mod models;
 mod runtime;
 mod transcription;
+mod translation;
 mod visual;
 
 use std::{fs, sync::Arc};
@@ -76,6 +77,7 @@ struct RuntimeState {
     transcript: Arc<Mutex<TranscriptStore>>,
     model: models::ModelRuntime,
     overlay_settings: Mutex<OverlaySettings>,
+    translation: translation::TranslationRuntime,
     visual: visual::VisualRuntime,
 }
 
@@ -355,11 +357,19 @@ fn report_frontend_diagnostic(scope: String, message: String) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .register_uri_scheme_protocol("prollyglot-model", |context, request| {
+            translation::model_protocol_response(
+                context.app_handle(),
+                context.webview_label(),
+                request,
+            )
+        })
         .manage(RuntimeState::default())
         .setup(|app| {
             initialize_logging(app)?;
             let runtime = app.state::<RuntimeState>();
             models::initialize(app.handle(), &runtime.model);
+            translation::initialize(app.handle(), &runtime.translation);
             visual::initialize(app.handle(), &runtime.visual);
             Ok(())
         })
@@ -375,6 +385,9 @@ pub fn run() {
             models::select_speech_model,
             models::install_speech_model,
             models::remove_speech_model,
+            translation::translation_model_status,
+            translation::install_translation_model,
+            translation::remove_translation_model,
             show_appearance_window,
             close_appearance_window,
             update_overlay_settings,

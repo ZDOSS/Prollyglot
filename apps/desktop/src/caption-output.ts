@@ -373,6 +373,7 @@ export class CaptionOutputController {
   }
 
   private ensureSession(): TranslationSession {
+    if (this.session && !this.session.isActive()) this.session = undefined;
     this.session ??= this.service.openSession("captions");
     return this.session;
   }

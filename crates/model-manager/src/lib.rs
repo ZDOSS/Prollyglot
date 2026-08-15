@@ -24,6 +24,7 @@ pub const DEFAULT_SPEECH_MODEL_ID: &str = DEFAULT_ENGLISH_MODEL_ID;
 pub const NEMOTRON_MULTILINGUAL_MODEL_ID: &str =
     "nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11";
 pub const DEFAULT_VISUAL_OCR_MODEL_ID: &str = "ppocrv6-small-multilingual";
+pub const TRANSLATION_BACKEND: &str = "transformers-js-onnx-wasm";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -537,6 +538,37 @@ pub fn visual_ocr_manifest_by_id(model_id: &str) -> Result<ModelManifest, ModelM
     }
 }
 
+/// Optional local translation packs consumed by the WebView inference runtime.
+/// Their artifacts use the same bounded, verified, atomic lifecycle as speech
+/// and visual models even though inference currently runs through WebAssembly.
+pub fn translation_model_manifests() -> Result<Vec<ModelManifest>, ModelManagerError> {
+    Ok(vec![
+        ModelManifest::from_json(include_str!(
+            "../../../assets/model-manifests/translation-opus-ja-en.json"
+        ))?,
+        ModelManifest::from_json(include_str!(
+            "../../../assets/model-manifests/translation-opus-es-en.json"
+        ))?,
+        ModelManifest::from_json(include_str!(
+            "../../../assets/model-manifests/translation-opus-mul-en.json"
+        ))?,
+        ModelManifest::from_json(include_str!(
+            "../../../assets/model-manifests/translation-m2m100-418m.json"
+        ))?,
+    ])
+}
+
+pub fn translation_manifest(storage_id: &str) -> Result<ModelManifest, ModelManagerError> {
+    translation_model_manifests()?
+        .into_iter()
+        .find(|manifest| manifest.id == storage_id)
+        .ok_or_else(|| {
+            ModelManagerError::InvalidManifest(format!(
+                "unknown built-in translation model {storage_id:?}"
+            ))
+        })
+}
+
 fn manifest_digest(manifest: &ModelManifest) -> Result<String, ModelManagerError> {
     let serialized = serde_json::to_vec(manifest).map_err(|error| {
         ModelManagerError::InvalidManifest(format!(
@@ -953,6 +985,29 @@ mod tests {
             assert_eq!(model.license, "Apache-2.0");
             assert_eq!(model.download_size_bytes(), bytes);
         }
+    }
+
+    #[test]
+    fn translation_catalog_is_pinned_for_native_storage() {
+        let models = translation_model_manifests().expect("translation model catalog");
+        let expected = [
+            ("translation-opus-mt-ja-en", 114_701_000_u64),
+            ("translation-opus-mt-es-en", 119_377_236_u64),
+            ("translation-opus-mt-mul-en", 118_351_723_u64),
+            ("translation-m2m100-418m", 639_976_029_u64),
+        ];
+
+        assert_eq!(models.len(), expected.len());
+        for (model, (storage_id, bytes)) in models.iter().zip(expected) {
+            assert_eq!(model.id, storage_id);
+            assert_eq!(model.backend, TRANSLATION_BACKEND);
+            assert_eq!(model.download_size_bytes(), bytes);
+            assert_eq!(
+                translation_manifest(storage_id).expect("known model"),
+                *model
+            );
+        }
+        assert!(translation_manifest("unknown").is_err());
     }
 
     #[test]

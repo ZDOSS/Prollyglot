@@ -1036,11 +1036,23 @@ OPUS model handles the remaining supported sources to English. An optional
 larger M2M100 q8 model translates directly among all 29 selectable languages.
 These are explicit downloads: the route resolver prefers an installed compact
 model and never silently downloads the universal model. Inventory, download,
-verification, and removal run in a lightweight control worker; a separate
-disposable inference worker belongs to one active caption or visual translation
-session and keeps at most one translator loaded. Model revisions and every
-required artifact's size and SHA-256 digest are pinned; inference currently
-reads only the verified local cache and runs on CPU through WebAssembly.
+verification, and removal use the native `ModelManager`; a separate disposable
+inference worker belongs to one active caption or visual translation session
+and keeps at most one translator loaded. Model revisions and every required
+artifact's size and SHA-256 digest are pinned. Native downloads stream through a
+64 KiB buffer into verified sidecars and become visible only after atomic
+publication. The main inference WebView reads only manifest-listed native files
+through a private protocol capped at 4 MiB per range and runs them on CPU through
+WebAssembly. The runtime necessarily materializes an ONNX graph for inference,
+but model downloads and native-to-WebView transfers do not create an additional
+artifact-sized command payload.
+
+Translation packs installed by an older pre-release remain available from the
+legacy WebView cache as a read-only migration fallback. New installs always use
+native storage. The Models workspace identifies a legacy pack and offers an
+explicit move action; the old copy is removed only after the native replacement
+passes verification or when the user explicitly removes the pack from both
+stores.
 
 Original text renders immediately. Once a provisional caption has at least four
 characters, translation can begin from the newest coalesced partial after about

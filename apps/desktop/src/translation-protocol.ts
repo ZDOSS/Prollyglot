@@ -23,6 +23,7 @@ export type TranslationInferenceRequest =
       requestId: number;
       sourceLanguage: TranslationLanguage;
       targetLanguage: TranslationLanguage;
+      nativeModelBaseUrl?: string;
     }
   | {
       type: "translate";
@@ -30,6 +31,7 @@ export type TranslationInferenceRequest =
       sourceLanguage: TranslationLanguage;
       targetLanguage: TranslationLanguage;
       text: string;
+      nativeModelBaseUrl?: string;
     };
 
 export type TranslationInferenceCommand = TranslationInferenceRequest extends infer Request

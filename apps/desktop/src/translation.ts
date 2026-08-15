@@ -1,7 +1,16 @@
 import {
   TRANSLATION_MODELS,
+  translationModelById,
   translationModelsForRoute
 } from "./translation-catalog";
+import {
+  installTranslationModel,
+  isTauri,
+  onTranslationStorageStatus,
+  removeTranslationModel,
+  translationModelBaseUrl,
+  translationStorageStatus
+} from "./bridge";
 import { languageLabel, type TranslationLanguage } from "./language-catalog";
 import type {
   TranslationControlCommand,
@@ -21,7 +30,12 @@ import {
   type TranslationTelemetry,
   type TranslationWorkloadProfile
 } from "./translation-scheduler";
-import type { TranslationCatalogStatus, TranslationModelStatus } from "./types";
+import type {
+  TranslationCatalogStatus,
+  TranslationModelStatus,
+  TranslationStorageCatalog,
+  TranslationStorageStatus
+} from "./types";
 
 type CatalogListener = (catalog: TranslationCatalogStatus) => void;
 type TelemetryListener = (telemetry: TranslationTelemetry) => void;
@@ -90,6 +104,10 @@ export class TranslationSession {
     this.service.closeSession(this.id, reason);
   }
 
+  isActive(): boolean {
+    return !this.closed && this.service.sessionIsActive(this.id);
+  }
+
   private requireOpen(): void {
     if (this.closed) throw new Error("The translation session is closed.");
   }
@@ -102,6 +120,11 @@ export class TranslationService {
   private readonly telemetryListeners = new Set<TelemetryListener>();
   private readonly controlPending = new Map<number, PendingRequest>();
   private readonly preparedMockModels = new Set<string>();
+  private legacyCatalog?: TranslationCatalogStatus;
+  private nativeCatalog?: TranslationStorageCatalog;
+  private nativeListenerStarted = false;
+  private readonly legacyCleanup = new Set<string>();
+  private readonly nativeModelBaseUrl?: string;
   private readonly scheduler: TranslationScheduler;
   private nextControlRequestId = 1;
   private nextSessionId = 1;
@@ -109,6 +132,7 @@ export class TranslationService {
 
   constructor(mock = false) {
     this.mock = mock;
+    this.nativeModelBaseUrl = !mock && isTauri() ? translationModelBaseUrl() : undefined;
     this.catalog = {
       models: TRANSLATION_MODELS.map((model) => ({
         phase: mock ? "notInstalled" : "checking",
@@ -143,7 +167,28 @@ export class TranslationService {
 
   async initialize(): Promise<TranslationCatalogStatus> {
     if (this.mock) return this.snapshot();
-    await this.controlRequest({ type: "status" });
+    if (isTauri()) {
+      this.startNativeListener();
+      const legacyInspection = this.controlRequest({ type: "status" });
+      try {
+        this.acceptNativeCatalog(await translationStorageStatus());
+        // Native inventory is authoritative on desktop. Legacy inspection may
+        // finish later to expose an old pack for deliberate migration, but it
+        // must not hold the application startup path open.
+        void legacyInspection.catch(() => undefined);
+      } catch (nativeError) {
+        try {
+          await legacyInspection;
+        } catch (legacyError) {
+          throw new AggregateError(
+            [nativeError, legacyError],
+            "Neither native nor legacy translation storage could be inspected."
+          );
+        }
+      }
+    } else {
+      await this.controlRequest({ type: "status" });
+    }
     return this.snapshot();
   }
 
@@ -169,7 +214,13 @@ export class TranslationService {
       await this.mockInstall(modelId);
       return;
     }
-    await this.controlRequest({ type: "install", modelId });
+    if (isTauri()) {
+      const model = translationModelById(modelId);
+      if (!model) throw new Error(`Unknown local translation model ${modelId}.`);
+      await installTranslationModel(model.storageId);
+    } else {
+      await this.controlRequest({ type: "install", modelId });
+    }
   }
 
   async remove(modelId: string): Promise<void> {
@@ -182,7 +233,18 @@ export class TranslationService {
       });
       return;
     }
-    await this.controlRequest({ type: "remove", modelId });
+    const activeSessionId = this.scheduler.activeSessionId();
+    if (activeSessionId) {
+      this.scheduler.stopSession(activeSessionId, "The active translation model was removed.");
+    }
+    if (isTauri()) {
+      const model = translationModelById(modelId);
+      if (!model) throw new Error(`Unknown local translation model ${modelId}.`);
+      await removeTranslationModel(model.storageId);
+      await this.controlRequest({ type: "remove", modelId });
+    } else {
+      await this.controlRequest({ type: "remove", modelId });
+    }
   }
 
   prepareSession(
@@ -209,6 +271,10 @@ export class TranslationService {
     this.scheduler.stopSession(sessionId, reason);
   }
 
+  sessionIsActive(sessionId: string): boolean {
+    return this.scheduler.activeSessionId() === sessionId;
+  }
+
   private createInferenceExecutor(sessionId: string): TranslationExecutor {
     if (this.mock) {
       return new MockTranslationExecutor(
@@ -217,7 +283,7 @@ export class TranslationService {
         sessionId
       );
     }
-    return new WorkerTranslationExecutor(sessionId);
+    return new WorkerTranslationExecutor(sessionId, this.nativeModelBaseUrl);
   }
 
   private controlRequest(request: TranslationControlCommand): Promise<unknown> {
@@ -243,14 +309,14 @@ export class TranslationService {
       if (this.controlWorker !== worker) return;
       const error = new Error(event.message || "Translation model control stopped unexpectedly.");
       this.stopControlWorker(error);
-      this.catalog = {
-        models: this.catalog.models.map((model) => ({
+      this.legacyCatalog = {
+        models: (this.legacyCatalog ?? this.catalog).models.map((model) => ({
           ...model,
           phase: "failed",
           message: error.message
         }))
       };
-      this.publish();
+      this.rebuildCatalog();
     });
   }
 
@@ -264,8 +330,8 @@ export class TranslationService {
 
   private handleControlMessage(message: TranslationControlResponse): void {
     if (message.type === "catalog") {
-      this.catalog = structuredClone(message.catalog);
-      this.publish();
+      this.legacyCatalog = structuredClone(message.catalog);
+      this.rebuildCatalog();
       return;
     }
     const request = this.controlPending.get(message.requestId);
@@ -315,6 +381,64 @@ export class TranslationService {
   private publishTelemetry(telemetry: TranslationTelemetry): void {
     for (const listener of this.telemetryListeners) listener(telemetry);
   }
+
+  private startNativeListener(): void {
+    if (this.nativeListenerStarted) return;
+    this.nativeListenerStarted = true;
+    void onTranslationStorageStatus((catalog) => this.acceptNativeCatalog(catalog)).catch(
+      (error) => {
+        this.nativeListenerStarted = false;
+        this.catalog = {
+          models: this.catalog.models.map((model) => ({
+            ...model,
+            phase: model.storage === "legacy" ? "ready" : "failed",
+            message: error instanceof Error ? error.message : String(error)
+          }))
+        };
+        this.publish();
+      }
+    );
+  }
+
+  private acceptNativeCatalog(catalog: TranslationStorageCatalog): void {
+    this.nativeCatalog = structuredClone(catalog);
+    this.rebuildCatalog();
+    this.cleanupVerifiedLegacyModels();
+  }
+
+  private rebuildCatalog(): void {
+    if (!isTauri()) {
+      if (this.legacyCatalog) this.catalog = structuredClone(this.legacyCatalog);
+      this.publish();
+      return;
+    }
+    this.catalog = {
+      models: TRANSLATION_MODELS.map((model) => mergeStorageStatus(
+        model,
+        this.nativeCatalog?.models.find(({ storageId }) => storageId === model.storageId),
+        this.legacyCatalog?.models.find(({ modelId }) => modelId === model.modelId)
+      ))
+    };
+    this.publish();
+  }
+
+  private cleanupVerifiedLegacyModels(): void {
+    for (const model of TRANSLATION_MODELS) {
+      const native = this.nativeCatalog?.models.find(
+        ({ storageId }) => storageId === model.storageId
+      );
+      const legacy = this.legacyCatalog?.models.find(
+        ({ modelId }) => modelId === model.modelId
+      );
+      if (native?.phase !== "ready"
+        || legacy?.phase !== "ready"
+        || this.legacyCleanup.has(model.modelId)) continue;
+      this.legacyCleanup.add(model.modelId);
+      void this.controlRequest({ type: "remove", modelId: model.modelId })
+        .catch(() => undefined)
+        .finally(() => this.legacyCleanup.delete(model.modelId));
+    }
+  }
 }
 
 class WorkerTranslationExecutor implements TranslationExecutor {
@@ -322,7 +446,10 @@ class WorkerTranslationExecutor implements TranslationExecutor {
   private nextRequestId = 1;
   private readonly pending = new Map<number, PendingRequest>();
 
-  constructor(private readonly sessionId: string) {
+  constructor(
+    private readonly sessionId: string,
+    private readonly nativeModelBaseUrl?: string
+  ) {
     this.start();
   }
 
@@ -398,7 +525,11 @@ class WorkerTranslationExecutor implements TranslationExecutor {
     const requestId = this.nextRequestId++;
     return new Promise((resolve, reject) => {
       this.pending.set(requestId, { resolve, reject });
-      this.worker?.postMessage({ ...request, requestId } as TranslationInferenceRequest);
+      this.worker?.postMessage({
+        ...request,
+        nativeModelBaseUrl: this.nativeModelBaseUrl,
+        requestId
+      } as TranslationInferenceRequest);
     });
   }
 }
@@ -471,6 +602,62 @@ function isTranslationPreparation(value: unknown): value is TranslationPreparati
   const candidate = value as Partial<TranslationPreparation>;
   return typeof candidate.modelId === "string"
     && typeof candidate.coldStartMs === "number";
+}
+
+function mergeStorageStatus(
+  model: (typeof TRANSLATION_MODELS)[number],
+  native: TranslationStorageStatus | undefined,
+  legacy: TranslationModelStatus | undefined
+): TranslationModelStatus {
+  const base = {
+    kind: model.kind,
+    sourceLanguages: [...model.sourceLanguages],
+    targetLanguages: [...model.targetLanguages],
+    modelId: model.modelId,
+    displayName: model.displayName,
+    license: model.license,
+    totalBytes: model.totalBytes
+  } satisfies Omit<TranslationModelStatus, "phase" | "downloadedBytes">;
+
+  if (native?.phase === "ready") {
+    return {
+      ...base,
+      phase: "ready",
+      downloadedBytes: native.downloadedBytes,
+      message: native.message,
+      storage: "native"
+    };
+  }
+  if (native?.phase === "downloading" || native?.phase === "checking") {
+    return {
+      ...base,
+      phase: native.phase,
+      downloadedBytes: native.downloadedBytes,
+      message: native.message,
+      storage: legacy?.phase === "ready" ? "legacy" : undefined
+    };
+  }
+  if (legacy?.phase === "ready" || legacy?.phase === "loading") {
+    return {
+      ...base,
+      phase: "ready",
+      downloadedBytes: model.totalBytes,
+      message: native?.phase === "failed" || native?.phase === "corrupt"
+        ? `Using the legacy local copy because native storage reported: ${native.message ?? native.phase}`
+        : "Stored in the legacy WebView cache. Move it to native storage for bounded downloads and repair.",
+      storage: "legacy"
+    };
+  }
+  if (native) {
+    return {
+      ...base,
+      phase: native.phase,
+      downloadedBytes: native.downloadedBytes,
+      message: native.message
+    };
+  }
+  if (legacy) return { ...legacy, storage: "legacy" };
+  return { ...base, phase: "checking", downloadedBytes: 0 };
 }
 
 export { isExpectedTranslationCancellation };

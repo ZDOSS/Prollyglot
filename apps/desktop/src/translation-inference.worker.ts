@@ -16,7 +16,8 @@ import type {
   TranslationInferenceRequest,
   TranslationInferenceResponse
 } from "./translation-protocol";
-import { openTranslationCache, type TranslationCache } from "./translation-cache";
+import type { TranslationCache } from "./translation-cache";
+import { openTranslationReadCache } from "./translation-read-cache";
 
 type Translator = ((text: string, options?: Record<string, unknown>) => Promise<Array<{
   translation_text: string;
@@ -27,6 +28,7 @@ const CACHE_ONLY_LOCAL_PATH = "/__prollyglot_translation_cache_only__/";
 const platformFetch = workerScope.fetch.bind(workerScope);
 let operationQueue = Promise.resolve();
 let cachePromise: Promise<TranslationCache> | undefined;
+let configuredNativeBaseUrl: string | undefined;
 let loaded: { model: TranslationModelManifest; translator: Translator } | undefined;
 
 env.cacheKey = TRANSLATION_CACHE_KEY;
@@ -57,8 +59,12 @@ function post(message: TranslationInferenceResponse): void {
   workerScope.postMessage(message);
 }
 
-async function modelCache(): Promise<TranslationCache> {
-  cachePromise ??= openTranslationCache().then((cache) => {
+async function modelCache(nativeBaseUrl?: string): Promise<TranslationCache> {
+  if (nativeBaseUrl && configuredNativeBaseUrl && nativeBaseUrl !== configuredNativeBaseUrl) {
+    throw new Error("The native translation model origin changed during an inference session.");
+  }
+  configuredNativeBaseUrl ??= nativeBaseUrl;
+  cachePromise ??= openTranslationReadCache(configuredNativeBaseUrl).then((cache) => {
     env.customCache = cache;
     env.useCustomCache = true;
     return cache;
@@ -68,12 +74,20 @@ async function modelCache(): Promise<TranslationCache> {
 
 async function installedModelForRoute(
   sourceLanguage: TranslationLanguage,
-  targetLanguage: TranslationLanguage
+  targetLanguage: TranslationLanguage,
+  nativeModelBaseUrl?: string
 ): Promise<TranslationModelManifest> {
-  const cache = await modelCache();
+  const cache = await modelCache(nativeModelBaseUrl);
   const candidates = translationModelsForRoute(sourceLanguage, targetLanguage);
   for (const model of candidates) {
-    if (!(await cache.match(translationValidationUrl(model)))) continue;
+    const verification = await cache.match(translationValidationUrl(model));
+    if (!verification) continue;
+    // The native verification endpoint revalidates the manifest marker before
+    // answering. Avoid opening every artifact merely to prove that it exists;
+    // the bounded protocol will still reject a changed or missing file when
+    // Transformers.js requests it. Legacy cache entries retain the explicit
+    // per-artifact completeness check below.
+    if (verification.headers.get("x-prollyglot-storage") === "native") return model;
     let complete = true;
     for (const artifact of model.artifacts) {
       if (!(await cache.match(translationArtifactUrl(model, artifact)))) {
@@ -98,9 +112,14 @@ async function disposeLoaded(): Promise<void> {
 
 async function prepare(
   sourceLanguage: TranslationLanguage,
-  targetLanguage: TranslationLanguage
+  targetLanguage: TranslationLanguage,
+  nativeModelBaseUrl?: string
 ): Promise<{ modelId: string; coldStartMs: number }> {
-  const model = await installedModelForRoute(sourceLanguage, targetLanguage);
+  const model = await installedModelForRoute(
+    sourceLanguage,
+    targetLanguage,
+    nativeModelBaseUrl
+  );
   if (loaded?.model.modelId === model.modelId) {
     return { modelId: model.modelId, coldStartMs: 0 };
   }
@@ -125,11 +144,12 @@ async function prepare(
 async function translate(
   sourceLanguage: TranslationLanguage,
   targetLanguage: TranslationLanguage,
-  text: string
+  text: string,
+  nativeModelBaseUrl?: string
 ): Promise<string> {
   const trimmed = text.trim();
   if (!trimmed) return "";
-  const prepared = await prepare(sourceLanguage, targetLanguage);
+  const prepared = await prepare(sourceLanguage, targetLanguage, nativeModelBaseUrl);
   if (!loaded || loaded.model.modelId !== prepared.modelId) {
     throw new Error("The local translator changed while preparing inference.");
   }
@@ -159,14 +179,19 @@ function maximumTranslationTokens(text: string): number {
 async function handleRequest(request: TranslationInferenceRequest): Promise<void> {
   try {
     if (request.type === "prepare") {
-      const result = await prepare(request.sourceLanguage, request.targetLanguage);
+      const result = await prepare(
+        request.sourceLanguage,
+        request.targetLanguage,
+        request.nativeModelBaseUrl
+      );
       post({ type: "ready", requestId: request.requestId, ok: true, ...result });
       return;
     }
     const result = await translate(
       request.sourceLanguage,
       request.targetLanguage,
-      request.text
+      request.text,
+      request.nativeModelBaseUrl
     );
     post({ type: "reply", requestId: request.requestId, ok: true, result });
   } catch (error) {

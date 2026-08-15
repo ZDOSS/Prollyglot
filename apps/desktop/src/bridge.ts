@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -20,6 +20,7 @@ import type {
   StartCaptureCommand,
   StartVisualTranslationCommand,
   TranscriptSnapshot,
+  TranslationStorageCatalog,
   UpdateVisualOverlayOutputCommand,
   VisualCaptureCapabilities,
   VisualCaptureSelection,
@@ -511,6 +512,35 @@ export async function pickVisualRegion(displayId: string): Promise<PixelRect | u
 export async function visualModelStatus(): Promise<VisualModelCatalogStatus> {
   if (!isTauri()) return structuredClone(mockVisualModelCatalog);
   return invoke<VisualModelCatalogStatus>("visual_model_status");
+}
+
+export async function translationStorageStatus(): Promise<TranslationStorageCatalog> {
+  if (!isTauri()) return { models: [] };
+  return invoke<TranslationStorageCatalog>("translation_model_status");
+}
+
+export async function installTranslationModel(storageId: string): Promise<void> {
+  if (!isTauri()) throw new Error("Native translation storage requires the desktop app.");
+  await invoke("install_translation_model", { storageId });
+}
+
+export async function removeTranslationModel(storageId: string): Promise<void> {
+  if (!isTauri()) return;
+  await invoke("remove_translation_model", { storageId });
+}
+
+export async function onTranslationStorageStatus(
+  callback: (status: TranslationStorageCatalog) => void
+): Promise<UnlistenFn> {
+  if (!isTauri()) return () => undefined;
+  return listen<TranslationStorageCatalog>("translation-model-status", ({ payload }) => {
+    callback(payload);
+  });
+}
+
+export function translationModelBaseUrl(): string | undefined {
+  if (!isTauri()) return undefined;
+  return convertFileSrc("translation", "prollyglot-model").replace(/\/$/u, "");
 }
 
 export async function installVisualModel(modelId: string): Promise<void> {

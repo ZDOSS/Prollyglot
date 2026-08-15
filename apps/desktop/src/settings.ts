@@ -301,7 +301,9 @@ export class SettingsPanel {
           model.displayName,
           `Translation · ${translationScope(model)}`,
           model.totalBytes,
-          state.activeTranslationModelId === model.modelId && state.translationRequested ? "Current route" : "Ready",
+          state.activeTranslationModelId === model.modelId && state.translationRequested
+            ? "Current route"
+            : model.storage === "legacy" ? "Legacy storage" : "Ready",
           `translation:${model.modelId}`,
           state.modelChangesBlocked,
           () => actions.removeTranslation(model.modelId)
@@ -550,6 +552,14 @@ export class SettingsPanel {
     actions: SettingsPanelActions
   ): HTMLElement {
     const active = state.translationRequested && state.activeTranslationModelId === model.modelId;
+    const legacyStorage = model.phase === "ready" && model.storage === "legacy";
+    const storageState = active
+      ? "Current caption route"
+      : legacyStorage
+        ? "Installed · legacy storage"
+        : model.phase === "ready"
+          ? model.storage === "native" ? "Installed · native storage" : "Installed"
+          : this.phaseLabel(model.phase);
     return this.createModelDetail({
       eyebrow: model.kind === "manyToMany" ? "Flexible route" : "Compact route",
       name: model.displayName,
@@ -558,14 +568,20 @@ export class SettingsPanel {
         ["Route", `${languageLabel(this.translationSource)} → ${languageLabel(this.translationTarget)}`],
         ["Download", formatBytes(model.totalBytes)],
         ["Runtime", `Local CPU · ${model.license}`],
-        ["State", active ? "Current caption route" : model.phase === "ready" ? "Installed" : this.phaseLabel(model.phase)]
+        ["State", storageState]
       ],
       phase: model.phase,
       downloadedBytes: model.downloadedBytes,
       totalBytes: model.totalBytes,
       message: model.message,
-      actionLabel: model.phase === "ready" || model.phase === "loading" ? "Installed" : this.installLabel(model),
-      actionDisabled: model.phase === "ready" || model.phase === "loading" || state.modelChangesBlocked || model.phase === "checking" || model.phase === "downloading",
+      actionLabel: legacyStorage
+        ? "Move to native storage"
+        : model.phase === "ready" || model.phase === "loading" ? "Installed" : this.installLabel(model),
+      actionDisabled: (model.phase === "ready" && !legacyStorage)
+        || model.phase === "loading"
+        || state.modelChangesBlocked
+        || model.phase === "checking"
+        || model.phase === "downloading",
       actionKey: `translation:${model.modelId}:action`,
       action: () => actions.installTranslation(model.modelId)
     });

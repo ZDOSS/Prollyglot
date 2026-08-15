@@ -77,10 +77,23 @@ export interface TranslationModelStatus {
   downloadedBytes: number;
   totalBytes: number;
   message?: string;
+  storage?: "native" | "legacy";
 }
 
 export interface TranslationCatalogStatus {
   models: TranslationModelStatus[];
+}
+
+export interface TranslationStorageStatus {
+  phase: Exclude<TranslationPhase, "loading">;
+  storageId: string;
+  downloadedBytes: number;
+  totalBytes: number;
+  message?: string;
+}
+
+export interface TranslationStorageCatalog {
+  models: TranslationStorageStatus[];
 }
 
 export type BilingualLayout = "stacked" | "sideBySide";

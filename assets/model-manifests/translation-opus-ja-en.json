@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "id": "translation-opus-mt-ja-en",
+  "version": "1a906cfaaf7c8f4193f67f5885c082aa6dbd9d16",
+  "displayName": "Japanese to English · Compact",
+  "backend": "transformers-js-onnx-wasm",
+  "languages": ["ja", "en"],
+  "license": "Apache-2.0",
+  "provenance": {
+    "sourceUrl": "https://huggingface.co/Xenova/opus-mt-ja-en",
+    "revision": "1a906cfaaf7c8f4193f67f5885c082aa6dbd9d16"
+  },
+  "runtime": {
+    "name": "Transformers.js with ONNX Runtime Web",
+    "version": "4.2.0 / 1.26.0-dev.20260416-b7804b056c",
+    "license": "Apache-2.0 / MIT",
+    "sourceUrl": "https://github.com/huggingface/transformers.js/tree/4.2.0"
+  },
+  "approximateMemoryBytes": 402653184,
+  "artifacts": [
+    {
+      "role": "config",
+      "path": "config.json",
+      "url": "https://huggingface.co/Xenova/opus-mt-ja-en/resolve/1a906cfaaf7c8f4193f67f5885c082aa6dbd9d16/config.json",
+      "sizeBytes": 1376,
+      "sha256": "d35476f1d3858883feec67e5a63ddc387452a70fda9c8e26db99c71aa2ad6a34"
+    },
+    {
+      "role": "encoder",
+      "path": "onnx/encoder_model_quantized.onnx",
+      "url": "https://huggingface.co/Xenova/opus-mt-ja-en/resolve/1a906cfaaf7c8f4193f67f5885c082aa6dbd9d16/onnx/encoder_model_quantized.onnx",
+      "sizeBytes": 50705822,
+      "sha256": "345262b16bcdda1468b0f3380c112b7ce79f731176b4b1d21f6edd5b2ae0d25c"
+    },
+    {
+      "role": "decoder",
+      "path": "onnx/decoder_model_merged_quantized.onnx",
+      "url": "https://huggingface.co/Xenova/opus-mt-ja-en/resolve/1a906cfaaf7c8f4193f67f5885c082aa6dbd9d16/onnx/decoder_model_merged_quantized.onnx",
+      "sizeBytes": 58001744,
+      "sha256": "b304d0014e4e1575437b6af95467b6cb54405d923732d8359113bd6dbbee93c0"
+    },
+    {
+      "role": "generation-config",
+      "path": "generation_config.json",
+      "url": "https://huggingface.co/Xenova/opus-mt-ja-en/resolve/1a906cfaaf7c8f4193f67f5885c082aa6dbd9d16/generation_config.json",
+      "sizeBytes": 293,
+      "sha256": "ed1bc2193210ca2a6dc9c144ea789936fed8a27113e01010d8e591f45f238912"
+    },
+    {
+      "role": "tokenizer",
+      "path": "tokenizer.json",
+      "url": "https://huggingface.co/Xenova/opus-mt-ja-en/resolve/1a906cfaaf7c8f4193f67f5885c082aa6dbd9d16/tokenizer.json",
+      "sizeBytes": 5991485,
+      "sha256": "770ff2855437cf44f1f110550c5a9dca773253a167aeac36076b2073d259aa3b"
+    },
+    {
+      "role": "tokenizer-config",
+      "path": "tokenizer_config.json",
+      "url": "https://huggingface.co/Xenova/opus-mt-ja-en/resolve/1a906cfaaf7c8f4193f67f5885c082aa6dbd9d16/tokenizer_config.json",
+      "sizeBytes": 280,
+      "sha256": "414e9e7e2492b95fa80f24ccb295645d35c4dd0a74d7ef8b89820c0c7e8ec356"
+    }
+  ]
+}
