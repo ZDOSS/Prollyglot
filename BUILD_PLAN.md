@@ -36,7 +36,7 @@ Why this direction:
 
 | Milestone | Integrated outcome | Status |
 | --- | --- | --- |
-| S. Structural integrity program | Replace patched orchestration with supervised sessions, bounded translation and presentation work, generated contracts, maintainable desktop pages, unified local state, and portable capture boundaries | In progress; S1–S2 and the S3 store/bridge/configuration cutovers are complete, persistent workspace/modules next |
+| S. Structural integrity program | Replace patched orchestration with supervised sessions, bounded translation and presentation work, generated contracts, maintainable desktop pages, unified local state, and portable capture boundaries | In progress; S1–S3 are complete, S4 portability and lifecycle hardening next |
 | 1. Windows capture foundation | A real Windows desktop shell can enumerate and capture either a selected output device or selected application | Selected-device Windows smoke passed; application and lifecycle validation remain |
 | 2. Live English captions | Captured audio becomes stable partial and final English captions locally | Device-to-caption and corrected UI/context re-smokes passed; accented/conversational model evidence and application/lifecycle validation remain |
 | 3. Minimal customizable Windows app | The complete daily-use interface, overlay customization, transcript view, and controls work together | Pending |
@@ -390,8 +390,16 @@ replaceable-latest writer coalesces rapid controls and rebases a stale UI update
 over concurrent native model selection. Repository/configuration tests plus the
 standard local suite now total 32 frontend tests; rendered preview checks cover
 migration cleanup, reload persistence, rapid Appearance input, language/output
-choices, and full/compact restoration. Persistent full-view pages,
-feature-module extraction, and stylesheet layers remain the final S3 work.
+choices, and full/compact restoration.
+
+Pre-release 0.1.10 completes S3. Full-view destinations are persistent pages
+that retain controls and navigation state without opening the compact dialog.
+Compact utilities remain contained, and switching layouts returns to Captions
+without changing the native session. Shell markup, caption setup, transcript,
+settings, visual translation, window controls, runtime bootstrap, and workspace
+navigation now have focused modules. The former monolithic stylesheet is split
+into token, shell, feature, utility-window, and overlay layers. Forty-three
+frontend tests plus TypeScript and production-build checks cover the cutover.
 
 ### Acceptance boundary
 
@@ -504,9 +512,8 @@ from one to the next while the milestone direction remains clear.
 | S4 | Resource enforcement, documentation, and Windows soak | The implemented architecture is documented and the full structural program receives native acceptance |
 
 Published: all three S1 integration points, all three S2 implementation points,
-and the S3 application-store/bridge and native-configuration points are complete
-through pre-release 0.1.9. Native Windows S2 acceptance remains pending;
-continue with persistent workspace pages and feature/style extraction without
+and S3 is complete through pre-release 0.1.10. Native Windows S2 acceptance
+remains pending; continue with S4 capture portability and lifecycle hardening without
 expanding capture or model scope.
 
 - This documentation-only planning commit does not change the application

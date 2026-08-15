@@ -5,6 +5,30 @@ Versioning while it is in the `0.x` pre-release line.
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-08-14
+
+### Added
+
+- Persistent full-view pages for Captions, Screen translation, Transcript,
+  Models, Appearance, and Settings, with state-preserving navigation and focus
+  restoration.
+- Focused modules and deterministic tests for workspace navigation, caption
+  setup, transcript following, runtime bootstrap ordering, and title-bar input.
+
+### Changed
+
+- Keep compact secondary tools in a contained dialog while full view navigates
+  mounted desktop pages without reconstructing active controls.
+- Split the desktop shell, feature controllers, and the monolithic stylesheet
+  into maintainable feature and presentation layers.
+
+### Fixed
+
+- Prevent full/compact switching from leaving a trapped dialog or replacing the
+  current native session and transcript state.
+- Preserve a safe translation-target fallback when saved language preferences
+  do not describe a valid local route.
+
 ## [0.1.9] - 2026-08-14
 
 ### Added

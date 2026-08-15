@@ -136,6 +136,7 @@ function installedVisual(catalog: VisualModelCatalogStatus): ModelStatus[] {
 }
 
 export class SettingsPanel {
+  private readonly idPrefix: string;
   private category: ModelCategory = "speech";
   private installedExpanded = false;
   private query = "";
@@ -149,6 +150,14 @@ export class SettingsPanel {
   private container?: HTMLElement;
   private state?: SettingsPanelState;
   private actions?: SettingsPanelActions;
+
+  constructor(idPrefix = "models") {
+    this.idPrefix = idPrefix;
+  }
+
+  private id(name: string): string {
+    return `${this.idPrefix}-${name}`;
+  }
 
   resetView(): void {
     this.category = "speech";
@@ -257,7 +266,7 @@ export class SettingsPanel {
     const toggle = element("button", "installed-models-toggle");
     toggle.type = "button";
     toggle.setAttribute("aria-expanded", String(this.installedExpanded));
-    toggle.setAttribute("aria-controls", "installed-model-list");
+    toggle.setAttribute("aria-controls", this.id("installed-model-list"));
     toggle.dataset.settingsFocusKey = "installed-toggle";
     const heading = element("span", "installed-models-heading");
     const title = element("strong");
@@ -275,7 +284,7 @@ export class SettingsPanel {
     section.append(toggle);
 
     const list = element("div", "installed-model-list");
-    list.id = "installed-model-list";
+    list.id = this.id("installed-model-list");
     list.hidden = !this.installedExpanded;
     if (count === 0) {
       const empty = element("p", "installed-model-empty");
@@ -436,8 +445,8 @@ export class SettingsPanel {
       this.rerender("speech-model");
     });
     controls.append(
-      selectField("Language", "speech-model-language", language),
-      selectField("Compatible model", "speech-model-choice", modelSelect)
+      selectField("Language", this.id("speech-model-language"), language),
+      selectField("Compatible model", this.id("speech-model-choice"), modelSelect)
     );
     panel.append(controls);
     const selected = candidates.find(({ modelId }) => modelId === this.speechModelId);
@@ -528,9 +537,9 @@ export class SettingsPanel {
       this.rerender("translation-model");
     });
     controls.append(
-      selectField("From", "translation-model-source", source),
-      selectField("To", "translation-model-target", target),
-      selectField("Compatible route", "translation-model-choice", modelSelect)
+      selectField("From", this.id("translation-model-source"), source),
+      selectField("To", this.id("translation-model-target"), target),
+      selectField("Compatible route", this.id("translation-model-choice"), modelSelect)
     );
     panel.append(controls);
     const selected = candidates.find(({ modelId }) => modelId === this.translationModelId);
@@ -609,7 +618,7 @@ export class SettingsPanel {
       this.rerender("visual-model");
     });
     const controls = element("div", "model-picker-controls one-column");
-    controls.append(selectField("Screen-text model", "visual-model-choice", modelSelect));
+    controls.append(selectField("Screen-text model", this.id("visual-model-choice"), modelSelect));
     panel.append(controls);
     const selected = candidates.find(({ modelId }) => modelId === this.visualModelId);
     panel.append(selected

@@ -11,7 +11,7 @@ Prollyglot is a free and open-source desktop utility that captures audio from a 
 > [!IMPORTANT]
 > Prollyglot is in active pre-release development. There is not yet a supported binary release. Windows 11 is the primary target; the first Windows owner smoke confirmed that **Everything I hear** captions audible output from the selected playback device, while broader application, lifecycle, and release validation remains in progress.
 >
-> Current pre-release: **0.1.9**. See the [changelog](CHANGELOG.md) and
+> Current pre-release: **0.1.10**. See the [changelog](CHANGELOG.md) and
 > [versioning policy](docs/VERSIONING.md).
 
 ## Why Prollyglot exists
@@ -144,10 +144,10 @@ representative media usefulness still require re-testing.
 
 The control app now opens with a desktop-width shell and persistent navigation
 for Captions, Screen translation, Transcript, Models, Appearance, and Settings.
-Captions use grouped desktop panels instead of one long mobile-style form. The
-remaining full-view destinations still share a contained utility surface while
-their persistent-page cutover is completed; compact mode deliberately retains
-contained utilities and a separate focused Appearance window. A title-bar
+Captions use grouped desktop panels instead of one long mobile-style form.
+Every full-view destination is now a persistent page, so navigation retains
+page controls, scroll position, and focus without rebuilding a modal. Compact
+mode deliberately retains contained utilities and a separate focused Appearance window. A title-bar
 control switches modes without changing the live session or transcript. The
 chosen layout and all durable feature preferences now come from one native,
 versioned configuration snapshot rather than independent WebView storage.

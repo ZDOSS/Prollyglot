@@ -104,10 +104,12 @@ export class VisualPanel {
   private state?: VisualPanelState;
   private actions?: VisualPanelActions;
   private readonly onPreferencesChange: (preferences: VisualPreferences) => void;
+  private readonly idPrefix: string;
 
   constructor(
     preferences: VisualPreferences,
-    onPreferencesChange: (preferences: VisualPreferences) => void = () => undefined
+    onPreferencesChange: (preferences: VisualPreferences) => void = () => undefined,
+    idPrefix = "visual"
   ) {
     this.mode = preferences.sourceMode === "display" || preferences.sourceMode === "region"
       ? preferences.sourceMode
@@ -119,6 +121,11 @@ export class VisualPanel {
     this.displayId = preferences.displayId;
     this.detectionMode = preferences.detectionMode === "allText" ? "allText" : "focused";
     this.onPreferencesChange = onPreferencesChange;
+    this.idPrefix = idPrefix;
+  }
+
+  private id(name: string): string {
+    return `${this.idPrefix}-${name}`;
   }
 
   render(
@@ -150,6 +157,31 @@ export class VisualPanel {
       const output = this.container.querySelector<HTMLElement>(`[data-visual-stat="${key}"]`);
       if (output) output.textContent = String(value);
     }
+  }
+
+  updatePreferences(preferences: VisualPreferences): void {
+    const mode = preferences.sourceMode === "display" || preferences.sourceMode === "region"
+      ? preferences.sourceMode
+      : "applicationWindow";
+    const sourceLanguage = supportedTranslationLanguage(preferences.sourceLanguage) ?? "ja";
+    let targetLanguage = supportedTranslationLanguage(preferences.targetLanguage) ?? "en";
+    if (sourceLanguage === targetLanguage) targetLanguage = sourceLanguage === "en" ? "es" : "en";
+    const detectionMode = preferences.detectionMode === "allText" ? "allText" : "focused";
+    const changed = this.mode !== mode
+      || this.sourceLanguage !== sourceLanguage
+      || this.targetLanguage !== targetLanguage
+      || this.windowId !== preferences.windowId
+      || this.displayId !== preferences.displayId
+      || this.detectionMode !== detectionMode;
+    if (!changed) return;
+    if (this.mode !== mode) this.region = undefined;
+    this.mode = mode;
+    this.sourceLanguage = sourceLanguage;
+    this.targetLanguage = targetLanguage;
+    this.windowId = preferences.windowId;
+    this.displayId = preferences.displayId;
+    this.detectionMode = detectionMode;
+    this.rerender();
   }
 
   private rerender(): void {
@@ -251,7 +283,7 @@ export class VisualPanel {
     outputColumn.append(outputHeading);
 
     const mode = create("select");
-    mode.id = "visual-source-mode";
+    mode.id = this.id("source-mode");
     mode.append(
       option("applicationWindow", "Application window", this.mode === "applicationWindow"),
       option("display", "Whole display", this.mode === "display"),
@@ -278,7 +310,7 @@ export class VisualPanel {
     sourceColumn.append(sourceField);
 
     const detectionMode = create("select");
-    detectionMode.id = "visual-detection-mode";
+    detectionMode.id = this.id("detection-mode");
     detectionMode.append(
       option("focused", "Prominent text · recommended", this.detectionMode === "focused"),
       option("allText", "All detected text", this.detectionMode === "allText")
@@ -299,7 +331,7 @@ export class VisualPanel {
 
     const languages = create("div", "visual-language-grid");
     const sourceLanguage = create("select");
-    sourceLanguage.id = "visual-source-language";
+    sourceLanguage.id = this.id("source-language");
     sourceLanguage.append(...SPOKEN_LANGUAGES.map(({ code, label }) =>
       option(code, label, code === this.sourceLanguage)));
     sourceLanguage.disabled = this.busy;
@@ -318,7 +350,7 @@ export class VisualPanel {
     ));
 
     const targetLanguage = create("select");
-    targetLanguage.id = "visual-target-language";
+    targetLanguage.id = this.id("target-language");
     targetLanguage.append(...SPOKEN_LANGUAGES
       .filter(({ code }) => code !== this.sourceLanguage)
       .map(({ code, label }) => option(code, label, code === this.targetLanguage)));
@@ -378,7 +410,7 @@ export class VisualPanel {
     else this.displayId = selectedId;
 
     const source = create("select");
-    source.id = "visual-source";
+    source.id = this.id("source");
     if (list.length === 0) source.append(option("", "No sources available", true));
     else source.append(...list.map(({ id, label }) => option(id, label, id === selectedId)));
     source.disabled = this.busy || list.length === 0;

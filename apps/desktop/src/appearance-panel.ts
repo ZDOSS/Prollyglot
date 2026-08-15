@@ -117,6 +117,11 @@ export class AppearancePanel {
     return this.readSettings();
   }
 
+  updateSettings(settings: OverlaySettings): void {
+    if (!this.container) return;
+    this.writeSettings(structuredClone(settings), false);
+  }
+
   private selectRow(label: string, id: string, options: Array<[string, string]>): string {
     return `<label class="setting-row">
       <span>${label}</span>

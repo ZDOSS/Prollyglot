@@ -1,7 +1,14 @@
 import "./styles.css";
 
+import { mountAppShell } from "./app-shell";
 import { desktopBridge, isTauri } from "./bridge";
 import { CaptionOutputController, supportedSourceLanguage } from "./caption-output";
+import {
+  CaptionForm,
+  FOLLOW_SYSTEM_DEFAULT,
+  captionActionCopy,
+  planCaptionOutput
+} from "./caption-form";
 import { AppearancePanel } from "./appearance-panel";
 import {
   initializeConfiguration,
@@ -11,13 +18,12 @@ import {
   AppStore,
   FALLBACK_SPEECH_MODEL,
   createInitialAppState,
-  type AppDestination,
   type AppViewMode
 } from "./app-store";
 import { errorMessage, isApplicationError } from "./errors";
+import { GeneralSettingsPanel } from "./general-settings-panel";
 import { icons } from "./icons";
 import {
-  SPOKEN_LANGUAGES,
   languageLabel,
   supportedTranslationLanguage
 } from "./language-catalog";
@@ -25,17 +31,24 @@ import { SettingsPanel, type SettingsNoticeTone } from "./settings";
 import {
   acceptsVisualSessionEvent as acceptsVisualRuntimeEvent
 } from "./runtime-state";
+import { initializeRuntimeBootstrap } from "./runtime-bootstrap";
 import { TranslationService, translationStatusForRoute } from "./translation";
+import { TranscriptPanel } from "./transcript-panel";
 import { VisualPanel } from "./visual-panel";
 import { VisualTranslationController } from "./visual-translation";
+import { bindWindowControls } from "./window-controls";
+import {
+  WorkspaceNavigation,
+  destinationFrom,
+  type WorkspacePanel,
+  type WorkspaceRenderContext
+} from "./workspace-navigation";
 import type {
   CaptionOutputMode,
-  CaptureSelection,
   CaptureStatus,
   ModelCatalogStatus,
   ModelStatus,
   SourceSnapshot,
-  TranscriptSegment,
   TranscriptSnapshot,
   TranslationCatalogStatus,
   TranslationModelStatus,
@@ -47,24 +60,19 @@ import type {
 import { RUNTIME_CONTRACT_VERSION } from "./types";
 
 const {
-  captureStatus,
   clearTranscript,
   installSpeechModel,
   installVisualModel,
   modelStatus,
-  onCaptureStatus,
   onModelStatus,
-  onRuntimeState,
   onTranscriptUpdate,
   onVisualModelStatus,
-  onVisualStatus,
   onVisualTextClear,
   onVisualTextUpdate,
   pickVisualRegion,
   reportFrontendDiagnostic,
   removeSpeechModel,
   removeVisualModel,
-  runtimeBootstrap,
   selectSpeechModel,
   setWindowLayout,
   showAppearance,
@@ -80,203 +88,56 @@ const {
   visualCapabilities,
   visualModelStatus,
   visualSourceSnapshot,
-  visualStatus,
   windowAction
 } = desktopBridge;
 
 const root = document.querySelector<HTMLElement>("#app");
 if (!root) throw new Error("missing app root");
 
-root.innerHTML = `
-  <section class="app-window main-window" aria-label="Prollyglot controls" data-view-mode="full">
-    <header class="titlebar">
-      <div class="brand">
-        <img class="brand-mark" src="/branding/prollyglot-mark.png" alt="" />
-        <span class="brand-name">Prollyglot</span>
-        <span class="status-label" data-state="stopped"><span class="status-dot"></span><span id="status-text">Ready</span></span>
-      </div>
-      <div class="titlebar-actions">
-        <button id="view-mode-toggle" class="view-mode-toggle" type="button">
-          <span class="view-mode-icon">${icons.compact}</span>
-          <span class="view-mode-label">Compact view</span>
-        </button>
-        <div class="window-controls" aria-label="Window controls">
-          <button class="window-control" type="button" data-window-action="minimize" aria-label="Minimize">${icons.minimize}</button>
-          <button class="window-control" type="button" data-window-action="maximize" aria-label="Maximize">${icons.maximize}</button>
-          <button class="window-control close" type="button" data-window-action="close" aria-label="Close">${icons.close}</button>
-        </div>
-      </div>
-    </header>
+const {
+  appWindow,
+  captionLanguage,
+  captureMessage,
+  captureToggle,
+  deviceField,
+  deviceSelect,
+  dialog,
+  dialogClose,
+  dialogContent: compactDialogContent,
+  dialogSubtitle,
+  dialogTitle,
+  modelAction,
+  modelMessage,
+  modelProgress,
+  modelSetup,
+  modelSetupTitle,
+  sessionPreviewContent,
+  sourceSelect,
+  spokenLanguage,
+  statusLabel,
+  statusText,
+  titlebar,
+  translationAction,
+  translationMessage,
+  translationProgress,
+  translationSetup,
+  translationSetupTitle,
+  translationTarget,
+  viewModeToggle,
+  visualToggle
+} = mountAppShell(root, __PROLLYGLOT_VERSION__);
 
-    <div class="desktop-frame">
-      <nav class="desktop-nav" aria-label="Application views">
-        <div class="desktop-nav-primary">
-          <button type="button" class="desktop-nav-action is-active" data-workspace="captions" aria-current="page">${icons.captions}<span>Captions</span></button>
-          <button type="button" class="desktop-nav-action" data-panel="visual">${icons.screen}<span>Screen translation</span></button>
-          <button type="button" class="desktop-nav-action" data-panel="transcript">${icons.transcript}<span>Transcript</span></button>
-          <button type="button" class="desktop-nav-action" data-panel="models">${icons.models}<span>Models</span></button>
-          <button type="button" class="desktop-nav-action" data-panel="appearance">${icons.appearance}<span>Appearance</span></button>
-          <button type="button" class="desktop-nav-action" data-panel="settings">${icons.settings}<span>Settings</span></button>
-        </div>
-        <div class="desktop-nav-footer">
-          <span class="privacy-state"><span class="status-dot"></span>Local processing</span>
-          <span class="version-state">Pre-release · ${__PROLLYGLOT_VERSION__}</span>
-        </div>
-      </nav>
-
-      <main class="workspace">
-        <section id="caption-workspace" class="workspace-page" aria-labelledby="caption-page-title">
-          <header class="workspace-heading">
-            <div>
-              <h1 id="caption-page-title">Captions</h1>
-              <p>Transcribe and translate audio playing on this PC.</p>
-            </div>
-          </header>
-
-          <div class="caption-workspace-grid">
-            <section class="main-content caption-setup" aria-label="Caption setup">
-              <section id="model-setup" class="model-setup" aria-labelledby="model-setup-title" hidden>
-                <div class="model-copy">
-                  <span class="model-kicker">Local model required</span>
-                  <h2 id="model-setup-title">Local captions</h2>
-                  <p id="model-message">Download the selected speech model once, then caption offline.</p>
-                </div>
-                <progress id="model-progress" class="model-progress" max="1" value="0" hidden></progress>
-                <button id="model-action" class="secondary-button model-action" type="button">Download model</button>
-              </section>
-
-              <section id="translation-setup" class="model-setup translation-setup" aria-labelledby="translation-setup-title" hidden>
-                <div class="model-copy">
-                  <span class="model-kicker">Optional local translation</span>
-                  <h2 id="translation-setup-title">Translated captions</h2>
-                  <p id="translation-message">Download the selected translator once, then translate offline.</p>
-                </div>
-                <progress id="translation-progress" class="model-progress" max="1" value="0" hidden></progress>
-                <button id="translation-action" class="secondary-button model-action" type="button">Download translator</button>
-              </section>
-
-              <div class="capture-field-grid source-field-grid">
-                <div class="field-group">
-                  <label class="field-label" for="audio-source">Audio source</label>
-                  <div class="select-wrap">
-                    <select id="audio-source" class="select-control" aria-describedby="source-help">
-                      <option value="system">Everything I hear</option>
-                    </select>
-                    ${icons.chevronDown}
-                  </div>
-                  <span id="source-help" class="sr-only">Choose all audio from a playback device or one application.</span>
-                </div>
-
-                <div class="field-group" id="device-field">
-                  <label class="field-label" for="playback-device">Playback device</label>
-                  <div class="select-wrap">
-                    <select id="playback-device" class="select-control"></select>
-                    ${icons.chevronDown}
-                  </div>
-                </div>
-              </div>
-
-              <div class="field-grid">
-                <div class="field-group">
-                  <label class="field-label" for="spoken-language">Spoken language</label>
-                  <div class="select-wrap">
-                    <select id="spoken-language" class="select-control" aria-describedby="spoken-language-help"></select>
-                    ${icons.chevronDown}
-                  </div>
-                  <span id="spoken-language-help" class="field-help"></span>
-                </div>
-
-                <div class="field-group">
-                  <label class="field-label" for="translation-target">Translate to</label>
-                  <div class="select-wrap">
-                    <select id="translation-target" class="select-control" aria-describedby="translation-target-help"></select>
-                    ${icons.chevronDown}
-                  </div>
-                  <span id="translation-target-help" class="field-help"></span>
-                </div>
-
-                <div class="field-group caption-output-field">
-                  <label class="field-label" for="caption-language">Caption output</label>
-                  <div class="select-wrap">
-                    <select id="caption-language" class="select-control" aria-describedby="caption-language-help">
-                      <option value="original">Original language</option>
-                    </select>
-                    ${icons.chevronDown}
-                  </div>
-                  <span id="caption-language-help" class="field-help"></span>
-                </div>
-              </div>
-
-              <p id="capture-message" class="capture-message" role="status" aria-live="polite"></p>
-
-              <div class="capture-actions">
-                <button id="capture-toggle" class="primary-button" type="button">Start Captions</button>
-                <button id="visual-toggle" class="secondary-button screen-translation-button" type="button">Translate Screen…</button>
-              </div>
-            </section>
-
-            <aside class="session-preview" aria-labelledby="session-preview-title">
-              <header class="session-preview-header">
-                <div>
-                  <span class="session-preview-kicker">Current session</span>
-                  <h2 id="session-preview-title">Live transcript</h2>
-                </div>
-                <button type="button" class="text-button" data-panel="transcript">Open transcript</button>
-              </header>
-              <div id="session-preview-content" class="session-preview-content"></div>
-            </aside>
-          </div>
-        </section>
-
-        <dialog id="utility-dialog" class="utility-dialog" aria-labelledby="dialog-title">
-          <div class="dialog-title-row">
-            <div class="dialog-heading-copy">
-              <h2 id="dialog-title"></h2>
-              <p id="dialog-subtitle"></p>
-            </div>
-            <button type="button" class="dialog-close" aria-label="Close">${icons.close}</button>
-          </div>
-          <div id="dialog-content"></div>
-          <p id="settings-action-status" class="settings-action-status" role="status" aria-live="polite" hidden></p>
-        </dialog>
-      </main>
-    </div>
-
-    <nav class="utility-nav compact-nav" aria-label="Compact application views">
-      <button type="button" class="utility-action" data-panel="transcript">${icons.transcript}<span>Transcript</span></button>
-      <button type="button" class="utility-action" data-appearance>${icons.appearance}<span>Appearance</span></button>
-      <button type="button" class="utility-action" data-panel="models">${icons.models}<span>Models</span></button>
-    </nav>
-  </section>
-`;
-
-const sourceSelect = requireElement<HTMLSelectElement>("#audio-source");
-const deviceSelect = requireElement<HTMLSelectElement>("#playback-device");
-const deviceField = requireElement<HTMLElement>("#device-field");
-const spokenLanguage = requireElement<HTMLSelectElement>("#spoken-language");
-const translationTarget = requireElement<HTMLSelectElement>("#translation-target");
-const captionLanguage = requireElement<HTMLSelectElement>("#caption-language");
-const captureToggle = requireElement<HTMLButtonElement>("#capture-toggle");
-const visualToggle = requireElement<HTMLButtonElement>("#visual-toggle");
-const captureMessage = requireElement<HTMLElement>("#capture-message");
-const statusLabel = requireElement<HTMLElement>(".status-label");
-const statusText = requireElement<HTMLElement>("#status-text");
-const modelSetup = requireElement<HTMLElement>("#model-setup");
-const modelSetupTitle = requireElement<HTMLElement>("#model-setup-title");
-const modelMessage = requireElement<HTMLElement>("#model-message");
-const modelProgress = requireElement<HTMLProgressElement>("#model-progress");
-const modelAction = requireElement<HTMLButtonElement>("#model-action");
-const translationSetup = requireElement<HTMLElement>("#translation-setup");
-const translationSetupTitle = requireElement<HTMLElement>("#translation-setup-title");
-const translationMessage = requireElement<HTMLElement>("#translation-message");
-const translationProgress = requireElement<HTMLProgressElement>("#translation-progress");
-const translationAction = requireElement<HTMLButtonElement>("#translation-action");
-const dialog = requireElement<HTMLDialogElement>("#utility-dialog");
-const appWindow = requireElement<HTMLElement>(".main-window");
-const viewModeToggle = requireElement<HTMLButtonElement>("#view-mode-toggle");
-const sessionPreviewContent = requireElement<HTMLElement>("#session-preview-content");
-const captionWorkspace = requireElement<HTMLElement>("#caption-workspace");
-type DialogPanel = Exclude<AppDestination, "captions">;
+const captionForm = new CaptionForm({
+  source: sourceSelect,
+  device: deviceSelect,
+  deviceField,
+  spokenLanguage,
+  spokenLanguageHelp: requireElement("#spoken-language-help"),
+  translationTarget,
+  translationTargetHelp: requireElement("#translation-target-help"),
+  captionOutput: captionLanguage,
+  captionOutputHelp: requireElement("#caption-language-help")
+});
 
 const useMockTranslation = !isTauri()
   && !new URLSearchParams(window.location.search).has("realTranslation");
@@ -293,22 +154,47 @@ const appStore = new AppStore(createInitialAppState({
   translations: translationService.snapshot()
 }));
 const appState = () => appStore.getState();
-const FOLLOW_SYSTEM_DEFAULT = "__follow-system-default__";
-const TRANSCRIPT_BOTTOM_THRESHOLD = 48;
-const settingsPanel = new SettingsPanel();
+const settingsPanel = new SettingsPanel("workspace-models");
+const compactSettingsPanel = new SettingsPanel("compact-models");
+const generalSettingsPanel = new GeneralSettingsPanel("workspace-settings");
+const compactGeneralSettingsPanel = new GeneralSettingsPanel("compact-settings");
 const visualPanel = new VisualPanel(
   structuredClone(configuration.snapshot().config.visual),
   (preferences) => {
     void persistConfiguration((config) => {
       config.visual = structuredClone(preferences);
     });
-  }
+  },
+  "workspace-visual"
+);
+const compactVisualPanel = new VisualPanel(
+  structuredClone(configuration.snapshot().config.visual),
+  (preferences) => {
+    void persistConfiguration((config) => {
+      config.visual = structuredClone(preferences);
+    });
+  },
+  "compact-visual"
 );
 const appearancePanel = new AppearancePanel();
+const workspaceNavigation = new WorkspaceNavigation({
+  root: appWindow,
+  dialog,
+  dialogContent: compactDialogContent,
+  dialogTitle,
+  dialogSubtitle,
+  dialogClose
+}, {
+  renderPanel: renderWorkspacePanel,
+  onDestinationChange: (destination) => {
+    appStore.dispatch({ type: "navigation/destination", destination });
+  }
+}, appState().navigation.viewMode);
+let transcriptPanel: TranscriptPanel;
 const captionOutput = new CaptionOutputController(
   translationService,
   (frame) => {
-    if (dialog.open && dialog.dataset.panel === "transcript") renderTranscriptPanel();
+    workspaceNavigation.refresh("transcript");
     renderSessionPreview();
     return updateCaptionPresentation(frame);
   },
@@ -330,12 +216,40 @@ const visualTranslation = new VisualTranslationController(
     void reportFrontendDiagnostic("visual-translation-performance", message, "info");
   }
 );
+transcriptPanel = new TranscriptPanel(sessionPreviewContent, {
+  outputMode: () => captionOutput.outputMode(),
+  translationTarget: () => captionOutput.translationTarget(),
+  translationFor: (segment) => captionOutput.translationFor(segment),
+  isTranslationPending: (segment) => captionOutput.isTranslationPending(segment)
+}, {
+  clear: clearTranscript,
+  reportError: (message) => setCaptureNotice(message, "error"),
+  setFollowLatest: (follow) => {
+    appStore.dispatch({ type: "transcript/follow-latest", follow });
+  }
+});
 
 configuration.subscribe((snapshot) => {
   const previous = appState();
   appStore.dispatch({ type: "configuration/accepted", snapshot: structuredClone(snapshot) });
   const next = appState();
-  if (previous.navigation.viewMode !== next.navigation.viewMode) renderViewMode();
+  const previousConfig = previous.configuration?.config;
+  if (previous.navigation.viewMode !== next.navigation.viewMode) {
+    renderViewMode();
+    workspaceNavigation.setViewMode(next.navigation.viewMode);
+    workspaceNavigation.refresh("settings");
+  }
+  if (
+    !previousConfig
+    || JSON.stringify(previousConfig.overlay) !== JSON.stringify(snapshot.config.overlay)
+  ) appearancePanel.updateSettings(snapshot.config.overlay);
+  if (
+    !previousConfig
+    || JSON.stringify(previousConfig.visual) !== JSON.stringify(snapshot.config.visual)
+  ) {
+    visualPanel.updatePreferences(snapshot.config.visual);
+    compactVisualPanel.updatePreferences(snapshot.config.visual);
+  }
   if (
     previous.preferences.acceptedSpokenLanguage
       !== next.preferences.acceptedSpokenLanguage
@@ -344,17 +258,16 @@ configuration.subscribe((snapshot) => {
   ) {
     spokenLanguage.value = next.preferences.acceptedSpokenLanguage;
     populateTranslationTargets();
-    translationTarget.value = next.preferences.translationTarget;
     captionOutput.setOutputMode(next.preferences.captionMode);
-    const target = supportedTranslationLanguage(next.preferences.translationTarget);
+    const target = supportedTranslationLanguage(translationTarget.value);
     if (target) captionOutput.setTranslationTarget(target);
     renderLanguageGuidance();
     renderCaptionOutputControl();
   }
 });
 
-function requireElement<T extends Element>(selector: string): T {
-  const element = document.querySelector<T>(selector);
+function requireElement<T extends Element>(selector: string, parent: ParentNode = document): T {
+  const element = parent.querySelector<T>(selector);
   if (!element) throw new Error(`missing element: ${selector}`);
   return element;
 }
@@ -365,14 +278,6 @@ async function persistConfiguration(mutate: ConfigurationMutation): Promise<void
   } catch (error) {
     setCaptureNotice(`Could not save settings: ${errorMessage(error)}`, "error");
   }
-}
-
-function option(value: string, label: string, selected = false): HTMLOptionElement {
-  const element = document.createElement("option");
-  element.value = value;
-  element.textContent = label;
-  element.selected = selected;
-  return element;
 }
 
 function renderViewMode(): void {
@@ -390,11 +295,10 @@ function renderViewMode(): void {
 
 async function changeViewMode(next: AppViewMode): Promise<void> {
   if (next === appState().navigation.viewMode) return;
-  if (dialog.open) dialog.close();
   appStore.dispatch({ type: "navigation/view-mode", viewMode: next });
+  workspaceNavigation.setViewMode(next);
   await persistConfiguration((config) => { config.viewMode = next; });
   renderViewMode();
-  setActiveNavigation("captions");
   try {
     await setWindowLayout(next);
   } catch (error) {
@@ -403,92 +307,19 @@ async function changeViewMode(next: AppViewMode): Promise<void> {
 }
 
 function populateSpokenLanguageOptions(): void {
-  spokenLanguage.replaceChildren(
-    ...SPOKEN_LANGUAGES.map(({ code, label }) => option(code, label, code === "en")),
-    option("auto", "Automatic · mixed languages")
-  );
-  spokenLanguage.value = appState().preferences.acceptedSpokenLanguage;
+  captionForm.populateSpokenLanguages(appState().preferences.acceptedSpokenLanguage);
 }
 
 function populateTranslationTargets(): void {
-  const sourceLanguage = supportedSourceLanguage(spokenLanguage.value);
-  if (!sourceLanguage) {
-    translationTarget.replaceChildren(option("off", "Off · original language", true));
-    translationTarget.disabled = true;
-    requireElement<HTMLElement>("#translation-target-help").textContent =
-      "Automatic recognition does not yet report a stable source language for translation.";
-    return;
-  }
-
-  translationTarget.disabled = false;
-  translationTarget.replaceChildren(
-    option("off", "Off · original language"),
-    ...SPOKEN_LANGUAGES
-      .filter(({ code }) => code !== sourceLanguage)
-      .map(({ code, label }) => option(code, label))
-  );
-  const preferredTranslationTarget = appState().preferences.translationTarget;
-  const preferredAvailable = [...translationTarget.options]
-    .some(({ value }) => value === preferredTranslationTarget);
-  translationTarget.value = preferredAvailable
-    ? preferredTranslationTarget
-    : sourceLanguage === "en" ? "off" : "en";
-  requireElement<HTMLElement>("#translation-target-help").textContent =
-    translationTarget.value === "off"
-      ? "Recognition stays local and captions remain in the spoken language."
-      : `Translation to ${languageLabel(translationTarget.value)} runs locally.`;
+  captionForm.populateTranslationTargets(appState().preferences.translationTarget);
 }
 
 function populateSources(nextSnapshot: SourceSnapshot) {
   appStore.dispatch({ type: "sources/replaced", snapshot: nextSnapshot });
-  const sources = appState().sources;
-  const previousSource = sourceSelect.value;
-  const configuredAudioSource = configuration.snapshot().config.captions.audioSource;
-  const previousDevice = deviceSelect.value || (
-    configuredAudioSource.kind === "playbackDevice"
-      ? configuredAudioSource.deviceId
-      : FOLLOW_SYSTEM_DEFAULT
+  captionForm.populateSources(
+    nextSnapshot,
+    configuration.snapshot().config.captions.audioSource
   );
-
-  sourceSelect.replaceChildren(option("system", "Everything I hear"));
-  for (const application of sources.applications) {
-    sourceSelect.append(option(`application:${application.processId}`, `Only ${application.name}`));
-  }
-  if ([...sourceSelect.options].some(({ value }) => value === previousSource)) {
-    sourceSelect.value = previousSource;
-  }
-
-  const defaultDevice = sources.playbackDevices.find(({ isDefault }) => isDefault);
-  const followLabel = defaultDevice
-    ? `Follow system default — ${defaultDevice.name}`
-    : "Follow system default";
-  deviceSelect.replaceChildren(
-    option(FOLLOW_SYSTEM_DEFAULT, followLabel, !previousDevice || previousDevice === FOLLOW_SYSTEM_DEFAULT)
-  );
-  for (const device of sources.playbackDevices) {
-    const label = device.isDefault ? `${device.name} — Pin current default` : device.name;
-    deviceSelect.append(option(device.id, label, device.id === previousDevice));
-  }
-  if (![...deviceSelect.options].some(({ value }) => value === previousDevice)) {
-    deviceSelect.value = FOLLOW_SYSTEM_DEFAULT;
-  }
-  updateSourceMode();
-}
-
-function updateSourceMode() {
-  const system = sourceSelect.value === "system";
-  deviceField.hidden = !system;
-}
-
-function selectedCapture(): CaptureSelection {
-  if (sourceSelect.value === "system") {
-    if (!deviceSelect.value) throw new Error("No playback device is available.");
-    if (deviceSelect.value === FOLLOW_SYSTEM_DEFAULT) return { kind: "systemDefault" };
-    return { kind: "systemOutput", deviceId: deviceSelect.value };
-  }
-  const processId = Number(sourceSelect.value.split(":")[1]);
-  if (!Number.isInteger(processId)) throw new Error("The selected application is unavailable.");
-  return { kind: "application", processId };
 }
 
 function selectedTranslationModel(
@@ -508,47 +339,16 @@ function translationRequested(): boolean {
 }
 
 function renderCaptionOutputControl(): void {
-  const sourceLanguage = supportedSourceLanguage(spokenLanguage.value);
   const targetLanguage = supportedTranslationLanguage(translationTarget.value);
-  const targetLabel = targetLanguage ? languageLabel(targetLanguage) : "translation";
-  const routeAvailable = sourceLanguage
-    && targetLanguage
-    && sourceLanguage !== targetLanguage;
   if (targetLanguage) captionOutput.setTranslationTarget(targetLanguage);
-  const allowedModes: Array<[CaptionOutputMode, string]> = routeAvailable
-    ? [
-        ["original", "Original only · translation off"],
-        ["translated", `${targetLabel} only · translated`],
-        ["both", `Original + ${targetLabel}`]
-      ]
-    : [["original", "Original language"]];
-  const selectedMode = routeAvailable ? appState().preferences.captionMode : "original";
-  captionLanguage.replaceChildren(
-    ...allowedModes.map(([value, label]) => option(value, label, value === selectedMode))
+  const plan = planCaptionOutput(
+    spokenLanguage.value,
+    translationTarget.value,
+    appState().preferences.captionMode,
+    selectedTranslationModel()?.phase
   );
-  captionLanguage.value = selectedMode;
-  captionLanguage.disabled = !routeAvailable;
-  if (captionOutput.outputMode() !== selectedMode) captionOutput.setOutputMode(selectedMode);
-
-  const help = requireElement<HTMLElement>("#caption-language-help");
-  if (!sourceLanguage) {
-    help.textContent = "Choose a specific spoken language to enable local translation.";
-  } else if (!targetLanguage) {
-    help.textContent = "Choose a Translate to language to enable translated captions.";
-  } else {
-    const model = selectedTranslationModel();
-    if (!translationRequested()) {
-      help.textContent = model?.phase === "ready"
-        ? `Translation is off. Choose ${targetLabel} only or Original + ${targetLabel} to use the installed translator.`
-        : `Translation is off. Choose ${targetLabel} only or Original + ${targetLabel} to install a translator.`;
-    } else if (model?.phase === "ready") {
-      help.textContent = `${targetLabel} starts from live partial speech and is corrected again when each caption finalizes.`;
-    } else if (model?.phase === "loading") {
-      help.textContent = `Original captions stay live while the local ${targetLabel} translator loads.`;
-    } else {
-      help.textContent = `Original captions stay live until the optional ${targetLabel} translator is installed.`;
-    }
-  }
+  captionForm.renderCaptionOutput(plan);
+  if (captionOutput.outputMode() !== plan.selected) captionOutput.setOutputMode(plan.selected);
   renderTranslationSetup();
   prepareSelectedTranslator();
 }
@@ -647,24 +447,12 @@ function renderTranslationStatus(catalog: TranslationCatalogStatus): void {
   }
   appStore.dispatch({ type: "translation/catalog", catalog });
   renderCaptionOutputControl();
-  if (dialog.open && dialog.dataset.panel === "models") renderSettingsPanel();
-  if (dialog.open && dialog.dataset.panel === "visual") renderVisualPanel();
+  workspaceNavigation.refresh("models");
+  workspaceNavigation.refresh("visual");
 }
 
 function renderLanguageGuidance() {
-  const help = requireElement<HTMLElement>("#spoken-language-help");
-  const language = SPOKEN_LANGUAGES.find(({ code }) => code === spokenLanguage.value);
-  help.textContent = spokenLanguage.value === "auto"
-    ? "For mixed-language audio. Detection can add delay or choose the wrong language."
-    : language?.tier === "broad"
-      ? "Supported by Nemotron's broad-coverage tier; accuracy can vary more than its primary languages."
-      : "Choosing the language guides recognition and usually improves accuracy.";
-}
-
-function captionAction(language: string): string {
-  return language === "auto"
-    ? "detect and caption the spoken language"
-    : `caption ${languageLabel(language)} speech`;
+  captionForm.renderLanguageGuidance();
 }
 
 function modelSupportsLanguage(model: ModelStatus, language = spokenLanguage.value): boolean {
@@ -684,8 +472,8 @@ function renderStatus(status: CaptureStatus) {
   updatePrimaryAvailability();
   renderTranslationSetup();
   document.documentElement.style.setProperty("--audio-peak", String(status.peak));
-  if (stateChanged && dialog.open && dialog.dataset.panel === "models") renderSettingsPanel();
-  if (dialog.open && dialog.dataset.panel === "visual") renderVisualPanel();
+  if (stateChanged) workspaceNavigation.refresh("models");
+  workspaceNavigation.refresh("visual");
 }
 
 function runtimeCaptureState(snapshot: RuntimeSnapshot): CaptureStatus["state"] {
@@ -891,10 +679,11 @@ function renderVisualStatus(status: VisualStatus): void {
   updatePrimaryAvailability();
   renderModelStatus(appState().speechModels);
   renderTranslationSetup();
-  if (changed && dialog.open && dialog.dataset.panel === "models") renderSettingsPanel();
-  if (dialog.open && dialog.dataset.panel === "visual") {
-    if (changed) renderVisualPanel();
-    else visualPanel.updateStatus(status);
+  if (changed) {
+    workspaceNavigation.refresh("models");
+    workspaceNavigation.refresh("visual");
+  } else {
+    visualPanel.updateStatus(status);
   }
 }
 
@@ -917,8 +706,8 @@ function renderVisualModelStatus(catalog: VisualModelCatalogStatus): void {
     );
   }
   appStore.dispatch({ type: "visual/catalog", catalog });
-  if (dialog.open && dialog.dataset.panel === "models") renderSettingsPanel();
-  if (dialog.open && dialog.dataset.panel === "visual") renderVisualPanel();
+  workspaceNavigation.refresh("models");
+  workspaceNavigation.refresh("visual");
 }
 
 function updatePrimaryAvailability() {
@@ -998,10 +787,10 @@ function renderModelStatus(catalog: ModelCatalogStatus) {
     modelMessage.textContent = status.message ?? "The model could not be installed.";
   } else {
     modelAction.textContent = `Download · ${formatBytes(status.totalBytes)}`;
-    modelMessage.textContent = `Download ${status.displayName} once, then ${captionAction(spokenLanguage.value)} offline.`;
+    modelMessage.textContent = `Download ${status.displayName} once, then ${captionActionCopy(spokenLanguage.value)} offline.`;
   }
   updatePrimaryAvailability();
-  if (dialog.open && dialog.dataset.panel === "models") renderSettingsPanel();
+  workspaceNavigation.refresh("models");
 }
 
 function renderTranscript(snapshot: TranscriptSnapshot) {
@@ -1009,7 +798,7 @@ function renderTranscript(snapshot: TranscriptSnapshot) {
   if (!accepted.changed && snapshot.revision < appState().transcript.revision) return;
   captionOutput.updateTranscript(snapshot);
   renderSessionPreview();
-  if (dialog.open && dialog.dataset.panel === "transcript") renderTranscriptPanel();
+  workspaceNavigation.refresh("transcript");
 }
 
 type SourceRefreshResult =
@@ -1032,202 +821,37 @@ async function refreshSources(): Promise<SourceRefreshResult> {
 async function refreshVisualSources(): Promise<VisualSourceSnapshot> {
   const next = await visualSourceSnapshot();
   appStore.dispatch({ type: "visual/sources", snapshot: next });
-  if (dialog.open && dialog.dataset.panel === "visual") renderVisualPanel();
+  workspaceNavigation.refresh("visual");
   return next;
 }
 
-function dialogContent(): HTMLElement {
-  return requireElement<HTMLElement>("#dialog-content");
-}
-
-function formatTimestamp(micros: number): string {
-  const seconds = Math.max(0, Math.floor(micros / 1_000_000));
-  const minutes = Math.floor(seconds / 60);
-  return `${String(minutes).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
-}
-
-function appendTranscriptCaption(
-  item: HTMLElement,
-  segment: TranscriptSegment
+function renderWorkspacePanel(
+  panel: WorkspacePanel,
+  content: HTMLElement,
+  context: WorkspaceRenderContext
 ): void {
-  const copy = document.createElement("span");
-  copy.className = "transcript-copy";
-  const original = document.createElement("span");
-  original.className = "transcript-text transcript-original";
-  original.lang = segment.sourceLanguage === "auto" ? "" : segment.sourceLanguage;
-  original.textContent = segment.text;
-  const mode = captionOutput.outputMode();
-  const translated = captionOutput.translationFor(segment);
-  const targetLanguage = captionOutput.translationTarget();
-  const targetLabel = languageLabel(targetLanguage);
-
-  if (mode === "original") {
-    copy.append(original);
-    item.append(copy);
-    return;
-  }
-
-  const translation = document.createElement("span");
-  translation.className = "transcript-text transcript-translation";
-  translation.lang = targetLanguage;
-  if (translated?.phase === "ready") translation.textContent = translated.text;
-
-  if (mode === "both") copy.append(original);
-  if (translated?.phase === "ready") {
-    copy.append(translation);
-  } else {
-    if (mode === "translated") {
-      original.classList.add("translation-fallback");
-      copy.append(original);
-    }
-    const note = document.createElement("span");
-    note.className = "transcript-translation-state";
-    note.textContent = translated?.phase === "failed"
-      ? `${targetLabel} unavailable · showing original`
-      : captionOutput.isTranslationPending(segment)
-        ? `Translating to ${targetLabel}…`
-        : `${targetLabel} translator is not ready`;
-    copy.append(note);
-  }
-  item.append(copy);
+  if (panel === "models") renderSettingsPanel(content);
+  else if (panel === "settings") renderGeneralSettingsPanel(content);
+  else if (panel === "visual") renderVisualPanel(content);
+  else if (panel === "appearance") renderAppearancePanel(content);
+  else renderTranscriptPanel(content, context.forceLatest);
 }
 
 function renderSessionPreview(): void {
-  sessionPreviewContent.replaceChildren();
-  const transcript = appState().transcript;
-  const segments = transcript.committed.slice(-6);
-  if (transcript.provisional) segments.push(transcript.provisional);
-  if (segments.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "session-preview-empty";
-    empty.innerHTML = `${icons.transcript}<strong>Waiting for captions</strong><span>The newest finalized and provisional text will stay visible here.</span>`;
-    sessionPreviewContent.append(empty);
-    return;
-  }
+  transcriptPanel.renderPreview(appState().transcript);
+}
 
-  const list = document.createElement("ol");
-  list.className = "session-preview-list";
-  list.setAttribute("aria-label", "Latest captions");
-  for (const segment of segments) {
-    const item = document.createElement("li");
-    item.className = `transcript-segment${segment.isFinal ? "" : " provisional"}`;
-    const timestamp = document.createElement("time");
-    timestamp.textContent = segment.isFinal ? formatTimestamp(segment.startMicros) : "Live";
-    item.append(timestamp);
-    appendTranscriptCaption(item, segment);
-    list.append(item);
-  }
-  sessionPreviewContent.append(list);
-  requestAnimationFrame(() => {
-    sessionPreviewContent.scrollTop = sessionPreviewContent.scrollHeight;
+function renderTranscriptPanel(content: HTMLElement, forceLatest = false): void {
+  transcriptPanel.render(content, appState().transcript, {
+    forceLatest,
+    followLatest: appState().transcriptFollowLatest
   });
 }
 
-function renderTranscriptPanel(forceLatest = false) {
-  const transcript = appState().transcript;
-  const content = dialogContent();
-  content.className = "";
-  const previousList = content.querySelector<HTMLOListElement>(".transcript-list");
-  const previousScrollTop = previousList?.scrollTop ?? 0;
-  const previousDistanceFromBottom = previousList
-    ? previousList.scrollHeight - previousList.clientHeight - previousList.scrollTop
-    : 0;
-  const shouldFollowLatest = forceLatest
-    || !previousList
-    || appState().transcriptFollowLatest
-    || previousDistanceFromBottom <= TRANSCRIPT_BOTTOM_THRESHOLD;
-  content.replaceChildren();
-
-  const toolbar = document.createElement("div");
-  toolbar.className = "dialog-toolbar";
-  const summary = document.createElement("span");
-  summary.className = "dialog-summary";
-  summary.textContent = `${transcript.committed.length} finalized ${transcript.committed.length === 1 ? "caption" : "captions"}`;
-  const actions = document.createElement("div");
-  actions.className = "dialog-toolbar-actions";
-  const latest = document.createElement("button");
-  latest.type = "button";
-  latest.className = "text-button";
-  latest.textContent = "Latest";
-  latest.hidden = shouldFollowLatest;
-  const clear = document.createElement("button");
-  clear.type = "button";
-  clear.className = "text-button";
-  clear.textContent = "Clear";
-  clear.disabled = transcript.committed.length === 0 && !transcript.provisional;
-  clear.addEventListener("click", async () => {
-    try {
-      await clearTranscript();
-    } catch (error) {
-      setCaptureNotice(error instanceof Error ? error.message : String(error), "error");
-    }
-  });
-  actions.append(latest, clear);
-  toolbar.append(summary, actions);
-  content.append(toolbar);
-
-  if (transcript.committed.length === 0 && !transcript.provisional) {
-    appStore.dispatch({ type: "transcript/follow-latest", follow: true });
-    const empty = document.createElement("p");
-    empty.className = "empty-copy";
-    empty.textContent = "Finalized captions from this session will appear here.";
-    content.append(empty);
-    return;
-  }
-
-  const list = document.createElement("ol");
-  list.className = "transcript-list";
-  list.setAttribute("aria-label", "Session transcript");
-  for (const segment of transcript.committed) {
-    const item = document.createElement("li");
-    item.className = "transcript-segment";
-    const timestamp = document.createElement("time");
-    timestamp.textContent = formatTimestamp(segment.startMicros);
-    item.append(timestamp);
-    appendTranscriptCaption(item, segment);
-    list.append(item);
-  }
-  if (transcript.provisional) {
-    const item = document.createElement("li");
-    item.className = "transcript-segment provisional";
-    const timestamp = document.createElement("time");
-    timestamp.textContent = "Live";
-    item.append(timestamp);
-    appendTranscriptCaption(item, transcript.provisional);
-    list.append(item);
-  }
-  content.append(list);
-
-  const updateFollowState = () => {
-    const distanceFromBottom = list.scrollHeight - list.clientHeight - list.scrollTop;
-    const follow = distanceFromBottom <= TRANSCRIPT_BOTTOM_THRESHOLD;
-    appStore.dispatch({ type: "transcript/follow-latest", follow });
-    latest.hidden = follow;
-  };
-  list.addEventListener("scroll", updateFollowState, { passive: true });
-  latest.addEventListener("click", () => {
-    appStore.dispatch({ type: "transcript/follow-latest", follow: true });
-    list.scrollTop = list.scrollHeight;
-    latest.hidden = true;
-  });
-
-  requestAnimationFrame(() => {
-    if (shouldFollowLatest) {
-      appStore.dispatch({ type: "transcript/follow-latest", follow: true });
-      list.scrollTop = list.scrollHeight;
-      latest.hidden = true;
-    } else {
-      appStore.dispatch({ type: "transcript/follow-latest", follow: false });
-      list.scrollTop = Math.min(previousScrollTop, list.scrollHeight - list.clientHeight);
-      latest.hidden = false;
-    }
-  });
-}
-
-function renderSettingsPanel() {
-  const content = dialogContent();
+function renderSettingsPanel(content: HTMLElement) {
   const activeTranslationModel = selectedTranslationModel();
-  settingsPanel.render(content, {
+  const panel = content === compactDialogContent ? compactSettingsPanel : settingsPanel;
+  panel.render(content, {
     speechCatalog: appState().speechModels,
     translationCatalog: appState().translations,
     visualCatalog: appState().visualModels,
@@ -1263,55 +887,27 @@ function renderSettingsPanel() {
   renderSettingsNotice();
 }
 
-function renderGeneralSettingsPanel(): void {
+function renderGeneralSettingsPanel(content: HTMLElement): void {
   const currentViewMode = appState().navigation.viewMode;
-  const content = dialogContent();
-  content.className = "general-settings-content";
-  content.innerHTML = `
-    <section class="general-settings-section" aria-labelledby="audio-settings-title">
-      <div>
-        <h3 id="audio-settings-title">Audio sources</h3>
-        <p>Refresh after opening or closing an audio-producing application or changing playback devices.</p>
-      </div>
-      <button id="refresh-audio-sources" class="secondary-button" type="button">${icons.refresh}<span>Refresh sources</span></button>
-      <p id="refresh-audio-result" class="settings-inline-status" role="status" aria-live="polite"></p>
-    </section>
-    <section class="general-settings-section" aria-labelledby="privacy-settings-title">
-      <div>
-        <h3 id="privacy-settings-title">Privacy</h3>
-        <p>Audio, screenshots, recognized text, captions, and translation remain local. Prollyglot does not save raw audio or captured frames.</p>
-      </div>
-      <span class="settings-value"><span class="status-dot"></span>Local processing</span>
-    </section>
-    <section class="general-settings-section" aria-labelledby="window-settings-title">
-      <div>
-        <h3 id="window-settings-title">Window layout</h3>
-        <p>Use the full workspace for setup and management, or switch to the compact utility for everyday Start and Stop controls.</p>
-      </div>
-      <button id="settings-view-mode" class="secondary-button" type="button">${currentViewMode === "full" ? icons.compact : icons.fullView}<span>${currentViewMode === "full" ? "Use compact view" : "Open full view"}</span></button>
-    </section>
-  `;
-  const refresh = requireElement<HTMLButtonElement>("#refresh-audio-sources");
-  const result = requireElement<HTMLElement>("#refresh-audio-result");
-  refresh.addEventListener("click", () => {
-    refresh.disabled = true;
-    result.textContent = "Refreshing audio sources…";
-    void refreshSources().then((next) => {
-      if (!next.ok) throw new Error(next.message);
-      result.textContent = `Found ${next.snapshot.playbackDevices.length} playback ${next.snapshot.playbackDevices.length === 1 ? "device" : "devices"} and ${next.snapshot.applications.length} ${next.snapshot.applications.length === 1 ? "application" : "applications"}.`;
-    }).catch((error) => {
-      result.textContent = error instanceof Error ? error.message : String(error);
-    }).finally(() => {
-      refresh.disabled = false;
-    });
-  });
-  requireElement<HTMLButtonElement>("#settings-view-mode").addEventListener("click", () => {
-    void changeViewMode(currentViewMode === "full" ? "compact" : "full");
+  const panel = content === compactDialogContent
+    ? compactGeneralSettingsPanel
+    : generalSettingsPanel;
+  panel.render(content, currentViewMode, {
+    refreshAudioSources: async () => {
+      const result = await refreshSources();
+      if (!result.ok) throw new Error(result.message);
+      return {
+        playbackDevices: result.snapshot.playbackDevices.length,
+        applications: result.snapshot.applications.length
+      };
+    },
+    changeViewMode
   });
 }
 
-function renderVisualPanel(): void {
-  visualPanel.render(dialogContent(), {
+function renderVisualPanel(content: HTMLElement): void {
+  const panel = content === compactDialogContent ? compactVisualPanel : visualPanel;
+  panel.render(content, {
     capabilities: appState().visualCapabilities,
     sources: appState().visualSources,
     models: appState().visualModels,
@@ -1350,15 +946,15 @@ function renderVisualPanel(): void {
       await stopCapture();
       await waitForRuntimeStopped();
     },
-    openSettings: () => openDialogPanel("models"),
+    openSettings: () => workspaceNavigation.navigate("models"),
     report: (message) => {
       void reportFrontendDiagnostic("visual-translation", message);
     }
   });
 }
 
-function renderAppearancePanel(): void {
-  appearancePanel.render(dialogContent(), {
+function renderAppearancePanel(content: HTMLElement): void {
+  appearancePanel.render(content, {
     settings: structuredClone(configuration.snapshot().config.overlay),
     onChange: (settings) => configuration.update((config) => {
       config.overlay = structuredClone(settings);
@@ -1367,13 +963,17 @@ function renderAppearancePanel(): void {
 }
 
 function renderSettingsNotice() {
-  const status = document.querySelector<HTMLElement>("#settings-action-status");
-  if (!status) return;
   const settingsNotice = appState().notices.settings;
-  status.textContent = settingsNotice?.message ?? "";
-  status.dataset.tone = settingsNotice?.tone ?? "neutral";
-  status.hidden = !settingsNotice || dialog.dataset.panel !== "models";
-  dialog.dataset.hasNotice = String(!status.hidden);
+  for (const status of document.querySelectorAll<HTMLElement>("[data-settings-action-status]")) {
+    const inCompactDialog = dialog.contains(status);
+    const relevant = !inCompactDialog || (dialog.open && dialog.dataset.panel === "models");
+    status.textContent = settingsNotice?.message ?? "";
+    status.dataset.tone = settingsNotice?.tone ?? "neutral";
+    status.hidden = !settingsNotice || !relevant;
+  }
+  dialog.dataset.hasNotice = String(
+    Boolean(settingsNotice && dialog.open && dialog.dataset.panel === "models")
+  );
 }
 
 function setSettingsNotice(message: string, tone: SettingsNoticeTone) {
@@ -1434,7 +1034,7 @@ async function updateSpokenLanguage() {
   }
 }
 
-sourceSelect.addEventListener("change", updateSourceMode);
+sourceSelect.addEventListener("change", () => captionForm.updateSourceMode());
 deviceSelect.addEventListener("change", () => {
   const deviceId = deviceSelect.value;
   void persistConfiguration((config) => {
@@ -1468,7 +1068,7 @@ translationTarget.addEventListener("change", () => {
     ? `Translation to ${languageLabel(targetLanguage)} runs locally.`
     : "Recognition stays local and captions remain in the spoken language.";
   renderCaptionOutputControl();
-  if (dialog.open && dialog.dataset.panel === "transcript") renderTranscriptPanel();
+  workspaceNavigation.refresh("transcript");
 });
 captionLanguage.addEventListener("change", () => {
   const mode = captionLanguage.value as CaptionOutputMode;
@@ -1477,7 +1077,7 @@ captionLanguage.addEventListener("change", () => {
   void persistConfiguration((config) => { config.captions.outputMode = mode; });
   captionOutput.setOutputMode(mode);
   renderCaptionOutputControl();
-  if (dialog.open && dialog.dataset.panel === "transcript") renderTranscriptPanel();
+  workspaceNavigation.refresh("transcript");
 });
 modelAction.addEventListener("click", async () => {
   setCaptureNotice(undefined);
@@ -1515,7 +1115,7 @@ captureToggle.addEventListener("click", async () => {
       if (!modelSupportsLanguage(model)) {
         throw new Error(`${model.displayName} does not support ${languageLabel(spokenLanguage.value)}.`);
       }
-      await startCapture(selectedCapture(), spokenLanguage.value);
+      await startCapture(captionForm.selectedCapture(), spokenLanguage.value);
     }
   } catch (error) {
     if (isApplicationError(error) && error.code === "startupCancelled") return;
@@ -1528,7 +1128,9 @@ captureToggle.addEventListener("click", async () => {
   }
 });
 
-visualToggle.addEventListener("click", () => openDialogPanel("visual"));
+visualToggle.addEventListener("click", () => {
+  workspaceNavigation.navigate("visual", { opener: visualToggle });
+});
 
 for (const button of document.querySelectorAll<HTMLButtonElement>("[data-appearance]")) {
   button.addEventListener("click", () => void showAppearance());
@@ -1544,106 +1146,18 @@ function reportWindowControlError(action: string, error: unknown): void {
   void reportFrontendDiagnostic("window-control", `${action}: ${message}`);
 }
 
-requireElement<HTMLElement>(".titlebar").addEventListener("mousedown", (event) => {
-  if (event.button !== 0) return;
-  const target = event.target;
-  if (target instanceof Element && target.closest("button, input, select, a")) return;
-  const operation = event.detail === 2 ? windowAction("maximize") : startWindowDrag();
-  void operation.catch((error) => reportWindowControlError(event.detail === 2 ? "maximize" : "drag", error));
+bindWindowControls({ root: appWindow, titlebar }, {
+  startDrag: startWindowDrag,
+  perform: windowAction,
+  reportError: reportWindowControlError
 });
 
-for (const button of document.querySelectorAll<HTMLButtonElement>("[data-window-action]")) {
+for (const button of document.querySelectorAll<HTMLButtonElement>("[data-destination]")) {
   button.addEventListener("click", () => {
-    const action = button.dataset.windowAction;
-    if (action === "minimize" || action === "maximize" || action === "close") {
-      void windowAction(action).catch((error) => reportWindowControlError(action, error));
-    }
+    const destination = destinationFrom(button.dataset.destination);
+    if (destination) workspaceNavigation.navigate(destination, { opener: button });
   });
 }
-
-function openDialogPanel(panel: DialogPanel): void {
-  const copy: Record<DialogPanel, { title: string; subtitle: string }> = {
-    transcript: {
-      title: "Transcript",
-      subtitle: "Follow the newest caption by default or scroll back without losing your place."
-    },
-    models: {
-      title: "Models",
-      subtitle: "Manage installed packs and choose compatible local models by language."
-    },
-    settings: {
-      title: "Settings",
-      subtitle: "Application, source, and privacy controls."
-    },
-    visual: {
-      title: "Screen translation",
-      subtitle: "Continuously recognize and translate text in a window, display, or selected region."
-    },
-    appearance: {
-      title: "Appearance",
-      subtitle: "Customize readable captions and preview changes as you make them."
-    }
-  };
-  dialog.dataset.panel = panel;
-  requireElement<HTMLElement>("#dialog-title").textContent = copy[panel].title;
-  requireElement<HTMLElement>("#dialog-subtitle").textContent = copy[panel].subtitle;
-  if (panel === "models") {
-    appStore.dispatch({ type: "notice/settings", notice: undefined });
-    settingsPanel.resetView();
-  } else {
-    renderSettingsNotice();
-  }
-  if (!dialog.open) {
-    if (appState().navigation.viewMode === "full") dialog.show();
-    else dialog.showModal();
-  }
-  captionWorkspace.inert = true;
-  captionWorkspace.setAttribute("aria-hidden", "true");
-  setActiveNavigation(panel);
-  if (panel === "models") renderSettingsPanel();
-  else if (panel === "settings") renderGeneralSettingsPanel();
-  else if (panel === "visual") renderVisualPanel();
-  else if (panel === "appearance") renderAppearancePanel();
-  else renderTranscriptPanel(true);
-}
-
-function setActiveNavigation(destination: DialogPanel | "captions"): void {
-  appStore.dispatch({ type: "navigation/destination", destination });
-  for (const button of document.querySelectorAll<HTMLButtonElement>(".desktop-nav-action")) {
-    const selected = destination === "captions"
-      ? button.dataset.workspace === "captions"
-      : button.dataset.panel === destination;
-    button.classList.toggle("is-active", selected);
-    if (selected) button.setAttribute("aria-current", "page");
-    else button.removeAttribute("aria-current");
-  }
-}
-
-for (const button of document.querySelectorAll<HTMLButtonElement>("[data-panel]")) {
-  button.addEventListener("click", () => {
-    const panel = button.dataset.panel;
-    if (panel === "transcript" || panel === "models" || panel === "settings" || panel === "visual" || panel === "appearance") {
-      openDialogPanel(panel);
-    }
-  });
-}
-
-for (const button of document.querySelectorAll<HTMLButtonElement>("[data-workspace='captions']")) {
-  button.addEventListener("click", () => {
-    if (dialog.open) dialog.close();
-    setActiveNavigation("captions");
-  });
-}
-
-requireElement<HTMLButtonElement>(".dialog-close").addEventListener("click", () => dialog.close());
-dialog.addEventListener("click", (event) => {
-  if (appState().navigation.viewMode === "compact" && event.target === dialog) dialog.close();
-});
-dialog.addEventListener("close", () => {
-  captionWorkspace.inert = false;
-  captionWorkspace.removeAttribute("aria-hidden");
-  setActiveNavigation("captions");
-});
 
 translationService.subscribe(renderTranslationStatus);
 translationService.subscribeTelemetry((telemetry) => {
@@ -1669,34 +1183,6 @@ populateTranslationTargets();
 renderLanguageGuidance();
 renderCaptionOutputControl();
 
-async function initializeSessionRuntime(): Promise<void> {
-  let bootstrapping = true;
-  let newestEvent: RuntimeSnapshot | undefined;
-  await onRuntimeState((next) => {
-    if (bootstrapping) {
-      if (!newestEvent || next.revision > newestEvent.revision) newestEvent = next;
-      return;
-    }
-    applyRuntimeSnapshot(next);
-  });
-  await Promise.all([
-    onCaptureStatus(renderStatus),
-    onVisualStatus(renderVisualStatus)
-  ]);
-  const [bootstrap, audioStatus, screenStatus] = await Promise.all([
-    runtimeBootstrap(),
-    captureStatus(),
-    visualStatus()
-  ]);
-  renderStatus(audioStatus);
-  renderVisualStatus(screenStatus);
-  bootstrapping = false;
-  const newest = newestEvent && newestEvent.revision > bootstrap.snapshot.revision
-    ? newestEvent
-    : bootstrap.snapshot;
-  applyRuntimeSnapshot(newest);
-}
-
 function acceptsVisualSessionEvent(
   sessionId: number,
   runtimeRevision: number,
@@ -1714,7 +1200,7 @@ void Promise.all([
   refreshSources(),
   visualCapabilities().then((capabilities) => {
     appStore.dispatch({ type: "visual/capabilities", capabilities });
-    if (dialog.open && dialog.dataset.panel === "visual") renderVisualPanel();
+    workspaceNavigation.refresh("visual");
   }),
   refreshVisualSources().catch((error) => {
     const capabilities = {
@@ -1723,7 +1209,11 @@ void Promise.all([
     };
     appStore.dispatch({ type: "visual/capabilities", capabilities });
   }),
-  initializeSessionRuntime(),
+  initializeRuntimeBootstrap(desktopBridge, {
+    applyRuntime: applyRuntimeSnapshot,
+    renderCapture: renderStatus,
+    renderVisual: renderVisualStatus
+  }),
   modelStatus().then(renderModelStatus),
   visualModelStatus().then(renderVisualModelStatus),
   translationService.initialize().then(renderTranslationStatus).catch((error) => {

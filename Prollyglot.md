@@ -289,8 +289,10 @@ corrupt-revision recovery, and generated TypeScript contracts. Existing WebView
 values and selected-model files migrate only through verified write/readback;
 accepted revisions are broadcast to every WebView, rapid changes coalesce, and
 stale frontend writes rebase without erasing a newer native model selection.
-The persistent full-workspace page cutover and feature/style extraction remain
-the next application-integrity work.
+The full workspace now uses persistent destination pages backed by focused
+feature controllers, while compact mode retains contained utilities. The
+stylesheet is separated into design-token, shell, feature, utility-window, and
+overlay layers so those surfaces no longer depend on one monolithic rule file.
 
 ---
 
