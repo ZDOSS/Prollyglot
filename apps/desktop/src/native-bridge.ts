@@ -10,10 +10,12 @@ import type {
   CaptionPresentationFrame,
   CaptureStatus,
   ConfigurationSnapshot,
+  InferenceResourceSnapshot,
   ModelCatalogStatus,
   PixelRect,
   RuntimeBootstrap,
   RuntimeStateEvent,
+  ReportInferenceResourceCommand,
   ShowVisualRegionSelectorCommand,
   SourceSnapshot,
   StartCaptureCommand,
@@ -70,6 +72,12 @@ export function createNativeBridge(): DesktopBridge {
       RUNTIME_EVENTS.state,
       ({ payload }) => callback(payload.snapshot)
     ),
+
+    inferenceResourceStatus: () => invoke<InferenceResourceSnapshot>(
+      RUNTIME_COMMANDS.inferenceResourceStatus
+    ),
+    reportInferenceResource: (command: ReportInferenceResourceCommand) =>
+      invoke<InferenceResourceSnapshot>(RUNTIME_COMMANDS.reportInferenceResource, { command }),
 
     modelStatus: () => invoke<ModelCatalogStatus>("model_status"),
     selectSpeechModel: async (modelId) => {

@@ -6,9 +6,11 @@ use crate::{
     CaptionPreferences, CaptionPresentationEntry, CaptionPresentationFrame,
     CaptionPresentationPhase, CaptureSelection, CaptureState, CaptureStatus,
     CompleteVisualRegionSelectionCommand, ConfigurationSnapshot, ErrorRecoverability,
-    ModelPreferences, OverlayPosition, OverlaySettings, PixelRect, PlaybackDevice, RecoveryAction,
-    RuntimeBootstrap, RuntimeHealth, RuntimeSnapshot, RuntimeStateEvent, SessionHealthLevel,
-    SessionId, SessionLifecycle, SessionMode, SessionProgress, SessionSource, SessionSourceKind,
+    InferenceResourceKind, InferenceResourcePhase, InferenceResourceSnapshot,
+    InferenceResourceStatus, ModelPreferences, OverlayPosition, OverlaySettings, PixelRect,
+    PlaybackDevice, RecoveryAction, ReportInferenceResourceCommand, RuntimeBootstrap,
+    RuntimeHealth, RuntimeSnapshot, RuntimeStateEvent, SessionHealthLevel, SessionId,
+    SessionLifecycle, SessionMode, SessionProgress, SessionSource, SessionSourceKind,
     ShowVisualRegionSelectorCommand, SourceSnapshot, StableVisualTextRegion, StartCaptureCommand,
     StartSessionRequest, StartVisualTranslationCommand, UpdateCaptionPresentationCommand,
     UpdateConfigurationCommand, UpdateVisualPresentationCommand, ViewMode,
@@ -39,7 +41,8 @@ pub fn typescript_bindings() -> String {
             "visualStatus: {:?}, showVisualRegionSelector: {:?}, ",
             "completeVisualRegionSelection: {:?}, cancelVisualRegionSelection: {:?}, ",
             "startVisualTranslation: {:?}, stopVisualTranslation: {:?}, ",
-            "updateCaptionPresentation: {:?}, updateVisualPresentation: {:?} ",
+            "updateCaptionPresentation: {:?}, updateVisualPresentation: {:?}, ",
+            "inferenceResourceStatus: {:?}, reportInferenceResource: {:?} ",
             "}} as const;\n"
         ),
         ipc::CONFIGURATION_SNAPSHOT_COMMAND,
@@ -59,6 +62,8 @@ pub fn typescript_bindings() -> String {
         ipc::STOP_VISUAL_TRANSLATION_COMMAND,
         ipc::UPDATE_CAPTION_PRESENTATION_COMMAND,
         ipc::UPDATE_VISUAL_PRESENTATION_COMMAND,
+        ipc::INFERENCE_RESOURCE_STATUS_COMMAND,
+        ipc::REPORT_INFERENCE_RESOURCE_COMMAND,
     ));
     output.push_str(&format!(
         concat!(
@@ -145,6 +150,11 @@ pub fn typescript_bindings() -> String {
     push_declaration::<RuntimeSnapshot>(&config, &mut output);
     push_declaration::<RuntimeBootstrap>(&config, &mut output);
     push_declaration::<RuntimeStateEvent>(&config, &mut output);
+    push_declaration::<InferenceResourceKind>(&config, &mut output);
+    push_declaration::<InferenceResourcePhase>(&config, &mut output);
+    push_declaration::<ReportInferenceResourceCommand>(&config, &mut output);
+    push_declaration::<InferenceResourceStatus>(&config, &mut output);
+    push_declaration::<InferenceResourceSnapshot>(&config, &mut output);
     while output.ends_with("\n\n") {
         output.pop();
     }

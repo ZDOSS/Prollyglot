@@ -24,6 +24,7 @@ prollyglot-audio-windows = { path = "../../../crates/audio-windows" }
 prollyglot-config = { path = "../../../crates/config" }
 prollyglot-core = { path = "../../../crates/prollyglot-core" }
 prollyglot-model-manager = { path = "../../../crates/model-manager" }
+prollyglot-resource-coordinator = { path = "../../../crates/resource-coordinator" }
 prollyglot-transcript = { path = "../../../crates/transcript" }
 prollyglot-visual-ocr-rapid = { path = "../../../crates/visual-ocr-rapid" }
 prollyglot-visual-pipeline = { path = "../../../crates/visual-pipeline" }
@@ -33,3 +34,9 @@ tauri.workspace = true
 tracing.workspace = true
 tracing-appender.workspace = true
 tracing-subscriber.workspace = true
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { workspace = true, features = [
+    "Win32_System_ProcessStatus",
+    "Win32_System_Threading",
+] }

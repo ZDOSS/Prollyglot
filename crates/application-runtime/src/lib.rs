@@ -14,16 +14,17 @@ pub use contracts::{
     APPLICATION_RUNTIME_CONTRACT_VERSION, ApplicationError, ApplicationErrorCode,
     ApplicationSource, CaptionOutputMode, CaptionPresentationEntry, CaptionPresentationFrame,
     CaptionPresentationPhase, CaptureSelection, CaptureState, CaptureStatus,
-    CompleteVisualRegionSelectionCommand, ErrorRecoverability, PixelRect, PlaybackDevice,
-    RecoveryAction, RuntimeBootstrap, RuntimeHealth, RuntimeSnapshot, RuntimeStateEvent,
-    SessionHealthLevel, SessionId, SessionLifecycle, SessionMode, SessionProgress, SessionSource,
-    SessionSourceKind, ShowVisualRegionSelectorCommand, SourceSnapshot, StableVisualTextRegion,
-    StartCaptureCommand, StartSessionRequest, StartVisualTranslationCommand,
-    UpdateCaptionPresentationCommand, UpdateVisualPresentationCommand, VisualCaptureCapabilities,
-    VisualCaptureGeometry, VisualCaptureSelection, VisualDetectionMode, VisualPresentationFrame,
-    VisualPresentationRegion, VisualRect, VisualRegionSelected, VisualRegionSelectorRequest,
-    VisualSource, VisualSourceKind, VisualSourceSnapshot, VisualState, VisualStatus,
-    VisualTextClear, VisualTextUpdate,
+    CompleteVisualRegionSelectionCommand, ErrorRecoverability, InferenceResourceKind,
+    InferenceResourcePhase, InferenceResourceSnapshot, InferenceResourceStatus, PixelRect,
+    PlaybackDevice, RecoveryAction, ReportInferenceResourceCommand, RuntimeBootstrap,
+    RuntimeHealth, RuntimeSnapshot, RuntimeStateEvent, SessionHealthLevel, SessionId,
+    SessionLifecycle, SessionMode, SessionProgress, SessionSource, SessionSourceKind,
+    ShowVisualRegionSelectorCommand, SourceSnapshot, StableVisualTextRegion, StartCaptureCommand,
+    StartSessionRequest, StartVisualTranslationCommand, UpdateCaptionPresentationCommand,
+    UpdateVisualPresentationCommand, VisualCaptureCapabilities, VisualCaptureGeometry,
+    VisualCaptureSelection, VisualDetectionMode, VisualPresentationFrame, VisualPresentationRegion,
+    VisualRect, VisualRegionSelected, VisualRegionSelectorRequest, VisualSource, VisualSourceKind,
+    VisualSourceSnapshot, VisualState, VisualStatus, VisualTextClear, VisualTextUpdate,
 };
 pub use prollyglot_config::{
     ApplicationConfiguration, AudioSourcePreference, BilingualLayout, CONFIGURATION_SCHEMA_VERSION,
@@ -55,6 +56,8 @@ pub mod ipc {
     pub const STOP_VISUAL_TRANSLATION_COMMAND: &str = "stop_visual_translation";
     pub const UPDATE_CAPTION_PRESENTATION_COMMAND: &str = "update_caption_presentation";
     pub const UPDATE_VISUAL_PRESENTATION_COMMAND: &str = "update_visual_presentation";
+    pub const INFERENCE_RESOURCE_STATUS_COMMAND: &str = "inference_resource_status";
+    pub const REPORT_INFERENCE_RESOURCE_COMMAND: &str = "report_inference_resource";
 
     pub const STATE_EVENT: &str = "runtime-state";
     pub const CAPTURE_STATUS_EVENT: &str = "capture-status";

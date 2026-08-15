@@ -2891,7 +2891,7 @@ dependencies = [
 
 [[package]]
 name = "prollyglot-application-runtime"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "prollyglot-config",
  "serde",
@@ -2901,7 +2901,7 @@ dependencies = [
 
 [[package]]
 name = "prollyglot-asr"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "serde",
  "serde_json",
@@ -2910,7 +2910,7 @@ dependencies = [
 
 [[package]]
 name = "prollyglot-asr-sherpa"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "prollyglot-asr",
  "prollyglot-audio-pipeline",
@@ -2921,7 +2921,7 @@ dependencies = [
 
 [[package]]
 name = "prollyglot-audio-pipeline"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "prollyglot-core",
  "rubato",
@@ -2930,7 +2930,7 @@ dependencies = [
 
 [[package]]
 name = "prollyglot-audio-windows"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "crossbeam-channel",
  "prollyglot-audio-pipeline",
@@ -2942,7 +2942,7 @@ dependencies = [
 
 [[package]]
 name = "prollyglot-config"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "serde",
  "serde_json",
@@ -2953,7 +2953,7 @@ dependencies = [
 
 [[package]]
 name = "prollyglot-core"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "crossbeam-channel",
  "serde",
@@ -2963,7 +2963,7 @@ dependencies = [
 
 [[package]]
 name = "prollyglot-desktop"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "crossbeam-channel",
  "parking_lot",
@@ -2975,6 +2975,7 @@ dependencies = [
  "prollyglot-config",
  "prollyglot-core",
  "prollyglot-model-manager",
+ "prollyglot-resource-coordinator",
  "prollyglot-transcript",
  "prollyglot-visual-ocr-rapid",
  "prollyglot-visual-pipeline",
@@ -2985,11 +2986,12 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
+ "windows 0.62.2",
 ]
 
 [[package]]
 name = "prollyglot-model-manager"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "prollyglot-asr",
  "serde",
@@ -3001,8 +3003,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "prollyglot-resource-coordinator"
+version = "0.1.12"
+dependencies = [
+ "parking_lot",
+ "prollyglot-application-runtime",
+ "thiserror 2.0.20",
+ "tracing",
+]
+
+[[package]]
 name = "prollyglot-transcript"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "prollyglot-asr",
  "serde",
@@ -3010,7 +3022,7 @@ dependencies = [
 
 [[package]]
 name = "prollyglot-visual-ocr-rapid"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "image",
  "prollyglot-visual-pipeline",
@@ -3019,7 +3031,7 @@ dependencies = [
 
 [[package]]
 name = "prollyglot-visual-pipeline"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "crossbeam-channel",
  "serde",
@@ -3028,7 +3040,7 @@ dependencies = [
 
 [[package]]
 name = "prollyglot-visual-windows"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "crossbeam-channel",
  "prollyglot-visual-pipeline",

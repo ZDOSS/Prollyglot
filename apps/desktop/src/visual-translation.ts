@@ -64,12 +64,18 @@ export class VisualTranslationController {
   setPresentationEpoch(epoch: VisualPresentationEpoch | undefined): void {
     if (!epoch) {
       this.presentationEpoch = undefined;
+      this.closeSession("The visual presentation session stopped.");
       return;
     }
     if (this.presentationEpoch?.sessionId !== epoch.sessionId) {
+      this.closeSession("A newer visual presentation session started.");
       this.presentationRevision = 0;
     }
     this.presentationEpoch = { ...epoch };
+    if (!this.session) {
+      this.openSession();
+      this.scheduleTranslations(epoch.runtimeRevision);
+    }
     this.render();
   }
 
@@ -97,7 +103,6 @@ export class VisualTranslationController {
     this.scanning = true;
     this.sourceWidth = 1;
     this.sourceHeight = 1;
-    this.openSession();
     this.render();
   }
 
@@ -139,7 +144,7 @@ export class VisualTranslationController {
       this.closeSession("Visual translation stopped.");
     } else if (scanning) {
       this.closeSession("The visual source revision changed.");
-      this.openSession();
+      if (this.presentationEpoch) this.openSession();
     }
     this.render();
   }
@@ -358,6 +363,7 @@ export class VisualTranslationController {
   }
 
   private openSession(): void {
+    if (!this.presentationEpoch) return;
     const generation = this.generation;
     const session = this.translation.openSession("visual");
     this.session = session;

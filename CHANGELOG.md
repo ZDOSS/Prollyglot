@@ -5,6 +5,31 @@ Versioning while it is in the `0.x` pre-release line.
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-08-14
+
+### Added
+
+- A session-scoped native inference-resource coordinator for speech, visual OCR,
+  and WebView translation runtimes, including cold-start and process resident
+  memory diagnostics.
+- Generated resource ownership/status commands and deterministic native and
+  frontend tests for overlap, forced cleanup, stale unloads, and report ordering.
+
+### Changed
+
+- Bind every heavyweight inference load to the active supervised audio or
+  visual session and force-release any remaining ownership when that session
+  reaches its terminal cleanup boundary.
+- Serialize translation worker load/unload reports across the native bridge so
+  a delayed event cannot evict a newer session's model.
+- Include resource-coordinator tests in both local validation scripts.
+
+### Fixed
+
+- Stop preloading a translation model while captions are inactive.
+- Delay visual translator preparation until its native visual session exists,
+  and unload it automatically when that presentation session ends.
+
 ## [0.1.11] - 2026-08-14
 
 ### Added

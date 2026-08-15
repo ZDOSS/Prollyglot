@@ -22,6 +22,7 @@ import {
 } from "./app-store";
 import { errorMessage, isApplicationError } from "./errors";
 import { GeneralSettingsPanel } from "./general-settings-panel";
+import { InferenceResourceReporter } from "./inference-resource-reporter";
 import { icons } from "./icons";
 import {
   languageLabel,
@@ -70,6 +71,7 @@ const {
   onVisualTextClear,
   onVisualTextUpdate,
   pickVisualRegion,
+  reportInferenceResource,
   reportFrontendDiagnostic,
   removeSpeechModel,
   removeVisualModel,
@@ -154,6 +156,11 @@ const appStore = new AppStore(createInitialAppState({
   translations: translationService.snapshot()
 }));
 const appState = () => appStore.getState();
+const inferenceResources = new InferenceResourceReporter(
+  reportInferenceResource,
+  () => appState().runtime.snapshot,
+  (message) => void reportFrontendDiagnostic("inference-resource", message)
+);
 const settingsPanel = new SettingsPanel("workspace-models");
 const compactSettingsPanel = new SettingsPanel("compact-models");
 const generalSettingsPanel = new GeneralSettingsPanel("workspace-settings");
@@ -354,6 +361,7 @@ function renderCaptionOutputControl(): void {
 }
 
 function prepareSelectedTranslator(): void {
+  if (!audioActive()) return;
   const sourceLanguage = supportedSourceLanguage(spokenLanguage.value);
   const targetLanguage = supportedTranslationLanguage(translationTarget.value);
   const model = selectedTranslationModel();
@@ -528,6 +536,7 @@ function applyRuntimeSnapshot(next: RuntimeSnapshot): void {
       sourceLabel,
       message
     });
+    if (presentationActive) prepareSelectedTranslator();
     const visualStatus = appState().visualStatus;
     if (visualStatus.active
       || visualStatus.state === "starting"
@@ -1161,6 +1170,7 @@ for (const button of document.querySelectorAll<HTMLButtonElement>("[data-destina
 
 translationService.subscribe(renderTranslationStatus);
 translationService.subscribeTelemetry((telemetry) => {
+  inferenceResources.acceptTranslationTelemetry(telemetry);
   const timing = telemetry.inferenceMs === undefined
     ? ""
     : ` inference=${telemetry.inferenceMs}ms queue=${telemetry.queueWaitMs ?? 0}ms`;

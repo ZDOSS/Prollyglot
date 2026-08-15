@@ -26,6 +26,7 @@ use prollyglot_model_manager::{
     DEFAULT_VISUAL_OCR_MODEL_ID, DownloadProgress, ModelInstallState, ModelManager, ModelManifest,
     visual_ocr_manifest, visual_ocr_manifest_by_id,
 };
+use prollyglot_resource_coordinator::InferenceResourceLease;
 use prollyglot_visual_ocr_rapid::{RapidOcrCancellation, RapidOcrEngine, RecognitionProfile};
 use prollyglot_visual_pipeline::{
     FrameGate, FrameGateConfig, OcrEngine, OcrError, OcrObservation, StabilizerUpdate,
@@ -160,6 +161,7 @@ impl ActiveVisualResources {
 struct EchoFilteringEngine {
     inner: RapidOcrEngine,
     overlay_echoes: Arc<Mutex<Vec<String>>>,
+    _resource: InferenceResourceLease,
 }
 
 impl OcrEngine for EchoFilteringEngine {
@@ -715,6 +717,7 @@ pub async fn start_visual_translation(
         Arc::clone(&state.visual.status),
         Arc::clone(&state.visual.overlay_output),
         Arc::clone(&state.visual.overlay_echoes),
+        state.resources.clone(),
         started.session_id,
     )
     .inspect_err(|error| {
@@ -819,6 +822,20 @@ pub async fn start_visual_translation(
         finish_reporter(&mut startup_reporter, WorkerOutcome::Cancelled);
         return Err(startup_cancelled(started.session_id));
     }
+    let ocr_resource = match state.resources.acquire(
+        started.session_id,
+        SessionMode::VisualTranslation,
+        prollyglot_application_runtime::InferenceResourceKind::VisualOcr,
+        DEFAULT_VISUAL_OCR_MODEL_ID,
+        load_started.elapsed().as_millis() as u64,
+    ) {
+        Ok(resource) => resource,
+        Err(error) => {
+            ocr_cancellation.cancel();
+            finish_reporter(&mut startup_reporter, WorkerOutcome::Failed(error.clone()));
+            return Err(error);
+        }
+    };
 
     if let Ok(snapshot) = state.supervisor.lock().update_start_progress(
         started.session_id,
@@ -941,6 +958,7 @@ pub async fn start_visual_translation(
             engine: EchoFilteringEngine {
                 inner: engine,
                 overlay_echoes: Arc::clone(&state.visual.overlay_echoes),
+                _resource: ocr_resource,
             },
             detection_mode,
         },
@@ -1891,6 +1909,7 @@ fn spawn_session_monitor(
     status: SharedVisualStatus,
     overlay_output: Arc<Mutex<VisualPresentationFrame>>,
     overlay_echoes: Arc<Mutex<Vec<String>>>,
+    inference_resources: crate::resources::ResourceRuntime,
     session_id: SessionId,
 ) -> Result<(), ApplicationError> {
     thread::Builder::new()
@@ -1908,6 +1927,7 @@ fn spawn_session_monitor(
                     (supervisor.snapshot(), supervisor.has_active_session())
                 };
                 if !active || snapshot.session_id != Some(session_id) {
+                    inference_resources.release_session(session_id);
                     break;
                 }
                 if snapshot.lifecycle == SessionLifecycle::Stopping {

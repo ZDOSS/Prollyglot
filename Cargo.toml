@@ -11,6 +11,7 @@ members = [
     "crates/config",
     "crates/model-manager",
     "crates/prollyglot-core",
+    "crates/resource-coordinator",
     "crates/transcript",
     "crates/visual-pipeline",
     "crates/visual-ocr-rapid",
@@ -18,7 +19,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.11"
+version = "0.1.12"
 edition = "2024"
 rust-version = "1.88"
 license = "MIT"

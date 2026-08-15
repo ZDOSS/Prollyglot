@@ -1,0 +1,13 @@
+[package]
+name = "prollyglot-resource-coordinator"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+parking_lot.workspace = true
+prollyglot-application-runtime = { path = "../application-runtime" }
+thiserror.workspace = true
+tracing.workspace = true

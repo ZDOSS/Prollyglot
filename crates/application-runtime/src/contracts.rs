@@ -816,6 +816,62 @@ pub struct RuntimeStateEvent {
     pub snapshot: RuntimeSnapshot,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub enum InferenceResourceKind {
+    Speech,
+    VisualOcr,
+    Translation,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub enum InferenceResourcePhase {
+    Loaded,
+    Unloaded,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct ReportInferenceResourceCommand {
+    pub session_id: SessionId,
+    pub mode: SessionMode,
+    pub owner_id: String,
+    pub kind: InferenceResourceKind,
+    pub phase: InferenceResourcePhase,
+    pub model_id: Option<String>,
+    #[ts(type = "number")]
+    pub cold_start_millis: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct InferenceResourceStatus {
+    pub session_id: SessionId,
+    pub mode: SessionMode,
+    pub kind: InferenceResourceKind,
+    pub model_id: String,
+    #[ts(type = "number")]
+    pub cold_start_millis: u64,
+    #[ts(type = "number | null")]
+    pub resident_bytes_at_load: Option<u64>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct InferenceResourceSnapshot {
+    #[ts(type = "number")]
+    pub revision: u64,
+    #[ts(type = "number | null")]
+    pub process_resident_bytes: Option<u64>,
+    pub resources: Vec<InferenceResourceStatus>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1089,5 +1145,39 @@ mod tests {
         };
         let output_json = assert_json_round_trip(&output);
         assert_eq!(output_json["frame"]["regions"][0]["translation"], "News");
+    }
+
+    #[test]
+    fn inference_resource_contracts_keep_session_ownership_and_diagnostics() {
+        let command = ReportInferenceResourceCommand {
+            session_id: SessionId(13),
+            mode: SessionMode::AudioCaptions,
+            owner_id: "captions:4".into(),
+            kind: InferenceResourceKind::Translation,
+            phase: InferenceResourcePhase::Loaded,
+            model_id: Some("opus-ja-en".into()),
+            cold_start_millis: 842,
+        };
+        let command_json = assert_json_round_trip(&command);
+        assert_eq!(command_json["sessionId"], 13);
+        assert_eq!(command_json["mode"], "audioCaptions");
+        assert_eq!(command_json["ownerId"], "captions:4");
+        assert_eq!(command_json["coldStartMillis"], 842);
+
+        let snapshot = InferenceResourceSnapshot {
+            revision: 5,
+            process_resident_bytes: Some(512 * 1_024 * 1_024),
+            resources: vec![InferenceResourceStatus {
+                session_id: SessionId(13),
+                mode: SessionMode::AudioCaptions,
+                kind: InferenceResourceKind::Translation,
+                model_id: "opus-ja-en".into(),
+                cold_start_millis: 842,
+                resident_bytes_at_load: Some(480 * 1_024 * 1_024),
+            }],
+        };
+        let snapshot_json = assert_json_round_trip(&snapshot);
+        assert_eq!(snapshot_json["resources"][0]["kind"], "translation");
+        assert_eq!(snapshot_json["processResidentBytes"], 512 * 1_024 * 1_024);
     }
 }

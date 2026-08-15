@@ -494,6 +494,20 @@ also discovers Microsoft `rc.exe` and now checks the complete Tauri Windows
 library instead of skipping it. Native owner smoke remains the acceptance proof
 for exit/restart behavior.
 
+Pre-release 0.1.12 adds the S4 inference-resource boundary. One Tauri-free
+coordinator records the speech, visual OCR, and WebView translation runtime
+owned by the current supervised session, rejects cross-session or cross-mode
+overlap, and releases ownership on worker drop or terminal session cleanup.
+Translation load/unload reports retain both native and disposable-worker
+identity so a stale unload cannot evict a replacement. The app no longer
+preloads translation while stopped, and visual translation waits for a native
+session before preparing its translator. Privacy-safe diagnostics now include
+model identity, cold-start time, and process resident memory without media text.
+The coordinator, generated contracts, report ordering, idle-load prevention,
+frontend build, and complete Tauri Windows library target pass locally. The
+native Windows lifecycle soak and repository maintainership documents remain
+before S4 can be called complete.
+
 ### Acceptance boundary
 
 - Device and application capture still pass their existing Windows smokes through

@@ -14,6 +14,7 @@ try {
         -p prollyglot-asr-sherpa `
         -p prollyglot-transcript `
         -p prollyglot-model-manager `
+        -p prollyglot-resource-coordinator `
         -p prollyglot-visual-pipeline `
         -p prollyglot-visual-ocr-rapid `
         -p prollyglot-visual-windows `

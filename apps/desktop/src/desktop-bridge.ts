@@ -4,10 +4,12 @@ import type {
   ConfigurationSnapshot,
   CaptureSelection,
   CaptureStatus,
+  InferenceResourceSnapshot,
   ModelCatalogStatus,
   PixelRect,
   RuntimeBootstrap,
   RuntimeSnapshot,
+  ReportInferenceResourceCommand,
   SourceSnapshot,
   TranscriptSnapshot,
   TranslationStorageCatalog,
@@ -52,6 +54,11 @@ export interface DesktopBridge {
 
   runtimeBootstrap(): Promise<RuntimeBootstrap>;
   onRuntimeState(callback: (snapshot: RuntimeSnapshot) => void): Promise<Unsubscribe>;
+
+  inferenceResourceStatus(): Promise<InferenceResourceSnapshot>;
+  reportInferenceResource(
+    command: ReportInferenceResourceCommand
+  ): Promise<InferenceResourceSnapshot>;
 
   modelStatus(): Promise<ModelCatalogStatus>;
   selectSpeechModel(modelId: string): Promise<void>;

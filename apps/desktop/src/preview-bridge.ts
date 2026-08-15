@@ -224,6 +224,17 @@ export function createPreviewBridge(): PreviewDesktopBridge {
       return () => runtimeListeners.delete(callback);
     },
 
+    inferenceResourceStatus: async () => ({
+      revision: 0,
+      processResidentBytes: null,
+      resources: []
+    }),
+    reportInferenceResource: async () => ({
+      revision: 0,
+      processResidentBytes: null,
+      resources: []
+    }),
+
     modelStatus: async () => structuredClone(speechCatalog),
     selectSpeechModel: async (modelId) => {
       requiredSpeechModel(modelId);

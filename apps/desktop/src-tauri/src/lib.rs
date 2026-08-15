@@ -2,6 +2,7 @@ mod audio;
 mod configuration;
 mod models;
 mod presentation;
+mod resources;
 mod runtime;
 mod transcription;
 mod translation;
@@ -27,6 +28,7 @@ struct RuntimeState {
     audio: audio::AudioRuntime,
     transcript: Arc<Mutex<TranscriptStore>>,
     caption_presentation: presentation::CaptionPresentationRuntime,
+    resources: resources::ResourceRuntime,
     configuration: configuration::ConfigurationRuntime,
     model: models::ModelRuntime,
     translation: translation::TranslationRuntime,
@@ -299,6 +301,8 @@ pub fn run() {
             models::install_speech_model,
             models::remove_speech_model,
             presentation::update_caption_presentation,
+            resources::inference_resource_status,
+            resources::report_inference_resource,
             translation::translation_model_status,
             translation::install_translation_model,
             translation::remove_translation_model,

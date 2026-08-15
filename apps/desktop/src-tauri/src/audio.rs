@@ -235,6 +235,7 @@ pub async fn start_capture(
         Arc::clone(&state.audio.resources),
         Arc::clone(&state.audio.status),
         state.caption_presentation.clone(),
+        state.resources.clone(),
         started.session_id,
     )
     .inspect_err(|error| {
@@ -325,6 +326,19 @@ pub async fn start_capture(
         finish_reporter(&mut startup_reporter, WorkerOutcome::Cancelled);
         return Err(startup_cancelled(started.session_id));
     }
+    let speech_resource = match state.resources.acquire(
+        started.session_id,
+        SessionMode::AudioCaptions,
+        prollyglot_application_runtime::InferenceResourceKind::Speech,
+        model_id.clone(),
+        model_load_started.elapsed().as_millis() as u64,
+    ) {
+        Ok(resource) => resource,
+        Err(error) => {
+            finish_reporter(&mut startup_reporter, WorkerOutcome::Failed(error.clone()));
+            return Err(error);
+        }
+    };
 
     if let Ok(snapshot) = state.supervisor.lock().update_start_progress(
         started.session_id,
@@ -367,6 +381,7 @@ pub async fn start_capture(
     let transcription_worker = match thread::Builder::new()
         .name("streaming-transcription".into())
         .spawn(move || {
+            let _speech_resource = speech_resource;
             let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 crate::transcription::run(
                     app_for_transcription,
@@ -830,6 +845,7 @@ fn spawn_session_monitor(
     resources: Arc<Mutex<Option<ActiveAudioResources>>>,
     status: SharedAudioStatus,
     caption_presentation: crate::presentation::CaptionPresentationRuntime,
+    inference_resources: crate::resources::ResourceRuntime,
     session_id: SessionId,
 ) -> Result<(), ApplicationError> {
     thread::Builder::new()
@@ -847,6 +863,7 @@ fn spawn_session_monitor(
                     (supervisor.snapshot(), supervisor.has_active_session())
                 };
                 if !active || snapshot.session_id != Some(session_id) {
+                    inference_resources.release_session(session_id);
                     break;
                 }
                 if snapshot.lifecycle == SessionLifecycle::Stopping {

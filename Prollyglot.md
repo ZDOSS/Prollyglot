@@ -699,6 +699,18 @@ models may need one background full pass after this mechanism changes. This is
 separate from loading the selected model into the inference runtime when the
 user starts captions, which can remain noticeably slower for a large model.
 
+The current pre-release uses one session-scoped inference-resource coordinator
+for the three active runtime stacks: sherpa-onnx speech recognition, native ONNX
+Runtime visual OCR, and WebAssembly ONNX Runtime translation. Each loaded
+runtime belongs to the active supervised audio or visual session. Cross-session
+or cross-mode overlap is rejected, worker/session cleanup releases inactive
+ownership, and changing installed inventory never loads a model by itself.
+Translation is prepared only after its native caption or visual session exists;
+changing output choices while stopped must not retain a translator in memory.
+Privacy-safe diagnostics record model identity, cold-start duration, and process
+resident memory at load/unload boundaries without recording audio, transcript,
+OCR, or translated text.
+
 ---
 
 # 16. Multilingual engines
