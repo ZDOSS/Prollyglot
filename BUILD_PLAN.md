@@ -473,6 +473,17 @@ from the shared contract. The resource coordinator initially observes existing
 loads before it enforces ownership, allowing measurements to expose false
 assumptions without interrupting sessions.
 
+### Progress — 2026-08-14
+
+The first S4 capture-boundary checkpoint is in place. The shared core defines
+an object-safe `AudioCaptureBackend` for capabilities, source enumeration,
+selection resolution, session start, events, and stop. The WASAPI adapter
+implements that boundary on Windows and explicitly reports itself unavailable
+on other hosts. Desktop orchestration owns the adapter through the interface and
+contains no direct source-enumeration or capture-start call into the Windows
+crate. The next compatibility step replaces the PID-bearing public application
+selection with an opaque stable identity and restart resolver behind this seam.
+
 ### Acceptance boundary
 
 - Device and application capture still pass their existing Windows smokes through

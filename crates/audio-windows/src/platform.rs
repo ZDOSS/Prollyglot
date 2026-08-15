@@ -14,7 +14,8 @@ use crossbeam_channel::{Sender, TrySendError};
 use prollyglot_audio_pipeline::{SignalActivity, normalize_interleaved};
 use prollyglot_core::{
     ApplicationSource, CaptureError, CaptureEvent, CaptureSelection, CaptureSession, CaptureState,
-    NativeAudioFormat, PlaybackDevice, SampleFormat, SourceId, SourceSnapshot,
+    NativeAudioFormat, PlaybackDevice, ResolvedCaptureSelection, SampleFormat, SourceId,
+    SourceSnapshot,
 };
 use windows::{
     Win32::{
@@ -238,6 +239,56 @@ impl Drop for WindowsCaptureSession {
 pub(crate) fn source_snapshot() -> Result<SourceSnapshot, CaptureError> {
     let _apartment = ComApartment::initialize()?;
     unsafe { enumerate_sources() }.map_err(|error| windows_error("enumerate audio sources", error))
+}
+
+pub(crate) fn resolve_selection(
+    selection: &CaptureSelection,
+) -> Result<ResolvedCaptureSelection, CaptureError> {
+    let snapshot = source_snapshot()?;
+    match selection {
+        CaptureSelection::SystemDefault => {
+            let device = snapshot
+                .playback_devices
+                .iter()
+                .find(|device| device.is_default)
+                .ok_or_else(|| {
+                    CaptureError::SourceUnavailable(
+                        "Windows has no active default playback device".into(),
+                    )
+                })?;
+            Ok(ResolvedCaptureSelection {
+                selection: selection.clone(),
+                source_id: SourceId::new("default-output"),
+                display_name: format!("Follow system default — {}", device.name),
+            })
+        }
+        CaptureSelection::SystemOutput { device_id } => {
+            let device = snapshot
+                .playback_devices
+                .iter()
+                .find(|device| &device.id == device_id)
+                .ok_or_else(|| CaptureError::SourceUnavailable(device_id.to_string()))?;
+            Ok(ResolvedCaptureSelection {
+                selection: selection.clone(),
+                source_id: device.id.clone(),
+                display_name: device.name.clone(),
+            })
+        }
+        CaptureSelection::Application { process_id } => {
+            let application = snapshot
+                .applications
+                .iter()
+                .find(|application| application.process_id == *process_id)
+                .ok_or_else(|| {
+                    CaptureError::SourceUnavailable(format!("application process {process_id}"))
+                })?;
+            Ok(ResolvedCaptureSelection {
+                selection: selection.clone(),
+                source_id: application.id.clone(),
+                display_name: application.name.clone(),
+            })
+        }
+    }
 }
 
 unsafe fn enumerate_sources() -> windows::core::Result<SourceSnapshot> {

@@ -4,6 +4,7 @@
 
 use std::fmt;
 
+use crossbeam_channel::Sender;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -49,6 +50,19 @@ pub struct SourceSnapshot {
     pub applications: Vec<ApplicationSource>,
 }
 
+/// Capabilities reported by one platform audio adapter. Unsupported modes are
+/// explicit so the desktop never infers platform behavior from an OS name.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioCaptureCapabilities {
+    pub backend: String,
+    pub available: bool,
+    pub system_default: bool,
+    pub playback_devices: bool,
+    pub applications: bool,
+    pub application_restart_recovery: bool,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum CaptureSelection {
@@ -65,6 +79,15 @@ impl CaptureSelection {
             Self::Application { process_id } => SourceId::new(format!("process:{process_id}")),
         }
     }
+}
+
+/// A backend-validated selection with presentation-safe metadata. Platform
+/// handles and private executable paths never cross this boundary.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ResolvedCaptureSelection {
+    pub selection: CaptureSelection,
+    pub source_id: SourceId,
+    pub display_name: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -178,6 +201,23 @@ pub trait CaptureSession: Send {
     fn stop(&mut self) -> Result<(), CaptureError>;
 }
 
+/// Narrow platform boundary implemented by WASAPI today and PipeWire later.
+/// Desktop orchestration owns sessions through this contract and does not call
+/// an operating-system crate directly.
+pub trait AudioCaptureBackend: Send + Sync {
+    fn capabilities(&self) -> AudioCaptureCapabilities;
+    fn source_snapshot(&self) -> Result<SourceSnapshot, CaptureError>;
+    fn resolve_selection(
+        &self,
+        selection: &CaptureSelection,
+    ) -> Result<ResolvedCaptureSelection, CaptureError>;
+    fn start_capture(
+        &self,
+        selection: CaptureSelection,
+        events: Sender<CaptureEvent>,
+    ) -> Result<Box<dyn CaptureSession>, CaptureError>;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -228,5 +268,46 @@ mod tests {
             serde_json::from_str(r#"{"kind":"systemDefault"}"#).expect("valid selection");
 
         assert_eq!(selection, CaptureSelection::SystemDefault);
+    }
+
+    struct UnsupportedBackend;
+
+    impl AudioCaptureBackend for UnsupportedBackend {
+        fn capabilities(&self) -> AudioCaptureCapabilities {
+            AudioCaptureCapabilities {
+                backend: "test".into(),
+                ..AudioCaptureCapabilities::default()
+            }
+        }
+
+        fn source_snapshot(&self) -> Result<SourceSnapshot, CaptureError> {
+            Err(CaptureError::UnsupportedPlatform)
+        }
+
+        fn resolve_selection(
+            &self,
+            _selection: &CaptureSelection,
+        ) -> Result<ResolvedCaptureSelection, CaptureError> {
+            Err(CaptureError::UnsupportedPlatform)
+        }
+
+        fn start_capture(
+            &self,
+            _selection: CaptureSelection,
+            _events: Sender<CaptureEvent>,
+        ) -> Result<Box<dyn CaptureSession>, CaptureError> {
+            Err(CaptureError::UnsupportedPlatform)
+        }
+    }
+
+    #[test]
+    fn backend_capabilities_make_an_unavailable_adapter_explicit() {
+        let backend: &dyn AudioCaptureBackend = &UnsupportedBackend;
+        assert_eq!(backend.capabilities().backend, "test");
+        assert!(!backend.capabilities().available);
+        assert!(matches!(
+            backend.source_snapshot(),
+            Err(CaptureError::UnsupportedPlatform)
+        ));
     }
 }

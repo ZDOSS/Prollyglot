@@ -14,8 +14,8 @@ use prollyglot_application_runtime::{
     WorkerOutcome, WorkerReporter, WorkerRole,
 };
 use prollyglot_core::{
-    AudioFrame, CaptureEvent, CaptureSelection as BackendCaptureSelection, CaptureSession,
-    CaptureState as BackendCaptureState,
+    AudioCaptureBackend, AudioFrame, CaptureEvent, CaptureSelection as BackendCaptureSelection,
+    CaptureSession, CaptureState as BackendCaptureState, ResolvedCaptureSelection,
 };
 use tauri::{AppHandle, Emitter, State};
 
@@ -105,6 +105,7 @@ impl ActiveAudioResources {
 }
 
 pub struct AudioRuntime {
+    backend: Arc<dyn AudioCaptureBackend>,
     resources: Arc<Mutex<Option<ActiveAudioResources>>>,
     status: SharedAudioStatus,
 }
@@ -112,6 +113,7 @@ pub struct AudioRuntime {
 impl Default for AudioRuntime {
     fn default() -> Self {
         Self {
+            backend: Arc::new(prollyglot_audio_windows::WindowsAudioCaptureBackend::new()),
             resources: Arc::new(Mutex::new(None)),
             status: Arc::new(Mutex::new(PublishedAudioStatus::default())),
         }
@@ -148,9 +150,9 @@ fn queue_latest_audio(
 }
 
 #[tauri::command]
-pub fn source_snapshot() -> Result<SourceSnapshot, ApplicationError> {
-    let snapshot = prollyglot_audio_windows::source_snapshot().map_err(|error| {
-        tracing::error!(%error, "could not enumerate Windows audio sources");
+pub fn source_snapshot(state: State<'_, RuntimeState>) -> Result<SourceSnapshot, ApplicationError> {
+    let snapshot = state.audio.backend.source_snapshot().map_err(|error| {
+        tracing::error!(%error, backend = %state.audio.backend.capabilities().backend, "could not enumerate audio sources");
         application_error(
             ApplicationErrorCode::CaptureUnavailable,
             error.to_string(),
@@ -194,9 +196,22 @@ pub async fn start_capture(
     selection: CaptureSelection,
     language: String,
 ) -> Result<(), ApplicationError> {
+    let resolved = state
+        .audio
+        .backend
+        .resolve_selection(&backend_capture_selection(&selection))
+        .map_err(|error| {
+            application_error(
+                ApplicationErrorCode::CaptureUnavailable,
+                error.to_string(),
+                ErrorRecoverability::Retryable,
+                RecoveryAction::ChooseAnotherSource,
+                None,
+            )
+        })?;
     let request = StartSessionRequest {
         mode: SessionMode::AudioCaptions,
-        source: session_source(&selection),
+        source: session_source(&resolved),
     };
     let started = {
         let _control = state.control.lock();
@@ -320,10 +335,11 @@ pub async fn start_capture(
     }
 
     let (event_sender, event_receiver) = crossbeam_channel::bounded(12);
-    let capture = match prollyglot_audio_windows::start_capture(
-        backend_capture_selection(&selection),
-        event_sender,
-    ) {
+    let capture = match state
+        .audio
+        .backend
+        .start_capture(resolved.selection.clone(), event_sender)
+    {
         Ok(capture) => capture,
         Err(error) => {
             let error = application_error(
@@ -1071,24 +1087,18 @@ fn fail_and_publish(
     }
 }
 
-fn session_source(selection: &CaptureSelection) -> SessionSource {
-    match selection {
-        CaptureSelection::SystemDefault => SessionSource::new(
-            "default-output",
-            SessionSourceKind::SystemOutput,
-            "Follow system default",
-        ),
-        CaptureSelection::SystemOutput { device_id } => SessionSource::new(
-            device_id.clone(),
-            SessionSourceKind::SystemOutput,
-            device_id.clone(),
-        ),
-        CaptureSelection::Application { process_id } => SessionSource::new(
-            format!("process:{process_id}"),
-            SessionSourceKind::Application,
-            format!("Application {process_id}"),
-        ),
-    }
+fn session_source(selection: &ResolvedCaptureSelection) -> SessionSource {
+    let kind = match &selection.selection {
+        BackendCaptureSelection::SystemDefault | BackendCaptureSelection::SystemOutput { .. } => {
+            SessionSourceKind::SystemOutput
+        }
+        BackendCaptureSelection::Application { .. } => SessionSourceKind::Application,
+    };
+    SessionSource::new(
+        selection.source_id.0.clone(),
+        kind,
+        selection.display_name.clone(),
+    )
 }
 
 fn backend_capture_selection(selection: &CaptureSelection) -> BackendCaptureSelection {
