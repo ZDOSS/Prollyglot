@@ -4,10 +4,12 @@ import { listen } from "@tauri-apps/api/event";
 
 import { isTauri } from "./bridge";
 import { languageLabel } from "./language-catalog";
+import { PresentationCursor, captionDisplayState } from "./presentation-state";
 import {
   DEFAULT_OVERLAY_SETTINGS,
-  type CaptionOutputEntry,
-  type CaptionOutputPayload,
+  RUNTIME_EVENTS,
+  type CaptionPresentationEntry,
+  type CaptionPresentationFrame,
   type OverlaySettings
 } from "./types";
 
@@ -28,39 +30,17 @@ function requireElement<T extends Element>(selector: string): T {
 
 const surface = requireElement<HTMLElement>("#caption-surface");
 const captionText = requireElement<HTMLElement>("#caption-text");
-const TRANSLATION_MAX_WAIT_MS = 30_000;
-let rawCaption = "";
-let captionActive = false;
-let output: CaptionOutputPayload = { mode: "original", originalCaption: "", entries: [] };
+const cursor = new PresentationCursor<CaptionPresentationFrame>();
+let frame: CaptionPresentationFrame | undefined;
 let overlaySettings: OverlaySettings = { ...DEFAULT_OVERLAY_SETTINGS };
-let clearRequestedAtMs: number | undefined;
-let lastReadableUpdateAtMs = 0;
-let readableSignature = "";
-let clearTimer: number | undefined;
-let fadeTimer: number | undefined;
+let visibilityTimer: number | undefined;
 
 declare global {
   interface Window {
     __PROLLYGLOT_OVERLAY_PREVIEW__?: {
-      setCaption: (caption: string) => void;
-      setOutput: (payload: CaptionOutputPayload) => void;
+      setPresentation: (frame: CaptionPresentationFrame) => void;
     };
   }
-}
-
-function fallbackEntries(caption: string): CaptionOutputEntry[] {
-  const sourceLanguage = output.entries.at(-1)?.sourceLanguage ?? "auto";
-  return caption
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((original, index) => ({
-      key: `fallback:${index}`,
-      sourceLanguage,
-      original,
-      translationPending: output.mode !== "original",
-      isFinal: false
-    }));
 }
 
 function captionLine(text: string, className: string, language: string): HTMLElement {
@@ -71,14 +51,14 @@ function captionLine(text: string, className: string, language: string): HTMLEle
   return line;
 }
 
-function translationStatus(entry: CaptionOutputEntry): string {
-  const target = output.targetLanguage ? languageLabel(output.targetLanguage) : "Translation";
+function translationStatus(entry: CaptionPresentationEntry): string {
+  const target = frame?.targetLanguage ? languageLabel(frame.targetLanguage) : "Translation";
   if (!entry.isFinal) return `${target} is catching up…`;
   if (entry.translationPending) return "Translating…";
   return `${target} unavailable`;
 }
 
-function markTranslationState(group: HTMLElement, entry: CaptionOutputEntry): void {
+function markTranslationState(group: HTMLElement, entry: CaptionPresentationEntry): void {
   group.classList.add(
     !entry.isFinal
       ? "translation-waiting"
@@ -108,16 +88,10 @@ function fitHistoryWithoutClipping(): void {
 }
 
 function renderCaption(): void {
-  // Raw overlay events arrive directly from the transcription worker while
-  // structured bilingual output takes a short trip through the control
-  // window. Keep the last complete structured frame during that gap instead
-  // of collapsing to a full-size original-only layout for one paint.
-  const entries = !rawCaption.trim() || output.originalCaption === rawCaption
-    ? output.entries
-    : output.entries.length > 0 ? output.entries : fallbackEntries(rawCaption);
-  const mode = output.mode;
+  const output = frame;
+  const mode = output?.mode ?? "original";
   captionText.dataset.mode = mode;
-  const visibleEntries = entries.slice(-overlaySettings.maximumLines);
+  const visibleEntries = (output?.entries ?? []).slice(-overlaySettings.maximumLines);
   const rendered = visibleEntries.map((entry, index) => {
     const group = document.createElement("span");
     group.className = "caption-entry";
@@ -134,7 +108,7 @@ function renderCaption(): void {
       group.append(captionLine(
         entry.translation,
         "caption-line caption-translation",
-        output.targetLanguage ?? ""
+        output?.targetLanguage ?? ""
       ));
     } else if (mode === "translated") {
       markTranslationState(group, entry);
@@ -146,7 +120,7 @@ function renderCaption(): void {
       group.append(captionLine(
         translationStatus(entry),
         "caption-line caption-translation caption-translation-status",
-        output.targetLanguage ?? ""
+        output?.targetLanguage ?? ""
       ));
     } else {
       group.append(captionLine(
@@ -158,125 +132,57 @@ function renderCaption(): void {
         group.append(captionLine(
           entry.translation,
           "caption-line caption-translation",
-          output.targetLanguage ?? ""
+          output?.targetLanguage ?? ""
         ));
       } else {
         markTranslationState(group, entry);
         group.append(captionLine(
           translationStatus(entry),
           "caption-line caption-translation caption-translation-status",
-          output.targetLanguage ?? ""
+          output?.targetLanguage ?? ""
         ));
       }
     }
     return group;
   });
   captionText.replaceChildren(...rendered);
-  surface.hidden = !captionActive || rendered.length === 0;
   if (!surface.hidden) fitHistoryWithoutClipping();
 }
 
-function cancelScheduledClear(): void {
-  if (clearTimer !== undefined) window.clearTimeout(clearTimer);
-  if (fadeTimer !== undefined) window.clearTimeout(fadeTimer);
-  clearTimer = undefined;
-  fadeTimer = undefined;
-  surface.classList.remove("caption-fading");
+function cancelVisibilityTimer(): void {
+  if (visibilityTimer !== undefined) window.clearTimeout(visibilityTimer);
+  visibilityTimer = undefined;
 }
 
-function clearCaption(): void {
-  cancelScheduledClear();
-  clearRequestedAtMs = undefined;
-  rawCaption = "";
-  captionActive = false;
+function applyVisibility(nowMs = Date.now()): void {
+  cancelVisibilityTimer();
+  const state = frame
+    ? captionDisplayState(
+        frame,
+        overlaySettings.readingTimeSeconds,
+        overlaySettings.fadeDurationMs,
+        nowMs
+      )
+    : { phase: "hidden" as const };
+  surface.classList.toggle("caption-fading", state.phase === "fading");
+  surface.hidden = state.phase === "hidden" || captionText.childElementCount === 0;
+  if (!surface.hidden) fitHistoryWithoutClipping();
+  if ("nextAtMs" in state && state.nextAtMs !== undefined) {
+    visibilityTimer = window.setTimeout(
+      () => applyVisibility(),
+      Math.max(0, state.nextAtMs - nowMs)
+    );
+  }
+}
+
+function handlePresentation(next: CaptionPresentationFrame): void {
+  if (!cursor.accept(next)) return;
+  frame = structuredClone(next);
   renderCaption();
+  applyVisibility();
 }
 
-function matchingTranslationPending(): boolean {
-  return output.mode !== "original"
-    && output.entries.some((entry) => entry.translationPending);
-}
-
-function beginCaptionFade(): void {
-  if (clearRequestedAtMs === undefined) return;
-  if (overlaySettings.fadeDurationMs <= 0) {
-    clearCaption();
-    return;
-  }
-  surface.classList.add("caption-fading");
-  fadeTimer = window.setTimeout(clearCaption, overlaySettings.fadeDurationMs);
-}
-
-function scheduleCaptionClear(): void {
-  if (clearRequestedAtMs === undefined) return;
-  cancelScheduledClear();
-  const now = Date.now();
-  const translationDeadline = clearRequestedAtMs + TRANSLATION_MAX_WAIT_MS;
-  if (matchingTranslationPending() && now < translationDeadline) {
-    clearTimer = window.setTimeout(scheduleCaptionClear, translationDeadline - now);
-    return;
-  }
-
-  const readableAt = lastReadableUpdateAtMs || clearRequestedAtMs;
-  const readingDeadline = Math.max(
-    clearRequestedAtMs,
-    readableAt + overlaySettings.readingTimeSeconds * 1_000
-  );
-  const remaining = readingDeadline - now;
-  if (remaining > 0) {
-    clearTimer = window.setTimeout(beginCaptionFade, remaining);
-  } else {
-    beginCaptionFade();
-  }
-}
-
-function handleRawCaption(caption: string): void {
-  if (caption.trim()) {
-    cancelScheduledClear();
-    clearRequestedAtMs = undefined;
-    rawCaption = caption;
-    captionActive = true;
-    renderCaption();
-    return;
-  }
-
-  rawCaption = "";
-  if (!captionActive || output.entries.length === 0) {
-    clearCaption();
-    return;
-  }
-  clearRequestedAtMs ??= Date.now();
-  renderCaption();
-  scheduleCaptionClear();
-}
-
-function handleCaptionOutput(payload: CaptionOutputPayload): void {
-  const nextSignature = JSON.stringify([
-    payload.mode,
-    payload.targetLanguage,
-    payload.entries.map((entry) => [
-      entry.key,
-      entry.original,
-      entry.translation,
-      entry.translationPending,
-      entry.isFinal
-    ])
-  ]);
-  if (nextSignature !== readableSignature && payload.entries.length > 0) {
-    readableSignature = nextSignature;
-    lastReadableUpdateAtMs = Date.now();
-  }
-  output = payload;
-  renderCaption();
-  if (clearRequestedAtMs === undefined) return;
-  if (!output.originalCaption.trim() || output.entries.length === 0) {
-    clearCaption();
-    return;
-  }
-  scheduleCaptionClear();
-}
-
-function applySettings(settings: OverlaySettings) {
+function applySettings(settings: OverlaySettings): void {
   overlaySettings = { ...settings };
   surface.style.fontFamily = settings.fontFamily;
   surface.style.fontSize = `${settings.fontSize}px`;
@@ -290,46 +196,48 @@ function applySettings(settings: OverlaySettings) {
   surface.dataset.bilingualLayout = settings.bilingualLayout;
   requireElement<HTMLElement>("#overlay-app").dataset.position = settings.position;
   renderCaption();
-  if (clearRequestedAtMs !== undefined) scheduleCaptionClear();
+  applyVisibility();
 }
 
 function storedSettings(): OverlaySettings {
   try {
     const stored = localStorage.getItem("prollyglot.overlay");
-    return stored ? { ...DEFAULT_OVERLAY_SETTINGS, ...(JSON.parse(stored) as Partial<OverlaySettings>) } : DEFAULT_OVERLAY_SETTINGS;
+    return stored
+      ? { ...DEFAULT_OVERLAY_SETTINGS, ...(JSON.parse(stored) as Partial<OverlaySettings>) }
+      : { ...DEFAULT_OVERLAY_SETTINGS };
   } catch {
-    return DEFAULT_OVERLAY_SETTINGS;
+    return { ...DEFAULT_OVERLAY_SETTINGS };
   }
 }
 
 applySettings(storedSettings());
 if (!isTauri()) {
-  handleRawCaption("今日は何をする予定ですか？");
-  handleCaptionOutput({
+  handlePresentation({
+    sessionId: 1,
+    runtimeRevision: 1,
+    presentationRevision: 1,
+    phase: "holding",
+    readableAtMs: Date.now(),
     mode: "both",
-    originalCaption: rawCaption,
+    targetLanguage: "en",
     entries: [{
       key: "preview",
       sourceLanguage: "ja",
-      original: rawCaption,
+      original: "今日は何をする予定ですか？",
       translation: "What are you planning to do today?",
+      translationPending: false,
       isFinal: true
     }]
   });
   if (import.meta.env.DEV) {
-    window.__PROLLYGLOT_OVERLAY_PREVIEW__ = {
-      setCaption: handleRawCaption,
-      setOutput: handleCaptionOutput
-    };
+    window.__PROLLYGLOT_OVERLAY_PREVIEW__ = { setPresentation: handlePresentation };
   }
 }
 
 if (isTauri()) {
-  void listen<string>("overlay-caption", ({ payload }) => {
-    handleRawCaption(payload);
-  });
-  void listen<CaptionOutputPayload>("caption-output", ({ payload }) => {
-    handleCaptionOutput(payload);
-  });
+  void listen<CaptionPresentationFrame>(
+    RUNTIME_EVENTS.captionPresentation,
+    ({ payload }) => handlePresentation(payload)
+  );
   void listen<OverlaySettings>("overlay-settings", ({ payload }) => applySettings(payload));
 }

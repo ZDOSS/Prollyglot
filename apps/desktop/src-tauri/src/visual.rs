@@ -11,15 +11,16 @@ use std::{
 use crossbeam_channel::RecvTimeoutError;
 use parking_lot::Mutex;
 #[cfg(test)]
-use prollyglot_application_runtime::VisualOverlayRegion;
+use prollyglot_application_runtime::VisualPresentationRegion;
 use prollyglot_application_runtime::{
     ApplicationError, ApplicationErrorCode, CancellationToken, ErrorRecoverability, PixelRect,
     RecoveryAction, RuntimeSnapshot, SessionHealthLevel, SessionId, SessionLifecycle, SessionMode,
     SessionProgress, SessionSource, SessionSourceKind, StableVisualTextRegion, StartSessionRequest,
     VisualCaptureCapabilities, VisualCaptureGeometry, VisualCaptureSelection, VisualDetectionMode,
-    VisualOverlayOutput, VisualRect, VisualRegionSelected, VisualRegionSelectorRequest,
+    VisualPresentationFrame, VisualRect, VisualRegionSelected, VisualRegionSelectorRequest,
     VisualSource, VisualSourceKind, VisualSourceSnapshot, VisualState, VisualStatus,
     VisualTextClear, VisualTextUpdate, WorkerLifetime, WorkerOutcome, WorkerReporter, WorkerRole,
+    ipc,
 };
 use prollyglot_model_manager::{
     DEFAULT_VISUAL_OCR_MODEL_ID, DownloadProgress, ModelInstallState, ModelManager, ModelManifest,
@@ -35,7 +36,7 @@ use prollyglot_visual_windows::{
     VisualCaptureSelection as BackendVisualCaptureSelection,
 };
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, State};
+use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, State, WebviewWindow};
 
 use crate::RuntimeState;
 
@@ -189,7 +190,7 @@ struct VisualCaptureEventWorker {
     supervisor: Arc<Mutex<prollyglot_application_runtime::SessionSupervisor>>,
     status: SharedVisualStatus,
     source: Arc<Mutex<PickedVisualSource>>,
-    overlay_output: Arc<Mutex<VisualOverlayOutput>>,
+    overlay_output: Arc<Mutex<VisualPresentationFrame>>,
     session_id: SessionId,
     cancellation: CancellationToken,
     events: crossbeam_channel::Receiver<VisualCaptureEvent>,
@@ -227,7 +228,7 @@ pub struct VisualRuntime {
     status: SharedVisualStatus,
     resources: Arc<Mutex<Option<ActiveVisualResources>>>,
     overlay_echoes: Arc<Mutex<Vec<String>>>,
-    overlay_output: Arc<Mutex<VisualOverlayOutput>>,
+    overlay_output: Arc<Mutex<VisualPresentationFrame>>,
 }
 
 pub fn initialize(app: &AppHandle, runtime: &VisualRuntime) {
@@ -330,26 +331,51 @@ pub fn visual_model_status(state: State<'_, RuntimeState>) -> VisualModelCatalog
 }
 
 #[tauri::command]
-pub fn update_visual_overlay_output(
+pub fn update_visual_presentation(
     app: AppHandle,
+    caller: WebviewWindow,
     state: State<'_, RuntimeState>,
-    output: VisualOverlayOutput,
-) -> Result<(), ApplicationError> {
-    let runtime_snapshot = state.supervisor.lock().snapshot();
-    let session_id = (runtime_snapshot.mode == Some(SessionMode::VisualTranslation))
-        .then_some(runtime_snapshot.session_id)
-        .flatten();
-    validate_visual_overlay_output(&output).map_err(|message| {
+    frame: VisualPresentationFrame,
+) -> Result<bool, ApplicationError> {
+    if caller.label() != "main" {
+        return Err(application_error(
+            ApplicationErrorCode::Internal,
+            "Only the main Prollyglot interface may publish visual presentation frames.",
+            ErrorRecoverability::NotRecoverable,
+            RecoveryAction::ReportIssue,
+            Some(frame.session_id),
+        ));
+    }
+    validate_visual_presentation(&frame).map_err(|message| {
         application_error(
             ApplicationErrorCode::ConfigurationInvalid,
             message,
             ErrorRecoverability::UserActionRequired,
             RecoveryAction::OpenSettings,
-            session_id,
+            Some(frame.session_id),
         )
     })?;
-    let region_count = output.regions.len() as u64;
-    let echoes = output
+
+    let runtime_snapshot = state.supervisor.lock().snapshot();
+    if runtime_snapshot.mode != Some(SessionMode::VisualTranslation)
+        || runtime_snapshot.session_id != Some(frame.session_id)
+        || !matches!(
+            runtime_snapshot.lifecycle,
+            SessionLifecycle::Starting | SessionLifecycle::Running | SessionLifecycle::Waiting
+        )
+        || frame.runtime_revision > runtime_snapshot.revision
+    {
+        return Ok(false);
+    }
+    let overlay = app.get_webview_window("visual-overlay").ok_or_else(|| {
+        window_operation_error(
+            "Visual translation overlay is unavailable.",
+            Some(frame.session_id),
+        )
+    })?;
+
+    let region_count = frame.regions.len() as u64;
+    let echoes = frame
         .regions
         .iter()
         .filter_map(|region| region.translation.as_deref())
@@ -359,43 +385,48 @@ pub fn update_visual_overlay_output(
             (normalized.chars().count() >= 4).then_some(normalized)
         })
         .collect();
+    let (previous, changed) = {
+        let mut current = state.visual.overlay_output.lock();
+        if current.session_id != frame.session_id
+            || frame.runtime_revision < current.runtime_revision
+            || frame.presentation_revision <= current.presentation_revision
+        {
+            return Ok(false);
+        }
+        let changed =
+            current.regions.len() != frame.regions.len() || current.scanning != frame.scanning;
+        let previous = std::mem::replace(&mut *current, frame.clone());
+        (previous, changed)
+    };
+
+    if let Err(error) = overlay.emit(ipc::VISUAL_PRESENTATION_EVENT, &frame) {
+        *state.visual.overlay_output.lock() = previous;
+        return Err(window_operation_error(
+            error.to_string(),
+            Some(frame.session_id),
+        ));
+    }
     *state.visual.overlay_echoes.lock() = echoes;
 
-    let changed = {
-        let mut current = state.visual.overlay_output.lock();
-        let changed =
-            current.regions.len() != output.regions.len() || current.scanning != output.scanning;
-        *current = output.clone();
-        changed
-    };
-    let overlay = app.get_webview_window("visual-overlay").ok_or_else(|| {
-        window_operation_error("Visual translation overlay is unavailable.", session_id)
-    })?;
-    overlay
-        .emit("visual-overlay-output", &output)
-        .map_err(|error| window_operation_error(error.to_string(), session_id))?;
-
-    let snapshot = state.supervisor.lock().snapshot();
-    if snapshot.mode == Some(SessionMode::VisualTranslation)
-        && snapshot.lifecycle == SessionLifecycle::Running
-        && let Some(session_id) = snapshot.session_id
-    {
+    if runtime_snapshot.lifecycle == SessionLifecycle::Running {
         overlay
             .set_always_on_top(true)
-            .map_err(|error| window_operation_error(error.to_string(), Some(session_id)))?;
+            .map_err(|error| window_operation_error(error.to_string(), Some(frame.session_id)))?;
         overlay
             .show()
-            .map_err(|error| window_operation_error(error.to_string(), Some(session_id)))?;
-        publish_overlay_region_count(&app, &state.visual.status, session_id, region_count);
+            .map_err(|error| window_operation_error(error.to_string(), Some(frame.session_id)))?;
+        publish_overlay_region_count(&app, &state.visual.status, frame.session_id, region_count);
     }
     if changed {
         tracing::info!(
             overlay_regions = region_count,
-            scanning = output.scanning,
-            "visual overlay output delivered"
+            scanning = frame.scanning,
+            session_id = %frame.session_id,
+            presentation_revision = frame.presentation_revision,
+            "visual presentation delivered"
         );
     }
-    Ok(())
+    Ok(true)
 }
 
 #[tauri::command]
@@ -664,6 +695,18 @@ pub async fn start_visual_translation(
             source: unresolved_source.clone(),
         })?
     };
+    {
+        state.visual.overlay_echoes.lock().clear();
+        *state.visual.overlay_output.lock() = VisualPresentationFrame {
+            session_id: started.session_id,
+            runtime_revision: started.snapshot.revision,
+            presentation_revision: 0,
+            source_language: source_language.clone(),
+            target_language: target_language.clone(),
+            scanning: true,
+            ..VisualPresentationFrame::default()
+        };
+    }
     publish_visual_runtime(&app, &state.visual.status, started.snapshot.clone());
     spawn_session_monitor(
         app.clone(),
@@ -707,16 +750,6 @@ pub async fn start_visual_translation(
         Some("Loading local visual text recognition…".into()),
     ) {
         publish_visual_runtime(&app, &state.visual.status, snapshot);
-    }
-
-    {
-        state.visual.overlay_echoes.lock().clear();
-        *state.visual.overlay_output.lock() = VisualOverlayOutput {
-            source_language: source_language.clone(),
-            target_language: target_language.clone(),
-            scanning: true,
-            ..VisualOverlayOutput::default()
-        };
     }
 
     let model_directory = match installed_model_directory(&app, &state.visual) {
@@ -1506,7 +1539,7 @@ fn publish_replaced_frames(
 fn configure_visual_overlay(
     app: &AppHandle,
     source: &PickedVisualSource,
-    output: &Arc<Mutex<VisualOverlayOutput>>,
+    output: &Arc<Mutex<VisualPresentationFrame>>,
     show: bool,
 ) -> Result<(), String> {
     let overlay = app
@@ -1528,7 +1561,7 @@ fn configure_visual_overlay(
         .set_size(PhysicalSize::new(source.width, source.height))
         .map_err(|error| error.to_string())?;
     overlay
-        .emit("visual-overlay-output", output.lock().clone())
+        .emit(ipc::VISUAL_PRESENTATION_EVENT, output.lock().clone())
         .map_err(|error| error.to_string())?;
     if show {
         overlay.show().map_err(|error| error.to_string())
@@ -1537,28 +1570,41 @@ fn configure_visual_overlay(
     }
 }
 
-fn validate_visual_overlay_output(output: &VisualOverlayOutput) -> Result<(), String> {
-    if output.source_width == 0 || output.source_height == 0 {
-        return Err("Visual overlay source dimensions must be non-zero.".into());
+fn validate_visual_presentation(frame: &VisualPresentationFrame) -> Result<(), String> {
+    const JS_MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
+    if frame.session_id.0 == 0 {
+        return Err("Visual presentation requires an active session identifier.".into());
     }
-    if output.source_language.chars().count() > 16 || output.target_language.chars().count() > 16 {
-        return Err("Visual overlay language identifiers are invalid.".into());
+    if frame.presentation_revision == 0 || frame.presentation_revision > JS_MAX_SAFE_INTEGER {
+        return Err("The visual presentation revision must be a safe integer.".into());
     }
-    if output.regions.len() > 48 {
-        return Err("Visual overlay output contains too many regions.".into());
+    if frame.source_width == 0 || frame.source_height == 0 {
+        return Err("Visual presentation source dimensions must be non-zero.".into());
     }
-    if output.regions.iter().any(|region| {
+    if frame.source_language.is_empty()
+        || frame.target_language.is_empty()
+        || frame.source_language.chars().count() > 16
+        || frame.target_language.chars().count() > 16
+    {
+        return Err("Visual presentation language identifiers are invalid.".into());
+    }
+    if frame.regions.len() > 48 {
+        return Err("Visual presentation contains too many regions.".into());
+    }
+    if frame.regions.iter().any(|region| {
         region.track_id == 0
+            || region.track_id > JS_MAX_SAFE_INTEGER
             || region.text_revision == 0
+            || region.text_revision > JS_MAX_SAFE_INTEGER
+            || region.original.trim().is_empty()
             || region.original.chars().count() > 2_000
-            || region
-                .translation
-                .as_ref()
-                .is_some_and(|translation| translation.chars().count() > 2_000)
+            || region.translation.as_ref().is_some_and(|translation| {
+                translation.trim().is_empty() || translation.chars().count() > 2_000
+            })
             || !region.bounds.is_valid()
             || (region.translation_pending && region.translation.is_some())
     }) {
-        return Err("Visual overlay output contains an invalid region.".into());
+        return Err("Visual presentation contains an invalid region.".into());
     }
     Ok(())
 }
@@ -1843,7 +1889,7 @@ fn spawn_session_monitor(
     supervisor: Arc<Mutex<prollyglot_application_runtime::SessionSupervisor>>,
     resources: Arc<Mutex<Option<ActiveVisualResources>>>,
     status: SharedVisualStatus,
-    overlay_output: Arc<Mutex<VisualOverlayOutput>>,
+    overlay_output: Arc<Mutex<VisualPresentationFrame>>,
     overlay_echoes: Arc<Mutex<Vec<String>>>,
     session_id: SessionId,
 ) -> Result<(), ApplicationError> {
@@ -1907,7 +1953,7 @@ fn schedule_cleanup(
     app: &AppHandle,
     supervisor: &Arc<Mutex<prollyglot_application_runtime::SessionSupervisor>>,
     status: &SharedVisualStatus,
-    overlay_output: &Arc<Mutex<VisualOverlayOutput>>,
+    overlay_output: &Arc<Mutex<VisualPresentationFrame>>,
     overlay_echoes: &Arc<Mutex<Vec<String>>>,
     session_id: SessionId,
     resources: Option<ActiveVisualResources>,
@@ -1988,16 +2034,35 @@ fn take_resources(
 
 fn clear_visual_output(
     app: &AppHandle,
-    output: &Arc<Mutex<VisualOverlayOutput>>,
+    output: &Arc<Mutex<VisualPresentationFrame>>,
     echoes: &Arc<Mutex<Vec<String>>>,
     session_id: SessionId,
     runtime_revision: u32,
 ) {
-    let cleared = VisualOverlayOutput::default();
-    *output.lock() = cleared.clone();
+    let cleared = {
+        let mut current = output.lock();
+        let presentation_revision = if current.session_id == session_id {
+            current.presentation_revision.saturating_add(1)
+        } else {
+            0
+        };
+        let cleared = VisualPresentationFrame {
+            session_id,
+            runtime_revision,
+            presentation_revision,
+            source_width: current.source_width.max(1),
+            source_height: current.source_height.max(1),
+            source_language: current.source_language.clone(),
+            target_language: current.target_language.clone(),
+            scanning: false,
+            regions: Vec::new(),
+        };
+        *current = cleared.clone();
+        cleared
+    };
     echoes.lock().clear();
     if let Some(overlay) = app.get_webview_window("visual-overlay") {
-        let _ = overlay.emit("visual-overlay-output", &cleared);
+        let _ = overlay.emit(ipc::VISUAL_PRESENTATION_EVENT, &cleared);
         let _ = overlay.hide();
     }
     emit_visual_clear(app, session_id, runtime_revision);
@@ -2227,14 +2292,17 @@ mod tests {
     }
 
     #[test]
-    fn overlay_output_validation_allows_retained_pending_text() {
-        let output = VisualOverlayOutput {
+    fn visual_presentation_validation_allows_retained_pending_text() {
+        let output = VisualPresentationFrame {
+            session_id: SessionId(4),
+            runtime_revision: 9,
+            presentation_revision: 2,
             source_width: 1920,
             source_height: 1080,
             source_language: "ja".into(),
             target_language: "en".into(),
             scanning: false,
-            regions: vec![VisualOverlayRegion {
+            regions: vec![VisualPresentationRegion {
                 track_id: 1,
                 text_revision: 1,
                 original: "日本語".into(),
@@ -2250,18 +2318,21 @@ mod tests {
             }],
         };
 
-        assert!(validate_visual_overlay_output(&output).is_ok());
+        assert!(validate_visual_presentation(&output).is_ok());
     }
 
     #[test]
-    fn overlay_output_validation_rejects_inconsistent_translation_state() {
-        let output = VisualOverlayOutput {
+    fn visual_presentation_validation_rejects_inconsistent_translation_state() {
+        let output = VisualPresentationFrame {
+            session_id: SessionId(4),
+            runtime_revision: 9,
+            presentation_revision: 2,
             source_width: 1920,
             source_height: 1080,
             source_language: "ja".into(),
             target_language: "en".into(),
             scanning: false,
-            regions: vec![VisualOverlayRegion {
+            regions: vec![VisualPresentationRegion {
                 track_id: 1,
                 text_revision: 1,
                 original: "日本語".into(),
@@ -2277,6 +2348,6 @@ mod tests {
             }],
         };
 
-        assert!(validate_visual_overlay_output(&output).is_err());
+        assert!(validate_visual_presentation(&output).is_err());
     }
 }

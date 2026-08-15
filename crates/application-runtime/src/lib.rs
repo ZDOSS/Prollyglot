@@ -12,16 +12,18 @@ mod supervisor;
 pub use bindings::typescript_bindings;
 pub use contracts::{
     APPLICATION_RUNTIME_CONTRACT_VERSION, ApplicationError, ApplicationErrorCode,
-    ApplicationSource, CaptureSelection, CaptureState, CaptureStatus,
+    ApplicationSource, CaptionOutputMode, CaptionPresentationEntry, CaptionPresentationFrame,
+    CaptionPresentationPhase, CaptureSelection, CaptureState, CaptureStatus,
     CompleteVisualRegionSelectionCommand, ErrorRecoverability, PixelRect, PlaybackDevice,
     RecoveryAction, RuntimeBootstrap, RuntimeHealth, RuntimeSnapshot, RuntimeStateEvent,
     SessionHealthLevel, SessionId, SessionLifecycle, SessionMode, SessionProgress, SessionSource,
     SessionSourceKind, ShowVisualRegionSelectorCommand, SourceSnapshot, StableVisualTextRegion,
     StartCaptureCommand, StartSessionRequest, StartVisualTranslationCommand,
-    UpdateVisualOverlayOutputCommand, VisualCaptureCapabilities, VisualCaptureGeometry,
-    VisualCaptureSelection, VisualDetectionMode, VisualOverlayOutput, VisualOverlayRegion,
-    VisualRect, VisualRegionSelected, VisualRegionSelectorRequest, VisualSource, VisualSourceKind,
-    VisualSourceSnapshot, VisualState, VisualStatus, VisualTextClear, VisualTextUpdate,
+    UpdateCaptionPresentationCommand, UpdateVisualPresentationCommand, VisualCaptureCapabilities,
+    VisualCaptureGeometry, VisualCaptureSelection, VisualDetectionMode, VisualPresentationFrame,
+    VisualPresentationRegion, VisualRect, VisualRegionSelected, VisualRegionSelectorRequest,
+    VisualSource, VisualSourceKind, VisualSourceSnapshot, VisualState, VisualStatus,
+    VisualTextClear, VisualTextUpdate,
 };
 pub use supervisor::{
     CancellationToken, SessionSupervisor, StartPermit, StopPermit, WorkerLifetime, WorkerOutcome,
@@ -43,7 +45,8 @@ pub mod ipc {
     pub const CANCEL_VISUAL_REGION_SELECTION_COMMAND: &str = "cancel_visual_region_selection";
     pub const START_VISUAL_TRANSLATION_COMMAND: &str = "start_visual_translation";
     pub const STOP_VISUAL_TRANSLATION_COMMAND: &str = "stop_visual_translation";
-    pub const UPDATE_VISUAL_OVERLAY_OUTPUT_COMMAND: &str = "update_visual_overlay_output";
+    pub const UPDATE_CAPTION_PRESENTATION_COMMAND: &str = "update_caption_presentation";
+    pub const UPDATE_VISUAL_PRESENTATION_COMMAND: &str = "update_visual_presentation";
 
     pub const STATE_EVENT: &str = "runtime-state";
     pub const CAPTURE_STATUS_EVENT: &str = "capture-status";
@@ -53,4 +56,6 @@ pub mod ipc {
     pub const VISUAL_REGION_SELECTED_EVENT: &str = "visual-region-selected";
     pub const VISUAL_REGION_SELECTION_CANCELLED_EVENT: &str = "visual-region-selection-cancelled";
     pub const VISUAL_REGION_SELECTOR_REQUEST_EVENT: &str = "visual-region-selector-request";
+    pub const CAPTION_PRESENTATION_EVENT: &str = "caption-presentation";
+    pub const VISUAL_PRESENTATION_EVENT: &str = "visual-presentation";
 }

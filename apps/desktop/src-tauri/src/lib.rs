@@ -1,5 +1,6 @@
 mod audio;
 mod models;
+mod presentation;
 mod runtime;
 mod transcription;
 mod translation;
@@ -75,6 +76,7 @@ struct RuntimeState {
     runtime_events: runtime::RuntimeEventPublisher,
     audio: audio::AudioRuntime,
     transcript: Arc<Mutex<TranscriptStore>>,
+    caption_presentation: presentation::CaptionPresentationRuntime,
     model: models::ModelRuntime,
     overlay_settings: Mutex<OverlaySettings>,
     translation: translation::TranslationRuntime,
@@ -122,8 +124,6 @@ fn clear_transcript(app: tauri::AppHandle, state: State<'_, RuntimeState>) -> Re
         transcript.snapshot().clone()
     };
     app.emit("transcript-update", snapshot)
-        .map_err(|error| error.to_string())?;
-    app.emit("overlay-caption", "")
         .map_err(|error| error.to_string())
 }
 
@@ -164,13 +164,10 @@ fn close_appearance_window(
         if let Err(error) = restore_live_overlay(&app, &state) {
             tracing::warn!(%error, "Appearance closed but the live overlay could not be restored");
         }
-    } else if let Some(overlay) = app.get_webview_window("overlay") {
-        if let Err(error) = overlay.emit("overlay-caption", "") {
-            tracing::warn!(%error, "could not clear overlay after closing Appearance");
-        }
-        if let Err(error) = overlay.hide() {
-            tracing::warn!(%error, "could not hide overlay after closing Appearance");
-        }
+    } else if let Some(overlay) = app.get_webview_window("overlay")
+        && let Err(error) = overlay.hide()
+    {
+        tracing::warn!(%error, "could not hide overlay after closing Appearance");
     }
     Ok(())
 }
@@ -268,18 +265,16 @@ fn configure_overlay_window(
 }
 
 fn show_live_overlay(app: &tauri::AppHandle, state: &RuntimeState) -> Result<(), String> {
-    show_overlay_with_caption(app, state, String::new())
+    show_overlay_with_presentation(app, state)
 }
 
 fn restore_live_overlay(app: &tauri::AppHandle, state: &RuntimeState) -> Result<(), String> {
-    let caption = transcription::overlay_caption(state.transcript.lock().snapshot());
-    show_overlay_with_caption(app, state, caption)
+    show_overlay_with_presentation(app, state)
 }
 
-fn show_overlay_with_caption(
+fn show_overlay_with_presentation(
     app: &tauri::AppHandle,
     state: &RuntimeState,
-    caption: String,
 ) -> Result<(), String> {
     let overlay = app
         .get_webview_window("overlay")
@@ -289,9 +284,7 @@ fn show_overlay_with_caption(
     overlay
         .emit("overlay-settings", settings)
         .map_err(|error| error.to_string())?;
-    overlay
-        .emit("overlay-caption", caption)
-        .map_err(|error| error.to_string())?;
+    presentation::emit_current_caption(app, &state.caption_presentation)?;
     overlay.show().map_err(|error| error.to_string())
 }
 
@@ -385,6 +378,7 @@ pub fn run() {
             models::select_speech_model,
             models::install_speech_model,
             models::remove_speech_model,
+            presentation::update_caption_presentation,
             translation::translation_model_status,
             translation::install_translation_model,
             translation::remove_translation_model,
@@ -401,7 +395,7 @@ pub fn run() {
             visual::cancel_visual_region_selection,
             visual::install_visual_model,
             visual::remove_visual_model,
-            visual::update_visual_overlay_output,
+            visual::update_visual_presentation,
             visual::start_visual_translation,
             visual::stop_visual_translation,
         ])

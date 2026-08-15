@@ -8,9 +8,11 @@ import {
   isExpectedTranslationCancellation,
   translationStatusForRoute
 } from "./translation";
+import { LatestPublisher } from "./latest-publisher";
 import type {
   CaptionOutputMode,
-  CaptionOutputPayload,
+  CaptionPresentationEntry,
+  CaptionPresentationFrame,
   TranscriptSegment,
   TranscriptSnapshot,
   TranslationCatalogStatus
@@ -39,6 +41,11 @@ interface LiveTranslation {
   text: string;
 }
 
+export interface PresentationEpoch {
+  sessionId: number;
+  runtimeRevision: number;
+}
+
 export class CaptionOutputController {
   private transcript: TranscriptSnapshot = { revision: 0, committed: [] };
   private mode: CaptionOutputMode = "original";
@@ -54,13 +61,21 @@ export class CaptionOutputController {
   private liveReadyAtMs = 0;
   private lastLiveStartedAtMs = 0;
   private liveTimer?: number;
+  private presentationEpoch?: PresentationEpoch;
+  private presentationRevision = 0;
+  private readableAtMs = 0;
+  private readableSignature = "";
+  private readonly presentationPublisher: LatestPublisher<CaptionPresentationFrame>;
 
   constructor(
     private readonly service: TranslationService,
-    private readonly publishOutput: (payload: CaptionOutputPayload) => void | Promise<void>,
+    publishPresentation: (frame: CaptionPresentationFrame) => Promise<void>,
     private readonly reportError: (message: string) => void,
     private readonly reportDiagnostic: (message: string) => void = () => undefined
   ) {
+    this.presentationPublisher = new LatestPublisher(publishPresentation, (error) => {
+      this.reportError(error instanceof Error ? error.message : String(error));
+    });
     this.catalog = service.snapshot();
     service.subscribe((catalog) => {
       const recovered = catalog.models.some((model) => {
@@ -87,6 +102,30 @@ export class CaptionOutputController {
 
   translationTarget(): TranslationLanguage {
     return this.targetLanguage;
+  }
+
+  setPresentationEpoch(epoch: PresentationEpoch | undefined): void {
+    if (!epoch) {
+      if (!this.presentationEpoch) return;
+      this.presentationEpoch = undefined;
+      this.closeSession("The caption presentation session stopped.");
+      return;
+    }
+
+    if (this.presentationEpoch?.sessionId !== epoch.sessionId) {
+      const replacingActiveSession = this.presentationEpoch !== undefined;
+      this.closeSession("A newer caption presentation session started.");
+      if (replacingActiveSession) {
+        this.transcript = { revision: this.transcript.revision, committed: [] };
+        this.translations.clear();
+        this.liveTranslation = undefined;
+      }
+      this.presentationRevision = 0;
+      this.readableAtMs = 0;
+      this.readableSignature = "";
+    }
+    this.presentationEpoch = { ...epoch };
+    this.publish();
   }
 
   prepare(sourceLanguage: TranslationLanguage): Promise<void> {
@@ -205,24 +244,19 @@ export class CaptionOutputController {
         && utteranceKey(this.liveCandidate) === utteranceKey(segment));
   }
 
-  payload(): CaptionOutputPayload {
+  entries(): CaptionPresentationEntry[] {
     const segments = recentCaptionSegments(this.transcript);
-    return {
-      mode: this.mode,
-      targetLanguage: this.mode === "original" ? undefined : this.targetLanguage,
-      originalCaption: segments.map(({ text }) => text).join("\n"),
-      entries: segments.map((segment) => {
-        const translation = this.translationFor(segment);
-        return {
-          key: segmentKey(segment),
-          sourceLanguage: segment.sourceLanguage,
-          original: segment.text,
-          translation: translation?.phase === "ready" ? translation.text : undefined,
-          translationPending: this.isTranslationPending(segment),
-          isFinal: segment.isFinal
-        };
-      })
-    };
+    return segments.map((segment) => {
+      const translation = this.translationFor(segment);
+      return {
+        key: segmentKey(segment),
+        sourceLanguage: segment.sourceLanguage,
+        original: segment.text,
+        translation: translation?.phase === "ready" ? translation.text : undefined,
+        translationPending: this.isTranslationPending(segment),
+        isFinal: segment.isFinal
+      };
+    });
   }
 
   private scheduleTranslations(): void {
@@ -406,7 +440,39 @@ export class CaptionOutputController {
   }
 
   private publish(): void {
-    void this.publishOutput(this.payload());
+    const epoch = this.presentationEpoch;
+    if (!epoch) return;
+    const entries = this.entries();
+    const signature = JSON.stringify([
+      this.mode,
+      this.mode === "original" ? undefined : this.targetLanguage,
+      entries.map((entry) => [
+        entry.key,
+        entry.original,
+        entry.translation,
+        entry.translationPending,
+        entry.isFinal
+      ])
+    ]);
+    if (entries.length > 0 && signature !== this.readableSignature) {
+      this.readableSignature = signature;
+      this.readableAtMs = Date.now();
+    } else if (entries.length === 0) {
+      this.readableSignature = "";
+      this.readableAtMs = 0;
+    }
+    this.presentationRevision += 1;
+    this.presentationPublisher.publish({
+      ...epoch,
+      presentationRevision: this.presentationRevision,
+      phase: entries.length === 0
+        ? "cleared"
+        : entries.some(({ isFinal }) => !isFinal) ? "active" : "holding",
+      readableAtMs: this.readableAtMs,
+      mode: this.mode,
+      targetLanguage: this.mode === "original" ? undefined : this.targetLanguage,
+      entries
+    });
   }
 
   private hasCommittedSegment(key: string): boolean {

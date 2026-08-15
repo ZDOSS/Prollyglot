@@ -17,7 +17,7 @@ use prollyglot_core::{
     AudioFrame, CaptureEvent, CaptureSelection as BackendCaptureSelection, CaptureSession,
     CaptureState as BackendCaptureState,
 };
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, State};
 
 use crate::{RuntimeState, show_live_overlay};
 
@@ -202,12 +202,24 @@ pub async fn start_capture(
         let _control = state.control.lock();
         state.supervisor.lock().start(request)?
     };
+    state
+        .caption_presentation
+        .begin_session(started.session_id, started.snapshot.revision);
+    let transcript_snapshot = {
+        let mut transcript = state.transcript.lock();
+        transcript.clear();
+        transcript.snapshot().clone()
+    };
+    if let Err(error) = app.emit("transcript-update", transcript_snapshot) {
+        tracing::warn!(%error, "could not emit cleared transcript");
+    }
     publish_runtime_snapshot(&app, &state.audio.status, started.snapshot.clone());
     spawn_session_monitor(
         app.clone(),
         Arc::clone(&state.supervisor),
         Arc::clone(&state.audio.resources),
         Arc::clone(&state.audio.status),
+        state.caption_presentation.clone(),
         started.session_id,
     )
     .inspect_err(|error| {
@@ -297,15 +309,6 @@ pub async fn start_capture(
     if started.cancellation.is_cancelled() {
         finish_reporter(&mut startup_reporter, WorkerOutcome::Cancelled);
         return Err(startup_cancelled(started.session_id));
-    }
-
-    let transcript_snapshot = {
-        let mut transcript = state.transcript.lock();
-        transcript.clear();
-        transcript.snapshot().clone()
-    };
-    if let Err(error) = app.emit("transcript-update", transcript_snapshot) {
-        tracing::warn!(%error, "could not emit cleared transcript");
     }
 
     if let Ok(snapshot) = state.supervisor.lock().update_start_progress(
@@ -519,8 +522,11 @@ pub fn stop_capture(
         let resources = take_resources(&state.audio.resources, permit.session_id);
         (permit, resources)
     };
+    let runtime_revision = permit.snapshot.revision;
     publish_runtime_snapshot(&app, &state.audio.status, permit.snapshot);
-    hide_overlay(&app);
+    state
+        .caption_presentation
+        .clear_and_hide(&app, permit.session_id, runtime_revision);
     if !permit.already_stopping || resources.is_some() {
         schedule_cleanup(
             &app,
@@ -803,6 +809,7 @@ fn spawn_session_monitor(
     supervisor: Arc<Mutex<prollyglot_application_runtime::SessionSupervisor>>,
     resources: Arc<Mutex<Option<ActiveAudioResources>>>,
     status: SharedAudioStatus,
+    caption_presentation: crate::presentation::CaptionPresentationRuntime,
     session_id: SessionId,
 ) -> Result<(), ApplicationError> {
     thread::Builder::new()
@@ -835,6 +842,7 @@ fn spawn_session_monitor(
                 }
                 if snapshot.lifecycle == SessionLifecycle::Failed && !failure_cleanup_started {
                     failure_cleanup_started = true;
+                    caption_presentation.clear_and_hide(&app, session_id, snapshot.revision);
                     let resources = take_resources(&resources, session_id);
                     schedule_cleanup(&app, &supervisor, &status, session_id, resources);
                 }
@@ -1122,15 +1130,6 @@ fn startup_cancelled(session_id: SessionId) -> ApplicationError {
 fn finish_reporter(reporter: &mut Option<WorkerReporter>, outcome: WorkerOutcome) {
     if let Some(reporter) = reporter.take() {
         reporter.finish(outcome);
-    }
-}
-
-fn hide_overlay(app: &AppHandle) {
-    if let Some(overlay) = app.get_webview_window("overlay") {
-        let _ = overlay.emit("overlay-caption", "");
-        if let Err(error) = overlay.hide() {
-            tracing::warn!(%error, "could not hide caption overlay");
-        }
     }
 }
 

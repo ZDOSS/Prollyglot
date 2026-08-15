@@ -51,7 +51,7 @@ installing the OCR pack does not install every translator.
    should normally begin appearing within two seconds. Dense **All detected
    text** sources fill progressively and only the one region actually being
    processed should say **Translating…**. A compact inference still running at
-   five seconds is removed while the local worker recovers; it must not leave
+   3.5 seconds is removed while the local worker recovers; it must not leave
    every later label pending for minutes. Stacked title or sign lines should
    become one phrase rather than overlapping word fragments.
    The overlay should not repeatedly recognize its own labels or fill the screen

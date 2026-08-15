@@ -3,7 +3,7 @@ use std::{error::Error, fmt};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const APPLICATION_RUNTIME_CONTRACT_VERSION: u16 = 1;
+pub const APPLICATION_RUNTIME_CONTRACT_VERSION: u16 = 2;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 pub struct SessionId(pub u32);
@@ -648,11 +648,68 @@ pub struct VisualTextClear {
     pub runtime_revision: u32,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub enum CaptionOutputMode {
+    Original,
+    Translated,
+    Both,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub enum CaptionPresentationPhase {
+    Active,
+    Holding,
+    Cleared,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct CaptionPresentationEntry {
+    pub key: String,
+    pub source_language: String,
+    pub original: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[ts(optional)]
+    pub translation: Option<String>,
+    #[serde(default)]
+    pub translation_pending: bool,
+    pub is_final: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct CaptionPresentationFrame {
+    pub session_id: SessionId,
+    pub runtime_revision: u32,
+    #[ts(type = "number")]
+    pub presentation_revision: u64,
+    pub phase: CaptionPresentationPhase,
+    #[ts(type = "number")]
+    pub readable_at_ms: u64,
+    pub mode: CaptionOutputMode,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[ts(optional)]
+    pub target_language: Option<String>,
+    pub entries: Vec<CaptionPresentationEntry>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct UpdateCaptionPresentationCommand {
+    pub frame: CaptionPresentationFrame,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(rename_all = "camelCase")]
-#[ts(rename = "VisualOutputRegion")]
-pub struct VisualOverlayRegion {
+pub struct VisualPresentationRegion {
     #[ts(type = "number")]
     pub track_id: u64,
     #[ts(type = "number")]
@@ -670,19 +727,25 @@ pub struct VisualOverlayRegion {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(rename_all = "camelCase")]
-#[ts(rename = "VisualOutputPayload")]
-pub struct VisualOverlayOutput {
+pub struct VisualPresentationFrame {
+    pub session_id: SessionId,
+    pub runtime_revision: u32,
+    #[ts(type = "number")]
+    pub presentation_revision: u64,
     pub source_width: u32,
     pub source_height: u32,
     pub source_language: String,
     pub target_language: String,
     pub scanning: bool,
-    pub regions: Vec<VisualOverlayRegion>,
+    pub regions: Vec<VisualPresentationRegion>,
 }
 
-impl Default for VisualOverlayOutput {
+impl Default for VisualPresentationFrame {
     fn default() -> Self {
         Self {
+            session_id: SessionId(0),
+            runtime_revision: 0,
+            presentation_revision: 0,
             source_width: 1,
             source_height: 1,
             source_language: String::new(),
@@ -706,8 +769,8 @@ pub struct StartVisualTranslationCommand {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(rename_all = "camelCase")]
-pub struct UpdateVisualOverlayOutputCommand {
-    pub output: VisualOverlayOutput,
+pub struct UpdateVisualPresentationCommand {
+    pub frame: VisualPresentationFrame,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -785,7 +848,10 @@ mod tests {
         };
 
         let value = serde_json::to_value(&snapshot).expect("serialize runtime snapshot");
-        assert_eq!(value["contractVersion"], 1);
+        assert_eq!(
+            value["contractVersion"],
+            APPLICATION_RUNTIME_CONTRACT_VERSION
+        );
         assert_eq!(value["sessionId"], 3);
         assert_eq!(value["mode"], "visualTranslation");
         assert_eq!(value["source"]["kind"], "display");
@@ -961,14 +1027,40 @@ mod tests {
         assert_eq!(update_json["sessionId"], 9);
         assert_eq!(update_json["translationRequests"][0]["trackId"], 7);
 
-        let output = UpdateVisualOverlayOutputCommand {
-            output: VisualOverlayOutput {
+        let caption = UpdateCaptionPresentationCommand {
+            frame: CaptionPresentationFrame {
+                session_id: SessionId(9),
+                runtime_revision: 14,
+                presentation_revision: 3,
+                phase: CaptionPresentationPhase::Holding,
+                readable_at_ms: 1_750_000_000_000,
+                mode: CaptionOutputMode::Both,
+                target_language: Some("en".into()),
+                entries: vec![CaptionPresentationEntry {
+                    key: "ja:7".into(),
+                    source_language: "ja".into(),
+                    original: "ニュース".into(),
+                    translation: Some("News".into()),
+                    translation_pending: false,
+                    is_final: true,
+                }],
+            },
+        };
+        let caption_json = assert_json_round_trip(&caption);
+        assert_eq!(caption_json["frame"]["sessionId"], 9);
+        assert_eq!(caption_json["frame"]["phase"], "holding");
+
+        let output = UpdateVisualPresentationCommand {
+            frame: VisualPresentationFrame {
+                session_id: SessionId(9),
+                runtime_revision: 14,
+                presentation_revision: 4,
                 source_width: 1280,
                 source_height: 720,
                 source_language: "ja".into(),
                 target_language: "en".into(),
                 scanning: false,
-                regions: vec![VisualOverlayRegion {
+                regions: vec![VisualPresentationRegion {
                     track_id: 7,
                     text_revision: 2,
                     original: "ニュース".into(),
@@ -985,6 +1077,6 @@ mod tests {
             },
         };
         let output_json = assert_json_round_trip(&output);
-        assert_eq!(output_json["output"]["regions"][0]["translation"], "News");
+        assert_eq!(output_json["frame"]["regions"][0]["translation"], "News");
     }
 }

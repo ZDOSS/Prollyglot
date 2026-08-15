@@ -11,7 +11,7 @@ Prollyglot is a free and open-source desktop utility that captures audio from a 
 > [!IMPORTANT]
 > Prollyglot is in active pre-release development. There is not yet a supported binary release. Windows 11 is the primary target; the first Windows owner smoke confirmed that **Everything I hear** captions audible output from the selected playback device, while broader application, lifecycle, and release validation remains in progress.
 >
-> Current pre-release: **0.1.6**. See the [changelog](CHANGELOG.md) and
+> Current pre-release: **0.1.7**. See the [changelog](CHANGELOG.md) and
 > [versioning policy](docs/VERSIONING.md).
 
 ## Why Prollyglot exists
@@ -75,6 +75,9 @@ The repository currently contains:
   exactly one compatible model at a time;
 - an experimental Windows visual-translation slice with explicit window, display, and drawn-region selection; change-gated local OCR; bounded latest-frame processing; and translated labels positioned near their recognized source text;
 - Original, Translation, and Original + Translation output modes, with stable stacked or side-by-side pairs, independent colors, wrapped text, and zero to three fading prior caption rows;
+- one session-scoped, revisioned presentation stream per overlay, with native
+  session validation and delayed-frame rejection so original and translated
+  text cannot race, flash into each other's layout, or reappear after Stop;
 - reproducible English and multilingual comparison tooling covering the same model choices exposed by the app;
 - a bounded capture-to-inference bridge with visible backpressure and recovery behavior; and
 - live provisional/final transcript updates wired to a latest-following, scrollback-safe transcript view and a customizable always-on-top overlay that retains bounded, line-separated conversational context.
@@ -96,13 +99,13 @@ translation near the original text already visible on screen.
 fragments, and caps the six most useful regions. **All detected text** retains
 the more conservative stabilizer for small interface text and caps the live
 overlay at twelve ranked regions. OCR input is bounded to 1280 pixels on its
-longest side and upright desktop text skips the direction classifier. The
-selected translator finishes loading before capture begins. Only the region
-actually being processed displays **Translating…**; results appear progressively
+longest side and upright desktop text skips the direction classifier. Translator
+preparation starts with the visual session instead of blocking capture and OCR.
+Only the region actually being processed displays **Translating…**; results appear progressively
 instead of every fragment claiming to translate at once. Short inputs receive a
-bounded generation budget. A compact inference that exceeds five seconds is
+bounded generation budget. A compact inference that exceeds 3.5 seconds is
 abandoned while the worker restarts; the optional universal model receives
-twelve seconds.
+eight seconds.
 
 A scanning indicator appears before the first result. A disappeared label stays
 readable for up to eight seconds unless it was already continuously visible for
@@ -117,8 +120,10 @@ labels to prevent OCR feedback instead of hiding its windows.
 Screen translation drains to the newest frame before each OCR pass and rejects
 an output only when it is over three seconds behind after a broad scene change.
 Small text, cursor, counter, and control changes do not erase an otherwise useful
-result. Native code sends and caches output directly for the overlay, while
-separate **OCR regions** and **Overlay labels** counters distinguish recognition
+result. The main translation controller publishes one replaceable-latest,
+session/revision-scoped presentation frame through native validation to the
+overlay; delayed frames from a stopped or replaced session are discarded.
+Separate **OCR regions** and **Overlay labels** counters distinguish recognition
 from display delivery. Privacy-safe logs record visual queue and inference
 timing without recognized text. The CPU-heavy OCR path is optimized in
 `tauri dev`, and one Stop click preserves its button, cancels active ONNX

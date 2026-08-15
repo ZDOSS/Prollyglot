@@ -6,10 +6,11 @@ import {
   initialRuntimeCursor,
   reduceRuntimeSnapshot
 } from "../src/runtime-state.ts";
+import { RUNTIME_CONTRACT_VERSION } from "../src/generated/runtime.ts";
 
 import type { RuntimeSnapshot, SessionLifecycle, SessionMode } from "../src/types.ts";
 
-const CONTRACT_VERSION = 1;
+const CONTRACT_VERSION = RUNTIME_CONTRACT_VERSION;
 
 function snapshot(
   revision: number,

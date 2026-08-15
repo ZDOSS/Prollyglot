@@ -8,15 +8,20 @@ import {
 import type {
   StableVisualTextRegion,
   VisualDetectionMode,
-  VisualOutputPayload,
-  VisualOutputRegion,
+  VisualPresentationFrame,
+  VisualPresentationRegion,
   VisualTextUpdate
 } from "./types";
 
-interface TrackedVisualRegion extends VisualOutputRegion {
+interface TrackedVisualRegion extends VisualPresentationRegion {
   sourceLanguage: string;
   firstSeenAt: number;
   removalTimer?: number;
+}
+
+export interface VisualPresentationEpoch {
+  sessionId: number;
+  runtimeRevision: number;
 }
 
 interface ActiveRequest {
@@ -41,17 +46,31 @@ export class VisualTranslationController {
   private sourceWidth = 1;
   private sourceHeight = 1;
   private activeRequestKey?: string;
-  private readonly outputPublisher: LatestPublisher<VisualOutputPayload>;
+  private presentationEpoch?: VisualPresentationEpoch;
+  private presentationRevision = 0;
+  private readonly outputPublisher: LatestPublisher<VisualPresentationFrame>;
 
   constructor(
     private readonly translation: TranslationService,
-    publish: (output: VisualOutputPayload) => Promise<void>,
+    publish: (frame: VisualPresentationFrame) => Promise<void>,
     private readonly reportError: (message: string) => void,
     private readonly reportDiagnostic: (message: string) => void = () => undefined
   ) {
     this.outputPublisher = new LatestPublisher(publish, (error) => {
       this.reportError(error instanceof Error ? error.message : String(error));
     });
+  }
+
+  setPresentationEpoch(epoch: VisualPresentationEpoch | undefined): void {
+    if (!epoch) {
+      this.presentationEpoch = undefined;
+      return;
+    }
+    if (this.presentationEpoch?.sessionId !== epoch.sessionId) {
+      this.presentationRevision = 0;
+    }
+    this.presentationEpoch = { ...epoch };
+    this.render();
   }
 
   begin(
@@ -65,6 +84,8 @@ export class VisualTranslationController {
       throw new Error("Visual translation requires a supported source and target language.");
     }
     this.closeSession("A newer visual translation session started.");
+    this.presentationEpoch = undefined;
+    this.presentationRevision = 0;
     this.generation += 1;
     this.sourceLanguage = supportedSource;
     this.targetLanguage = supportedTarget;
@@ -306,6 +327,8 @@ export class VisualTranslationController {
   }
 
   private render(): void {
+    const epoch = this.presentationEpoch;
+    if (!epoch) return;
     const regions = [...this.regions.values()]
       .filter((region) => region.translation !== undefined
         || this.activeRequestKey === regionKey(region))
@@ -316,7 +339,10 @@ export class VisualTranslationController {
         removalTimer: _removalTimer,
         ...region
       }) => region);
+    this.presentationRevision += 1;
     this.outputPublisher.publish({
+      ...epoch,
+      presentationRevision: this.presentationRevision,
       sourceWidth: this.sourceWidth,
       sourceHeight: this.sourceHeight,
       sourceLanguage: this.sourceLanguage,
@@ -355,8 +381,8 @@ function visualCoalesceKey(trackId: number): string {
 }
 
 function intersectionOverUnion(
-  left: VisualOutputRegion["bounds"],
-  right: VisualOutputRegion["bounds"]
+  left: VisualPresentationRegion["bounds"],
+  right: VisualPresentationRegion["bounds"]
 ): number {
   const intersectionWidth = Math.max(
     0,

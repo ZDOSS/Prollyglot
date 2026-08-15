@@ -3,7 +3,12 @@ import "./styles.css";
 import { listen } from "@tauri-apps/api/event";
 
 import { isTauri } from "./bridge";
-import type { VisualOutputPayload, VisualOutputRegion } from "./types";
+import { PresentationCursor } from "./presentation-state";
+import {
+  RUNTIME_EVENTS,
+  type VisualPresentationFrame,
+  type VisualPresentationRegion
+} from "./types";
 
 function required<T extends Element>(selector: string): T {
   const element = document.querySelector<T>(selector);
@@ -16,7 +21,10 @@ const root = required<HTMLElement>("#visual-overlay-app");
 root.innerHTML = `<div id="visual-label-layer" class="visual-label-layer" aria-live="polite"></div>`;
 const layer = required<HTMLElement>("#visual-label-layer");
 
-let output: VisualOutputPayload = {
+let output: VisualPresentationFrame = {
+  sessionId: 0,
+  runtimeRevision: 0,
+  presentationRevision: 0,
   sourceWidth: 1,
   sourceHeight: 1,
   sourceLanguage: "",
@@ -24,11 +32,12 @@ let output: VisualOutputPayload = {
   scanning: false,
   regions: []
 };
+const cursor = new PresentationCursor<VisualPresentationFrame>();
 
 declare global {
   interface Window {
     __PROLLYGLOT_VISUAL_OVERLAY_PREVIEW__?: {
-      setOutput: (payload: VisualOutputPayload) => void;
+      setPresentation: (frame: VisualPresentationFrame) => void;
     };
   }
 }
@@ -41,7 +50,7 @@ function line(text: string, className: string, language: string): HTMLElement {
   return copy;
 }
 
-function labelFor(region: VisualOutputRegion): HTMLElement {
+function labelFor(region: VisualPresentationRegion): HTMLElement {
   const label = document.createElement("div");
   label.className = "visual-translation-label";
   label.dataset.trackId = String(region.trackId);
@@ -89,13 +98,17 @@ function render(): void {
   layer.replaceChildren(...labels);
 }
 
-function setOutput(next: VisualOutputPayload): void {
+function setPresentation(next: VisualPresentationFrame): void {
+  if (!cursor.accept(next)) return;
   output = structuredClone(next);
   render();
 }
 
 if (isTauri()) {
-  void listen<VisualOutputPayload>("visual-overlay-output", ({ payload }) => setOutput(payload));
+  void listen<VisualPresentationFrame>(
+    RUNTIME_EVENTS.visualPresentation,
+    ({ payload }) => setPresentation(payload)
+  );
 } else {
-  window.__PROLLYGLOT_VISUAL_OVERLAY_PREVIEW__ = { setOutput };
+  window.__PROLLYGLOT_VISUAL_OVERLAY_PREVIEW__ = { setPresentation };
 }

@@ -365,11 +365,14 @@ ASR wording does not need to be letter-perfect for this routing test. It must be
 
 ### WIN-SYSTEM-02 — silence and recovery
 
-1. Pause all playback for at least five seconds.
+1. Pause all playback for at least sixteen seconds with the default 15-second
+   reading interval.
 2. Watch the status and overlay.
 3. Resume `system-device.wav`.
 
-Expected: status settles to **Waiting**, inference remains quiet, the final overlay text clears after its short hold, and playback returns the session to **Live** without pressing Stop/Start.
+Expected: status settles to **Waiting**, inference remains quiet, the final
+overlay text clears after the selected reading interval and fade, and playback
+returns the session to **Live** without pressing Stop/Start.
 
 ### WIN-SYSTEM-03 — transcript clear
 

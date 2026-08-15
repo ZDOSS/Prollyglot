@@ -1,17 +1,18 @@
 use ts_rs::{Config, TS};
 
 use crate::{
-    ApplicationError, ApplicationErrorCode, ApplicationSource, CaptureSelection, CaptureState,
-    CaptureStatus, CompleteVisualRegionSelectionCommand, ErrorRecoverability, PixelRect,
-    PlaybackDevice, RecoveryAction, RuntimeBootstrap, RuntimeHealth, RuntimeSnapshot,
+    ApplicationError, ApplicationErrorCode, ApplicationSource, CaptionOutputMode,
+    CaptionPresentationEntry, CaptionPresentationFrame, CaptionPresentationPhase, CaptureSelection,
+    CaptureState, CaptureStatus, CompleteVisualRegionSelectionCommand, ErrorRecoverability,
+    PixelRect, PlaybackDevice, RecoveryAction, RuntimeBootstrap, RuntimeHealth, RuntimeSnapshot,
     RuntimeStateEvent, SessionHealthLevel, SessionId, SessionLifecycle, SessionMode,
     SessionProgress, SessionSource, SessionSourceKind, ShowVisualRegionSelectorCommand,
     SourceSnapshot, StableVisualTextRegion, StartCaptureCommand, StartSessionRequest,
-    StartVisualTranslationCommand, UpdateVisualOverlayOutputCommand, VisualCaptureCapabilities,
-    VisualCaptureGeometry, VisualCaptureSelection, VisualDetectionMode, VisualOverlayOutput,
-    VisualOverlayRegion, VisualRect, VisualRegionSelected, VisualRegionSelectorRequest,
-    VisualSource, VisualSourceKind, VisualSourceSnapshot, VisualState, VisualStatus,
-    VisualTextClear, VisualTextUpdate, ipc,
+    StartVisualTranslationCommand, UpdateCaptionPresentationCommand,
+    UpdateVisualPresentationCommand, VisualCaptureCapabilities, VisualCaptureGeometry,
+    VisualCaptureSelection, VisualDetectionMode, VisualPresentationFrame, VisualPresentationRegion,
+    VisualRect, VisualRegionSelected, VisualRegionSelectorRequest, VisualSource, VisualSourceKind,
+    VisualSourceSnapshot, VisualState, VisualStatus, VisualTextClear, VisualTextUpdate, ipc,
 };
 
 const GENERATED_HEADER: &str =
@@ -33,7 +34,7 @@ pub fn typescript_bindings() -> String {
             "visualStatus: {:?}, showVisualRegionSelector: {:?}, ",
             "completeVisualRegionSelection: {:?}, cancelVisualRegionSelection: {:?}, ",
             "startVisualTranslation: {:?}, stopVisualTranslation: {:?}, ",
-            "updateVisualOverlayOutput: {:?} ",
+            "updateCaptionPresentation: {:?}, updateVisualPresentation: {:?} ",
             "}} as const;\n"
         ),
         ipc::BOOTSTRAP_COMMAND,
@@ -49,14 +50,16 @@ pub fn typescript_bindings() -> String {
         ipc::CANCEL_VISUAL_REGION_SELECTION_COMMAND,
         ipc::START_VISUAL_TRANSLATION_COMMAND,
         ipc::STOP_VISUAL_TRANSLATION_COMMAND,
-        ipc::UPDATE_VISUAL_OVERLAY_OUTPUT_COMMAND,
+        ipc::UPDATE_CAPTION_PRESENTATION_COMMAND,
+        ipc::UPDATE_VISUAL_PRESENTATION_COMMAND,
     ));
     output.push_str(&format!(
         concat!(
             "export const RUNTIME_EVENTS = {{ state: {:?}, captureStatus: {:?}, ",
             "visualStatus: {:?}, visualText: {:?}, visualClear: {:?}, ",
             "visualRegionSelected: {:?}, visualRegionSelectionCancelled: {:?}, ",
-            "visualRegionSelectorRequest: {:?} }} as const;\n\n"
+            "visualRegionSelectorRequest: {:?}, captionPresentation: {:?}, ",
+            "visualPresentation: {:?} }} as const;\n\n"
         ),
         ipc::STATE_EVENT,
         ipc::CAPTURE_STATUS_EVENT,
@@ -66,6 +69,8 @@ pub fn typescript_bindings() -> String {
         ipc::VISUAL_REGION_SELECTED_EVENT,
         ipc::VISUAL_REGION_SELECTION_CANCELLED_EVENT,
         ipc::VISUAL_REGION_SELECTOR_REQUEST_EVENT,
+        ipc::CAPTION_PRESENTATION_EVENT,
+        ipc::VISUAL_PRESENTATION_EVENT,
     ));
 
     push_declaration::<SessionId>(&config, &mut output);
@@ -106,10 +111,15 @@ pub fn typescript_bindings() -> String {
     push_declaration::<StableVisualTextRegion>(&config, &mut output);
     push_declaration::<VisualTextUpdate>(&config, &mut output);
     push_declaration::<VisualTextClear>(&config, &mut output);
-    push_declaration::<VisualOverlayRegion>(&config, &mut output);
-    push_declaration::<VisualOverlayOutput>(&config, &mut output);
+    push_declaration::<CaptionOutputMode>(&config, &mut output);
+    push_declaration::<CaptionPresentationPhase>(&config, &mut output);
+    push_declaration::<CaptionPresentationEntry>(&config, &mut output);
+    push_declaration::<CaptionPresentationFrame>(&config, &mut output);
+    push_declaration::<UpdateCaptionPresentationCommand>(&config, &mut output);
+    push_declaration::<VisualPresentationRegion>(&config, &mut output);
+    push_declaration::<VisualPresentationFrame>(&config, &mut output);
     push_declaration::<StartVisualTranslationCommand>(&config, &mut output);
-    push_declaration::<UpdateVisualOverlayOutputCommand>(&config, &mut output);
+    push_declaration::<UpdateVisualPresentationCommand>(&config, &mut output);
     push_declaration::<RuntimeSnapshot>(&config, &mut output);
     push_declaration::<RuntimeBootstrap>(&config, &mut output);
     push_declaration::<RuntimeStateEvent>(&config, &mut output);
@@ -146,12 +156,16 @@ mod tests {
         assert!(output.contains("runtime-state"));
         assert!(output.contains("start_capture"));
         assert!(output.contains("start_visual_translation"));
+        assert!(output.contains("update_caption_presentation"));
+        assert!(output.contains("caption-presentation"));
         assert!(output.contains("visual-text-update"));
         assert!(output.contains("export type RuntimeSnapshot"));
         assert!(output.contains("export type ApplicationError"));
         assert!(output.contains("export type CaptureSelection"));
         assert!(output.contains("export type VisualCaptureSelection"));
         assert!(output.contains("export type VisualTextUpdate"));
+        assert!(output.contains("export type CaptionPresentationFrame"));
+        assert!(output.contains("export type VisualPresentationFrame"));
         assert!(output.contains("suggestedAction: RecoveryAction"));
         assert!(output.contains("revision: number"));
     }

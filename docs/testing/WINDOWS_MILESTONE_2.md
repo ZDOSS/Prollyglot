@@ -57,7 +57,9 @@ Use ordinary English speech with known wording, such as a locally stored video o
 2. Confirm the overlay appears without taking keyboard focus.
 3. Confirm partial text appears while the speaker is still talking and final text remains stable rather than rewriting older segments.
 4. Pay special attention to the first words after each pause. Phrase openings should not disappear.
-5. Pause for at least five seconds. The capture state may say Waiting, inference should stay quiet, and the final overlay caption should clear after its short hold.
+5. Pause for at least sixteen seconds with the default Appearance settings. The
+   capture state may say Waiting, inference should stay quiet, and the final
+   overlay caption should clear after its 15-second reading interval and fade.
 6. Resume speech and confirm captions recover without restarting.
 7. Open Transcript. Confirm finalized captions appear once, live text is visually provisional, timestamps increase, and Clear removes the current session transcript.
 8. Stop and start captions ten times. No session should remain stuck, duplicate a final, or leave an orphan overlay.

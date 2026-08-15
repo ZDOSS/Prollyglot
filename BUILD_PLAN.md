@@ -36,7 +36,7 @@ Why this direction:
 
 | Milestone | Integrated outcome | Status |
 | --- | --- | --- |
-| S. Structural integrity program | Replace patched orchestration with supervised sessions, bounded translation and presentation work, generated contracts, maintainable desktop pages, unified local state, and portable capture boundaries | In progress; S1 complete, S2 scheduler and native translation storage published, presentation protocol next |
+| S. Structural integrity program | Replace patched orchestration with supervised sessions, bounded translation and presentation work, generated contracts, maintainable desktop pages, unified local state, and portable capture boundaries | In progress; S1 complete, S2 implementation complete pending native Windows re-smoke, S3 next |
 | 1. Windows capture foundation | A real Windows desktop shell can enumerate and capture either a selected output device or selected application | Selected-device Windows smoke passed; application and lifecycle validation remain |
 | 2. Live English captions | Captured audio becomes stable partial and final English captions locally | Device-to-caption and corrected UI/context re-smokes passed; accented/conversational model evidence and application/lifecycle validation remain |
 | 3. Minimal customizable Windows app | The complete daily-use interface, overlay customization, transcript view, and controls work together | Pending |
@@ -270,6 +270,24 @@ packs and deliberately migrates one by downloading and verifying its native
 replacement before deleting the old copy. The authoritative caption and visual
 presentation contracts are the remaining S2 cutover.
 
+The third S2 integration point is complete in pre-release 0.1.7. Generated
+caption and visual presentation frames carry session, runtime, and presentation
+revisions through one main-WebView-only native command and one event per overlay.
+Native code validates the active session and rejects stale publishers; each
+overlay maintains its own revision cursor and rejects duplicates or delayed
+sessions again at the display boundary. Transcription no longer emits a second
+raw-caption path, and visual output no longer uses the old unscoped event.
+
+One replaceable-latest publisher owns each presentation stream. Caption phase,
+newest-readable time, translation-pending state, reading duration, fade, and
+terminal clear are one coherent frame, with fake-clock boundary tests. Native
+Stop/failure handling publishes a higher terminal revision and hides the window,
+so queued frontend work cannot repaint it. Local frontend tests, production
+build, Rust contract tests, strict Windows-target desktop Clippy, and rendered
+overlay ordering/timing checks pass. The S2 implementation is complete; a real
+Windows re-smoke of caption timing, slow translation, positioned labels, and
+one-click Stop remains its native-runtime acceptance evidence while S3 proceeds.
+
 ### Acceptance boundary
 
 - A never-resolving translation reaches its deadline, clears or reports its
@@ -451,9 +469,10 @@ from one to the next while the milestone direction remains clear.
 | S4 | Capture-backend and stable-application-identity cutover | Windows behavior remains complete behind the interface the later PipeWire adapter will implement |
 | S4 | Resource enforcement, documentation, and Windows soak | The implemented architecture is documented and the full structural program receives native acceptance |
 
-Published: all three S1 integration points plus the S2 session-scoped scheduler
-and native translation-store cutover are complete through pre-release 0.1.6.
-Continue with the caption and visual presentation-protocol cutover.
+Published: all three S1 integration points and all three S2 implementation
+points are complete through pre-release 0.1.7. Native Windows S2 acceptance
+remains pending; continue with the S3 application-store and bridge separation
+without expanding capture or model scope.
 
 - This documentation-only planning commit does not change the application
   version. Each later user-visible integrated correction follows

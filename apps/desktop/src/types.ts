@@ -39,24 +39,6 @@ export interface TranscriptSnapshot {
   committed: TranscriptSegment[];
 }
 
-export type CaptionOutputMode = "original" | "translated" | "both";
-
-export interface CaptionOutputEntry {
-  key: string;
-  sourceLanguage: string;
-  original: string;
-  translation?: string;
-  translationPending?: boolean;
-  isFinal: boolean;
-}
-
-export interface CaptionOutputPayload {
-  mode: CaptionOutputMode;
-  targetLanguage?: string;
-  originalCaption: string;
-  entries: CaptionOutputEntry[];
-}
-
 export type TranslationPhase =
   | "checking"
   | "notInstalled"

@@ -30,9 +30,9 @@ import {
   stopCapture,
   stopVisualTranslation,
   transcriptSnapshot,
-  updateCaptionOutput,
+  updateCaptionPresentation,
   updateOverlaySettings,
-  updateVisualOutput,
+  updateVisualPresentation,
   visualCapabilities,
   visualModelStatus,
   visualSourceSnapshot,
@@ -336,10 +336,10 @@ const visualPanel = new VisualPanel();
 const appearancePanel = new AppearancePanel();
 const captionOutput = new CaptionOutputController(
   translationService,
-  (payload) => {
+  (frame) => {
     if (dialog.open && dialog.dataset.panel === "transcript") renderTranscriptPanel();
     renderSessionPreview();
-    return updateCaptionOutput(payload);
+    return updateCaptionPresentation(frame);
   },
   (message) => {
     captureMessage.textContent = message;
@@ -351,7 +351,7 @@ const captionOutput = new CaptionOutputController(
 );
 const visualTranslation = new VisualTranslationController(
   translationService,
-  updateVisualOutput,
+  updateVisualPresentation,
   (message) => {
     void reportFrontendDiagnostic("visual-translation", message);
   },
@@ -725,6 +725,18 @@ function applyRuntimeSnapshot(next: RuntimeSnapshot): void {
   const changedSession = reduction.sessionChanged;
   runtimeCursor = reduction.cursor;
   currentRuntime = reduction.cursor.snapshot;
+  const presentationEpoch = next.sessionId === null
+    ? undefined
+    : { sessionId: next.sessionId, runtimeRevision: next.revision };
+  const presentationActive = next.lifecycle === "starting"
+    || next.lifecycle === "running"
+    || next.lifecycle === "waiting";
+  captionOutput.setPresentationEpoch(
+    presentationActive && next.mode === "audioCaptions" ? presentationEpoch : undefined
+  );
+  visualTranslation.setPresentationEpoch(
+    presentationActive && next.mode === "visualTranslation" ? presentationEpoch : undefined
+  );
   for (const subscriber of runtimeSubscribers) subscriber();
   const message = next.failure?.message ?? next.health.message ?? undefined;
   const sourceLabel = next.source?.label ?? undefined;

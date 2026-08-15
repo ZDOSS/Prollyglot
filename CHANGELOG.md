@@ -5,6 +5,35 @@ Versioning while it is in the `0.x` pre-release line.
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-08-14
+
+### Added
+
+- Generated, session-scoped caption and visual presentation contracts carrying
+  runtime and presentation revisions, plus one stable event name per overlay.
+- Fake-clock tests for caption reading/fade boundaries and cursor tests for
+  duplicate, delayed-revision, and replaced-session presentation frames.
+- Native validation that only the main WebView can publish presentation state
+  for the currently active audio or visual session.
+
+### Changed
+
+- Publish original caption text, pending translation, completed translation,
+  history, phase, and newest-readable time as one replaceable-latest frame.
+- Derive final-caption hold and fade from the presentation timestamp, giving a
+  delayed translation a fresh reading interval without a competing native timer.
+- Route positioned visual labels through the same revisioned native boundary and
+  revalidate their session at the overlay before painting.
+
+### Fixed
+
+- Remove the competing raw-caption event that could flash original text at full
+  size, displace bilingual rows, or clear a newer translated caption.
+- Prevent queued caption or visual output from a stopped or replaced session
+  from repainting an overlay after its terminal clear.
+- Clear and hide both overlays immediately from native Stop/failure handling so
+  one Stop action does not depend on a delayed frontend publish.
+
 ## [0.1.6] - 2026-08-14
 
 ### Added

@@ -7,7 +7,7 @@ import { RUNTIME_COMMANDS, RUNTIME_CONTRACT_VERSION, RUNTIME_EVENTS } from "./ty
 
 import type {
   CaptureSelection,
-  CaptionOutputPayload,
+  CaptionPresentationFrame,
   CaptureStatus,
   ModelCatalogStatus,
   OverlaySettings,
@@ -21,12 +21,13 @@ import type {
   StartVisualTranslationCommand,
   TranscriptSnapshot,
   TranslationStorageCatalog,
-  UpdateVisualOverlayOutputCommand,
+  UpdateCaptionPresentationCommand,
+  UpdateVisualPresentationCommand,
   VisualCaptureCapabilities,
   VisualCaptureSelection,
   VisualDetectionMode,
   VisualModelCatalogStatus,
-  VisualOutputPayload,
+  VisualPresentationFrame,
   VisualRegionSelected,
   VisualRegionSelectorRequest,
   VisualSourceSnapshot,
@@ -40,7 +41,7 @@ declare global {
     __TAURI_INTERNALS__?: unknown;
     __PROLLYGLOT_PREVIEW__?: {
       setTranscript: (snapshot: TranscriptSnapshot) => void;
-      visualOutput?: VisualOutputPayload;
+      visualPresentation?: VisualPresentationFrame;
     };
   }
 }
@@ -758,21 +759,21 @@ export async function onVisualTextClear(
   return () => mockVisualClearListeners.delete(callback);
 }
 
-export async function updateVisualOutput(output: VisualOutputPayload): Promise<void> {
+export async function updateVisualPresentation(frame: VisualPresentationFrame): Promise<void> {
   if (window.__PROLLYGLOT_PREVIEW__) {
-    window.__PROLLYGLOT_PREVIEW__.visualOutput = structuredClone(output);
+    window.__PROLLYGLOT_PREVIEW__.visualPresentation = structuredClone(frame);
   }
   if (isTauri()) {
-    await invoke(
-      RUNTIME_COMMANDS.updateVisualOverlayOutput,
-      { output } satisfies UpdateVisualOverlayOutputCommand
+    await invoke<boolean>(
+      RUNTIME_COMMANDS.updateVisualPresentation,
+      { frame } satisfies UpdateVisualPresentationCommand
     );
     return;
   }
   if (mockVisualStatus.active && mockVisualStatus.state === "capturing") {
     mockVisualStatus = {
       ...mockVisualStatus,
-      overlayRegions: output.regions.length
+      overlayRegions: frame.regions.length
     };
     publishMockVisualStatus();
   }
@@ -855,8 +856,13 @@ export async function updateOverlaySettings(settings: OverlaySettings): Promise<
   if (isTauri()) await invoke("update_overlay_settings", { settings });
 }
 
-export async function updateCaptionOutput(output: CaptionOutputPayload): Promise<void> {
-  if (isTauri()) await emit("caption-output", output);
+export async function updateCaptionPresentation(frame: CaptionPresentationFrame): Promise<void> {
+  if (isTauri()) {
+    await invoke<boolean>(
+      RUNTIME_COMMANDS.updateCaptionPresentation,
+      { frame } satisfies UpdateCaptionPresentationCommand
+    );
+  }
 }
 
 export async function reportFrontendDiagnostic(

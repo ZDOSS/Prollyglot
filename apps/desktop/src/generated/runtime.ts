@@ -1,8 +1,8 @@
 // Generated from prollyglot-application-runtime. Do not edit by hand.
 
-export const RUNTIME_CONTRACT_VERSION = 1 as const;
-export const RUNTIME_COMMANDS = { bootstrap: "runtime_bootstrap", sourceSnapshot: "source_snapshot", startCapture: "start_capture", stopCapture: "stop_capture", captureStatus: "capture_status", visualCapabilities: "visual_capabilities", visualSourceSnapshot: "visual_source_snapshot", visualStatus: "visual_status", showVisualRegionSelector: "show_visual_region_selector", completeVisualRegionSelection: "complete_visual_region_selection", cancelVisualRegionSelection: "cancel_visual_region_selection", startVisualTranslation: "start_visual_translation", stopVisualTranslation: "stop_visual_translation", updateVisualOverlayOutput: "update_visual_overlay_output" } as const;
-export const RUNTIME_EVENTS = { state: "runtime-state", captureStatus: "capture-status", visualStatus: "visual-status", visualText: "visual-text-update", visualClear: "visual-text-clear", visualRegionSelected: "visual-region-selected", visualRegionSelectionCancelled: "visual-region-selection-cancelled", visualRegionSelectorRequest: "visual-region-selector-request" } as const;
+export const RUNTIME_CONTRACT_VERSION = 2 as const;
+export const RUNTIME_COMMANDS = { bootstrap: "runtime_bootstrap", sourceSnapshot: "source_snapshot", startCapture: "start_capture", stopCapture: "stop_capture", captureStatus: "capture_status", visualCapabilities: "visual_capabilities", visualSourceSnapshot: "visual_source_snapshot", visualStatus: "visual_status", showVisualRegionSelector: "show_visual_region_selector", completeVisualRegionSelection: "complete_visual_region_selection", cancelVisualRegionSelection: "cancel_visual_region_selection", startVisualTranslation: "start_visual_translation", stopVisualTranslation: "stop_visual_translation", updateCaptionPresentation: "update_caption_presentation", updateVisualPresentation: "update_visual_presentation" } as const;
+export const RUNTIME_EVENTS = { state: "runtime-state", captureStatus: "capture-status", visualStatus: "visual-status", visualText: "visual-text-update", visualClear: "visual-text-clear", visualRegionSelected: "visual-region-selected", visualRegionSelectionCancelled: "visual-region-selection-cancelled", visualRegionSelectorRequest: "visual-region-selector-request", captionPresentation: "caption-presentation", visualPresentation: "visual-presentation" } as const;
 
 export type SessionId = number;
 
@@ -80,13 +80,23 @@ export type VisualTextUpdate = { sessionId: SessionId, runtimeRevision: number, 
 
 export type VisualTextClear = { sessionId: SessionId, runtimeRevision: number, };
 
-export type VisualOutputRegion = { trackId: number, textRevision: number, original: string, translation?: string, translationPending: boolean, retained: boolean, bounds: VisualRect, };
+export type CaptionOutputMode = "original" | "translated" | "both";
 
-export type VisualOutputPayload = { sourceWidth: number, sourceHeight: number, sourceLanguage: string, targetLanguage: string, scanning: boolean, regions: Array<VisualOutputRegion>, };
+export type CaptionPresentationPhase = "active" | "holding" | "cleared";
+
+export type CaptionPresentationEntry = { key: string, sourceLanguage: string, original: string, translation?: string, translationPending: boolean, isFinal: boolean, };
+
+export type CaptionPresentationFrame = { sessionId: SessionId, runtimeRevision: number, presentationRevision: number, phase: CaptionPresentationPhase, readableAtMs: number, mode: CaptionOutputMode, targetLanguage?: string, entries: Array<CaptionPresentationEntry>, };
+
+export type UpdateCaptionPresentationCommand = { frame: CaptionPresentationFrame, };
+
+export type VisualPresentationRegion = { trackId: number, textRevision: number, original: string, translation?: string, translationPending: boolean, retained: boolean, bounds: VisualRect, };
+
+export type VisualPresentationFrame = { sessionId: SessionId, runtimeRevision: number, presentationRevision: number, sourceWidth: number, sourceHeight: number, sourceLanguage: string, targetLanguage: string, scanning: boolean, regions: Array<VisualPresentationRegion>, };
 
 export type StartVisualTranslationCommand = { selection: VisualCaptureSelection, sourceLanguage: string, targetLanguage: string, detectionMode: VisualDetectionMode | null, };
 
-export type UpdateVisualOverlayOutputCommand = { output: VisualOutputPayload, };
+export type UpdateVisualPresentationCommand = { frame: VisualPresentationFrame, };
 
 export type RuntimeSnapshot = { contractVersion: number, revision: number, sessionId: SessionId | null, mode: SessionMode | null, source: SessionSource | null, lifecycle: SessionLifecycle, health: RuntimeHealth, failure: ApplicationError | null, };
 
