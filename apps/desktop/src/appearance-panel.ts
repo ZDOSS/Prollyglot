@@ -1,6 +1,8 @@
-import { updateOverlaySettings } from "./bridge";
+import { desktopBridge } from "./bridge";
 import { icons } from "./icons";
 import { DEFAULT_OVERLAY_SETTINGS, type OverlaySettings } from "./types";
+
+const { updateOverlaySettings } = desktopBridge;
 
 export interface AppearancePanelOptions {
   showHeading?: boolean;

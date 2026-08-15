@@ -3,14 +3,8 @@ import {
   translationModelById,
   translationModelsForRoute
 } from "./translation-catalog";
-import {
-  installTranslationModel,
-  isTauri,
-  onTranslationStorageStatus,
-  removeTranslationModel,
-  translationModelBaseUrl,
-  translationStorageStatus
-} from "./bridge";
+import { desktopBridge } from "./bridge";
+import type { DesktopBridge } from "./desktop-bridge";
 import { languageLabel, type TranslationLanguage } from "./language-catalog";
 import type {
   TranslationControlCommand,
@@ -130,9 +124,14 @@ export class TranslationService {
   private nextSessionId = 1;
   private catalog: TranslationCatalogStatus;
 
-  constructor(mock = false) {
+  constructor(
+    mock = false,
+    private readonly hostBridge: DesktopBridge = desktopBridge
+  ) {
     this.mock = mock;
-    this.nativeModelBaseUrl = !mock && isTauri() ? translationModelBaseUrl() : undefined;
+    this.nativeModelBaseUrl = !mock && hostBridge.kind === "native"
+      ? hostBridge.translationModelBaseUrl()
+      : undefined;
     this.catalog = {
       models: TRANSLATION_MODELS.map((model) => ({
         phase: mock ? "notInstalled" : "checking",
@@ -167,11 +166,11 @@ export class TranslationService {
 
   async initialize(): Promise<TranslationCatalogStatus> {
     if (this.mock) return this.snapshot();
-    if (isTauri()) {
+    if (this.hostBridge.kind === "native") {
       this.startNativeListener();
       const legacyInspection = this.controlRequest({ type: "status" });
       try {
-        this.acceptNativeCatalog(await translationStorageStatus());
+        this.acceptNativeCatalog(await this.hostBridge.translationStorageStatus());
         // Native inventory is authoritative on desktop. Legacy inspection may
         // finish later to expose an old pack for deliberate migration, but it
         // must not hold the application startup path open.
@@ -214,10 +213,10 @@ export class TranslationService {
       await this.mockInstall(modelId);
       return;
     }
-    if (isTauri()) {
+    if (this.hostBridge.kind === "native") {
       const model = translationModelById(modelId);
       if (!model) throw new Error(`Unknown local translation model ${modelId}.`);
-      await installTranslationModel(model.storageId);
+      await this.hostBridge.installTranslationModel(model.storageId);
     } else {
       await this.controlRequest({ type: "install", modelId });
     }
@@ -237,10 +236,10 @@ export class TranslationService {
     if (activeSessionId) {
       this.scheduler.stopSession(activeSessionId, "The active translation model was removed.");
     }
-    if (isTauri()) {
+    if (this.hostBridge.kind === "native") {
       const model = translationModelById(modelId);
       if (!model) throw new Error(`Unknown local translation model ${modelId}.`);
-      await removeTranslationModel(model.storageId);
+      await this.hostBridge.removeTranslationModel(model.storageId);
       await this.controlRequest({ type: "remove", modelId });
     } else {
       await this.controlRequest({ type: "remove", modelId });
@@ -385,7 +384,9 @@ export class TranslationService {
   private startNativeListener(): void {
     if (this.nativeListenerStarted) return;
     this.nativeListenerStarted = true;
-    void onTranslationStorageStatus((catalog) => this.acceptNativeCatalog(catalog)).catch(
+    void this.hostBridge.onTranslationStorageStatus(
+      (catalog) => this.acceptNativeCatalog(catalog)
+    ).catch(
       (error) => {
         this.nativeListenerStarted = false;
         this.catalog = {
@@ -407,7 +408,7 @@ export class TranslationService {
   }
 
   private rebuildCatalog(): void {
-    if (!isTauri()) {
+    if (this.hostBridge.kind !== "native") {
       if (this.legacyCatalog) this.catalog = structuredClone(this.legacyCatalog);
       this.publish();
       return;

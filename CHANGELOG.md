@@ -5,6 +5,32 @@ Versioning while it is in the `0.x` pre-release line.
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-08-14
+
+### Added
+
+- A reducer-backed application store that owns runtime, source, model,
+  transcript, translation, visual, navigation, preference, and notice state.
+- Deterministic store tests for stale bootstrap/runtime rejection, transcript
+  revision ordering, feature-state independence, navigation, and subscriptions.
+- Dedicated, generated-contract-compatible preview fixture builders whose
+  fictional catalogs are isolated from the production model inventory.
+
+### Changed
+
+- Split desktop host access into one typed `DesktopBridge` contract with
+  separate native Tauri and browser-preview implementations.
+- Inject the host bridge into translation control so feature code can be tested
+  without importing or branching on live Tauri commands.
+- Route session projections, catalogs, transcript, visual state, navigation,
+  preferences, and user notices through the application store instead of
+  mutable module-level state in the desktop entry point.
+
+### Fixed
+
+- Prevent an older transcript snapshot from replacing a newer application-store
+  revision, matching the existing monotonic runtime bootstrap behavior.
+
 ## [0.1.7] - 2026-08-14
 
 ### Added

@@ -11,7 +11,7 @@ Prollyglot is a free and open-source desktop utility that captures audio from a 
 > [!IMPORTANT]
 > Prollyglot is in active pre-release development. There is not yet a supported binary release. Windows 11 is the primary target; the first Windows owner smoke confirmed that **Everything I hear** captions audible output from the selected playback device, while broader application, lifecycle, and release validation remains in progress.
 >
-> Current pre-release: **0.1.7**. See the [changelog](CHANGELOG.md) and
+> Current pre-release: **0.1.8**. See the [changelog](CHANGELOG.md) and
 > [versioning policy](docs/VERSIONING.md).
 
 ## Why Prollyglot exists
@@ -78,6 +78,9 @@ The repository currently contains:
 - one session-scoped, revisioned presentation stream per overlay, with native
   session validation and delayed-frame rejection so original and translated
   text cannot race, flash into each other's layout, or reappear after Stop;
+- one reducer-backed desktop application store for runtime, model inventories,
+  transcript, translation, visual state, navigation, and notices, plus separate
+  native and browser-preview bridges behind the same typed host contract;
 - reproducible English and multilingual comparison tooling covering the same model choices exposed by the app;
 - a bounded capture-to-inference bridge with visible backpressure and recovery behavior; and
 - live provisional/final transcript updates wired to a latest-following, scrollback-safe transcript view and a customizable always-on-top overlay that retains bounded, line-separated conversational context.

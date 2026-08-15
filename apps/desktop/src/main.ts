@@ -1,9 +1,54 @@
 import "./styles.css";
 
+import { desktopBridge, isTauri } from "./bridge";
+import { CaptionOutputController, supportedSourceLanguage } from "./caption-output";
+import { AppearancePanel } from "./appearance-panel";
 import {
+  AppStore,
+  FALLBACK_SPEECH_MODEL,
+  createInitialAppState,
+  type AppDestination,
+  type AppViewMode
+} from "./app-store";
+import { errorMessage, isApplicationError } from "./errors";
+import { icons } from "./icons";
+import {
+  SPOKEN_LANGUAGES,
+  languageLabel,
+  supportedTranslationLanguage
+} from "./language-catalog";
+import { SettingsPanel, type SettingsNoticeTone } from "./settings";
+import {
+  acceptsVisualSessionEvent as acceptsVisualRuntimeEvent
+} from "./runtime-state";
+import { TranslationService, translationStatusForRoute } from "./translation";
+import { VisualPanel } from "./visual-panel";
+import { VisualTranslationController } from "./visual-translation";
+import type {
+  CaptionOutputMode,
+  CaptureSelection,
+  CaptureStatus,
+  ModelCatalogStatus,
+  ModelStatus,
+  SourceSnapshot,
+  TranscriptSegment,
+  TranscriptSnapshot,
+  TranslationCatalogStatus,
+  TranslationModelStatus,
+  VisualModelCatalogStatus,
+  RuntimeSnapshot,
+  VisualSourceSnapshot,
+  VisualStatus
+} from "./types";
+import {
+  DEFAULT_OVERLAY_SETTINGS,
+  RUNTIME_CONTRACT_VERSION,
+  type OverlaySettings
+} from "./types";
+
+const {
   captureStatus,
   clearTranscript,
-  isTauri,
   installSpeechModel,
   installVisualModel,
   modelStatus,
@@ -38,47 +83,7 @@ import {
   visualSourceSnapshot,
   visualStatus,
   windowAction
-} from "./bridge";
-import { CaptionOutputController, supportedSourceLanguage } from "./caption-output";
-import { AppearancePanel } from "./appearance-panel";
-import { errorMessage, isApplicationError } from "./errors";
-import { icons } from "./icons";
-import {
-  SPOKEN_LANGUAGES,
-  languageLabel,
-  supportedTranslationLanguage
-} from "./language-catalog";
-import { SettingsPanel, type SettingsNotice, type SettingsNoticeTone } from "./settings";
-import {
-  acceptsVisualSessionEvent as acceptsVisualRuntimeEvent,
-  initialRuntimeCursor,
-  reduceRuntimeSnapshot
-} from "./runtime-state";
-import { TranslationService, translationStatusForRoute } from "./translation";
-import { VisualPanel } from "./visual-panel";
-import { VisualTranslationController } from "./visual-translation";
-import type {
-  CaptionOutputMode,
-  CaptureSelection,
-  CaptureStatus,
-  ModelCatalogStatus,
-  ModelStatus,
-  SourceSnapshot,
-  TranscriptSegment,
-  TranscriptSnapshot,
-  TranslationCatalogStatus,
-  TranslationModelStatus,
-  VisualCaptureCapabilities,
-  VisualModelCatalogStatus,
-  RuntimeSnapshot,
-  VisualSourceSnapshot,
-  VisualStatus
-} from "./types";
-import {
-  DEFAULT_OVERLAY_SETTINGS,
-  RUNTIME_CONTRACT_VERSION,
-  type OverlaySettings
-} from "./types";
+} = desktopBridge;
 
 const root = document.querySelector<HTMLElement>("#app");
 if (!root) throw new Error("missing app root");
@@ -276,59 +281,19 @@ const CAPTION_MODE_STORAGE_KEY = "prollyglot.caption-output";
 const TRANSLATION_TARGET_STORAGE_KEY = "prollyglot.translation-target";
 const VIEW_MODE_STORAGE_KEY = "prollyglot.view-mode";
 
-type AppViewMode = "full" | "compact";
-type DialogPanel = "transcript" | "models" | "settings" | "visual" | "appearance";
+type DialogPanel = Exclude<AppDestination, "captions">;
 
-let currentViewMode: AppViewMode = storedViewMode();
-
-let snapshot: SourceSnapshot = { playbackDevices: [], applications: [] };
-let currentStatus: CaptureStatus = { state: "stopped", peak: 0, droppedFrames: 0 };
-let runtimeCursor = initialRuntimeCursor();
-let currentRuntime: RuntimeSnapshot | undefined;
-const runtimeSubscribers = new Set<() => void>();
-const FALLBACK_MODEL: ModelStatus = {
-  phase: "failed",
-  modelId: "initial-english",
-  displayName: "English streaming model",
-  profile: "English",
-  description: "Local streaming English captions.",
-  languages: ["en"],
-  downloadedBytes: 0,
-  totalBytes: 0,
-  message: "No English speech models are available."
-};
-let currentModels: ModelCatalogStatus = {
-  selectedModelId: FALLBACK_MODEL.modelId,
-  models: [FALLBACK_MODEL]
-};
-let currentVisualCapabilities: VisualCaptureCapabilities = {
-  windowsGraphicsCapture: false,
-  systemPicker: false,
-  desktopDuplicationExperiment: false,
-  message: "Checking Windows screen capture…"
-};
-let currentVisualSources: VisualSourceSnapshot = { windows: [], displays: [] };
-let currentVisualModels: VisualModelCatalogStatus = { models: [] };
-let currentVisualStatus: VisualStatus = {
-  active: false,
-  state: "stopped",
-  framesReceived: 0,
-  framesAnalyzed: 0,
-  framesUnchanged: 0,
-  replacedFrames: 0,
-  visibleRegions: 0,
-  overlayRegions: 0
-};
 const useMockTranslation = !isTauri()
   && !new URLSearchParams(window.location.search).has("realTranslation");
 const translationService = new TranslationService(useMockTranslation);
-let currentTranslations = translationService.snapshot();
-let currentTranscript: TranscriptSnapshot = { revision: 0, committed: [] };
-let settingsNotice: SettingsNotice | undefined;
-let acceptedSpokenLanguage = "en";
-let preferredCaptionMode = storedCaptionMode();
-let preferredTranslationTarget = storedTranslationTarget();
-let transcriptFollowLatest = true;
+const appStore = new AppStore(createInitialAppState({
+  viewMode: storedViewMode(),
+  acceptedSpokenLanguage: "en",
+  captionMode: storedCaptionMode(),
+  translationTarget: storedTranslationTarget(),
+  translations: translationService.snapshot()
+}));
+const appState = () => appStore.getState();
 const FOLLOW_SYSTEM_DEFAULT = "__follow-system-default__";
 const TRANSCRIPT_BOTTOM_THRESHOLD = 48;
 const settingsPanel = new SettingsPanel();
@@ -342,7 +307,7 @@ const captionOutput = new CaptionOutputController(
     return updateCaptionPresentation(frame);
   },
   (message) => {
-    captureMessage.textContent = message;
+    setCaptureNotice(message, "error");
     void reportFrontendDiagnostic("translation", message);
   },
   (message) => {
@@ -390,8 +355,9 @@ function storedViewMode(): AppViewMode {
 }
 
 function renderViewMode(): void {
-  appWindow.dataset.viewMode = currentViewMode;
-  const compact = currentViewMode === "compact";
+  const viewMode = appState().navigation.viewMode;
+  appWindow.dataset.viewMode = viewMode;
+  const compact = viewMode === "compact";
   viewModeToggle.setAttribute("aria-label", compact ? "Open full view" : "Use compact view");
   viewModeToggle.querySelector<HTMLElement>(".view-mode-icon")!.innerHTML = compact
     ? icons.fullView
@@ -402,9 +368,9 @@ function renderViewMode(): void {
 }
 
 async function changeViewMode(next: AppViewMode): Promise<void> {
-  if (next === currentViewMode) return;
+  if (next === appState().navigation.viewMode) return;
   if (dialog.open) dialog.close();
-  currentViewMode = next;
+  appStore.dispatch({ type: "navigation/view-mode", viewMode: next });
   localStorage.setItem(VIEW_MODE_STORAGE_KEY, next);
   renderViewMode();
   setActiveNavigation("captions");
@@ -420,7 +386,7 @@ function populateSpokenLanguageOptions(): void {
     ...SPOKEN_LANGUAGES.map(({ code, label }) => option(code, label, code === "en")),
     option("auto", "Automatic · mixed languages")
   );
-  spokenLanguage.value = acceptedSpokenLanguage;
+  spokenLanguage.value = appState().preferences.acceptedSpokenLanguage;
 }
 
 function populateTranslationTargets(): void {
@@ -440,6 +406,7 @@ function populateTranslationTargets(): void {
       .filter(({ code }) => code !== sourceLanguage)
       .map(({ code, label }) => option(code, label))
   );
+  const preferredTranslationTarget = appState().preferences.translationTarget;
   const preferredAvailable = [...translationTarget.options]
     .some(({ value }) => value === preferredTranslationTarget);
   translationTarget.value = preferredAvailable
@@ -463,26 +430,27 @@ function storedOverlaySettings(): OverlaySettings {
 }
 
 function populateSources(nextSnapshot: SourceSnapshot) {
-  snapshot = nextSnapshot;
+  appStore.dispatch({ type: "sources/replaced", snapshot: nextSnapshot });
+  const sources = appState().sources;
   const previousSource = sourceSelect.value;
   const previousDevice = deviceSelect.value;
 
   sourceSelect.replaceChildren(option("system", "Everything I hear"));
-  for (const application of snapshot.applications) {
+  for (const application of sources.applications) {
     sourceSelect.append(option(`application:${application.processId}`, `Only ${application.name}`));
   }
   if ([...sourceSelect.options].some(({ value }) => value === previousSource)) {
     sourceSelect.value = previousSource;
   }
 
-  const defaultDevice = snapshot.playbackDevices.find(({ isDefault }) => isDefault);
+  const defaultDevice = sources.playbackDevices.find(({ isDefault }) => isDefault);
   const followLabel = defaultDevice
     ? `Follow system default — ${defaultDevice.name}`
     : "Follow system default";
   deviceSelect.replaceChildren(
     option(FOLLOW_SYSTEM_DEFAULT, followLabel, !previousDevice || previousDevice === FOLLOW_SYSTEM_DEFAULT)
   );
-  for (const device of snapshot.playbackDevices) {
+  for (const device of sources.playbackDevices) {
     const label = device.isDefault ? `${device.name} — Pin current default` : device.name;
     deviceSelect.append(option(device.id, label, device.id === previousDevice));
   }
@@ -509,7 +477,7 @@ function selectedCapture(): CaptureSelection {
 }
 
 function selectedTranslationModel(
-  catalog = currentTranslations,
+  catalog = appState().translations,
   source = spokenLanguage.value,
   target = translationTarget.value
 ): TranslationModelStatus | undefined {
@@ -539,7 +507,7 @@ function renderCaptionOutputControl(): void {
         ["both", `Original + ${targetLabel}`]
       ]
     : [["original", "Original language"]];
-  const selectedMode = routeAvailable ? preferredCaptionMode : "original";
+  const selectedMode = routeAvailable ? appState().preferences.captionMode : "original";
   captionLanguage.replaceChildren(
     ...allowedModes.map(([value, label]) => option(value, label, value === selectedMode))
   );
@@ -577,7 +545,10 @@ function prepareSelectedTranslator(): void {
   if (!sourceLanguage || !targetLanguage || !translationRequested() || model?.phase !== "ready") return;
   void captionOutput.prepare(sourceLanguage).catch((error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
-    captureMessage.textContent = `${languageLabel(targetLanguage)} translator could not start: ${message}`;
+    setCaptureNotice(
+      `${languageLabel(targetLanguage)} translator could not start: ${message}`,
+      "error"
+    );
     void reportFrontendDiagnostic(
       "translation-model",
       `${languageLabel(sourceLanguage)} to ${languageLabel(targetLanguage)} preload: ${message}`
@@ -628,29 +599,30 @@ function renderTranslationSetup(): void {
 }
 
 function renderTranslationStatus(catalog: TranslationCatalogStatus): void {
+  const previousCatalog = appState().translations;
   const newlyFailed = catalog.models.find((model) => {
     if (model.phase !== "failed" && model.phase !== "corrupt") return false;
-    const previous = currentTranslations.models.find(({ modelId }) => modelId === model.modelId);
+    const previous = previousCatalog.models.find(({ modelId }) => modelId === model.modelId);
     return previous?.phase !== "failed" && previous?.phase !== "corrupt";
   });
   const completed = catalog.models.find((model) =>
     model.phase === "ready"
-    && currentTranslations.models.find(({ modelId }) => modelId === model.modelId)?.phase === "downloading"
+    && previousCatalog.models.find(({ modelId }) => modelId === model.modelId)?.phase === "downloading"
   );
   const failed = catalog.models.find((model) =>
     (model.phase === "failed" || model.phase === "corrupt")
-    && currentTranslations.models.find(({ modelId }) => modelId === model.modelId)?.phase === "downloading"
+    && previousCatalog.models.find(({ modelId }) => modelId === model.modelId)?.phase === "downloading"
   );
   if (completed) {
-    settingsNotice = {
-      message: `${completed.displayName} is installed and available from the Translate to control.`,
-      tone: "success"
-    };
+    setSettingsNotice(
+      `${completed.displayName} is installed and available from the Translate to control.`,
+      "success"
+    );
   } else if (failed) {
-    settingsNotice = {
-      message: failed.message ?? `${failed.displayName} could not be installed.`,
-      tone: "error"
-    };
+    setSettingsNotice(
+      failed.message ?? `${failed.displayName} could not be installed.`,
+      "error"
+    );
   }
   if (newlyFailed) {
     void reportFrontendDiagnostic(
@@ -658,7 +630,7 @@ function renderTranslationStatus(catalog: TranslationCatalogStatus): void {
       `${newlyFailed.displayName}: ${newlyFailed.message ?? newlyFailed.phase}`
     );
   }
-  currentTranslations = catalog;
+  appStore.dispatch({ type: "translation/catalog", catalog });
   renderCaptionOutputControl();
   if (dialog.open && dialog.dataset.panel === "models") renderSettingsPanel();
   if (dialog.open && dialog.dataset.panel === "visual") renderVisualPanel();
@@ -685,10 +657,10 @@ function modelSupportsLanguage(model: ModelStatus, language = spokenLanguage.val
 }
 
 function renderStatus(status: CaptureStatus) {
-  const stateChanged = currentStatus.state !== status.state;
-  currentStatus = status;
+  const stateChanged = appState().captureStatus.state !== status.state;
+  appStore.dispatch({ type: "capture/status", status });
   renderHeaderStatus();
-  captureMessage.textContent = status.message ?? "";
+  setCaptureNotice(status.message);
   const stoppable = status.state === "starting"
     || status.state === "capturing"
     || status.state === "waiting";
@@ -714,17 +686,20 @@ function runtimeSessionActive(snapshot: RuntimeSnapshot): boolean {
 }
 
 function applyRuntimeSnapshot(next: RuntimeSnapshot): void {
-  const reduction = reduceRuntimeSnapshot(runtimeCursor, next, RUNTIME_CONTRACT_VERSION);
+  const reduction = appStore.dispatch({
+    type: "runtime/received",
+    snapshot: next,
+    expectedContractVersion: RUNTIME_CONTRACT_VERSION
+  }).runtime;
+  if (!reduction) return;
   if (reduction.contractMismatch) {
     const message = `The desktop runtime contract is ${next.contractVersion}; this interface expects ${RUNTIME_CONTRACT_VERSION}. Restart Prollyglot after updating.`;
-    captureMessage.textContent = message;
+    setCaptureNotice(message, "error");
     void reportFrontendDiagnostic("runtime-contract", message);
     return;
   }
   if (!reduction.accepted) return;
   const changedSession = reduction.sessionChanged;
-  runtimeCursor = reduction.cursor;
-  currentRuntime = reduction.cursor.snapshot;
   const presentationEpoch = next.sessionId === null
     ? undefined
     : { sessionId: next.sessionId, runtimeRevision: next.revision };
@@ -737,24 +712,24 @@ function applyRuntimeSnapshot(next: RuntimeSnapshot): void {
   visualTranslation.setPresentationEpoch(
     presentationActive && next.mode === "visualTranslation" ? presentationEpoch : undefined
   );
-  for (const subscriber of runtimeSubscribers) subscriber();
   const message = next.failure?.message ?? next.health.message ?? undefined;
   const sourceLabel = next.source?.label ?? undefined;
 
   if (next.mode === "audioCaptions") {
     const base = changedSession
       ? { state: "stopped" as const, peak: 0, droppedFrames: 0 }
-      : currentStatus;
+      : appState().captureStatus;
     renderStatus({
       ...base,
       state: runtimeCaptureState(next),
       sourceLabel,
       message
     });
-    if (currentVisualStatus.active
-      || currentVisualStatus.state === "starting"
-      || currentVisualStatus.state === "waiting"
-      || currentVisualStatus.state === "stopping") {
+    const visualStatus = appState().visualStatus;
+    if (visualStatus.active
+      || visualStatus.state === "starting"
+      || visualStatus.state === "waiting"
+      || visualStatus.state === "stopping") {
       renderVisualStatus({
         active: false,
         state: "stopped",
@@ -779,7 +754,7 @@ function applyRuntimeSnapshot(next: RuntimeSnapshot): void {
           visibleRegions: 0,
           overlayRegions: 0
         }
-      : currentVisualStatus;
+      : appState().visualStatus;
     renderVisualStatus({
       ...base,
       active: runtimeSessionActive(next),
@@ -787,10 +762,11 @@ function applyRuntimeSnapshot(next: RuntimeSnapshot): void {
       sourceLabel,
       message
     });
-    if (currentStatus.state === "starting"
-      || currentStatus.state === "capturing"
-      || currentStatus.state === "waiting"
-      || currentStatus.state === "stopping") {
+    const captureStatus = appState().captureStatus;
+    if (captureStatus.state === "starting"
+      || captureStatus.state === "capturing"
+      || captureStatus.state === "waiting"
+      || captureStatus.state === "stopping") {
       renderStatus({ state: "stopped", peak: 0, droppedFrames: 0 });
     }
     return;
@@ -810,24 +786,28 @@ function applyRuntimeSnapshot(next: RuntimeSnapshot): void {
 }
 
 function audioActive(): boolean {
+  const currentRuntime = appState().runtime.snapshot;
   if (currentRuntime) {
     return currentRuntime.mode === "audioCaptions" && runtimeSessionActive(currentRuntime);
   }
-  return currentStatus.state === "starting"
-    || currentStatus.state === "capturing"
-    || currentStatus.state === "waiting"
-    || currentStatus.state === "stopping";
+  const status = appState().captureStatus;
+  return status.state === "starting"
+    || status.state === "capturing"
+    || status.state === "waiting"
+    || status.state === "stopping";
 }
 
 function waitForRuntimeStopped(timeoutMs = 15_000): Promise<void> {
+  const currentRuntime = appState().runtime.snapshot;
   if (!currentRuntime || currentRuntime.lifecycle === "stopped") return Promise.resolve();
   return new Promise((resolve, reject) => {
+    let unsubscribe: () => void = () => undefined;
     const finish = () => {
-      runtimeSubscribers.delete(check);
+      unsubscribe();
       window.clearTimeout(timeout);
     };
     const check = () => {
-      if (currentRuntime?.lifecycle !== "stopped") return;
+      if (appState().runtime.snapshot?.lifecycle !== "stopped") return;
       finish();
       resolve();
     };
@@ -835,20 +815,23 @@ function waitForRuntimeStopped(timeoutMs = 15_000): Promise<void> {
       finish();
       reject(new Error("Prollyglot could not finish stopping the previous session in time. Restart the app and try again."));
     }, timeoutMs);
-    runtimeSubscribers.add(check);
+    unsubscribe = appStore.subscribe(check);
   });
 }
 
 function visualEngaged(): boolean {
+  const currentRuntime = appState().runtime.snapshot;
   if (currentRuntime) {
     return currentRuntime.mode === "visualTranslation" && runtimeSessionActive(currentRuntime);
   }
-  return currentVisualStatus.active
-    || currentVisualStatus.state === "starting"
-    || currentVisualStatus.state === "stopping";
+  const visualStatus = appState().visualStatus;
+  return visualStatus.active
+    || visualStatus.state === "starting"
+    || visualStatus.state === "stopping";
 }
 
 function renderHeaderStatus(): void {
+  const currentRuntime = appState().runtime.snapshot;
   if (currentRuntime) {
     const state = runtimeCaptureState(currentRuntime);
     const labels: Record<CaptureStatus["state"], string> = {
@@ -863,10 +846,10 @@ function renderHeaderStatus(): void {
     statusText.textContent = labels[state];
     return;
   }
-  const visualState = currentVisualStatus.state;
+  const visualState = appState().visualStatus.state;
   const state = visualEngaged() || (visualState === "failed" && !audioActive())
     ? visualState
-    : currentStatus.state;
+    : appState().captureStatus.state;
   const labels: Record<CaptureStatus["state"], string> = {
     starting: "Starting",
     capturing: visualEngaged() ? "Screen" : "Live",
@@ -880,17 +863,18 @@ function renderHeaderStatus(): void {
 }
 
 function renderVisualStatus(status: VisualStatus): void {
-  const changed = currentVisualStatus.state !== status.state
-    || currentVisualStatus.active !== status.active
-    || currentVisualStatus.sourceLabel !== status.sourceLabel
-    || currentVisualStatus.message !== status.message;
-  currentVisualStatus = status;
+  const previous = appState().visualStatus;
+  const changed = previous.state !== status.state
+    || previous.active !== status.active
+    || previous.sourceLabel !== status.sourceLabel
+    || previous.message !== status.message;
+  appStore.dispatch({ type: "visual/status", status });
   visualToggle.textContent = status.active ? "View Screen Translation" : "Translate Screen…";
   visualToggle.dataset.active = String(status.active);
   visualToggle.disabled = status.state === "starting" || status.state === "stopping";
   renderHeaderStatus();
   updatePrimaryAvailability();
-  renderModelStatus(currentModels);
+  renderModelStatus(appState().speechModels);
   renderTranslationSetup();
   if (changed && dialog.open && dialog.dataset.panel === "models") renderSettingsPanel();
   if (dialog.open && dialog.dataset.panel === "visual") {
@@ -900,31 +884,36 @@ function renderVisualStatus(status: VisualStatus): void {
 }
 
 function renderVisualModelStatus(catalog: VisualModelCatalogStatus): void {
+  const previousCatalog = appState().visualModels;
   const completed = catalog.models.find((model) =>
     model.phase === "ready"
-    && currentVisualModels.models.find(({ modelId }) => modelId === model.modelId)?.phase === "downloading"
+    && previousCatalog.models.find(({ modelId }) => modelId === model.modelId)?.phase === "downloading"
   );
   const failed = catalog.models.find((model) =>
     model.phase === "failed"
-    && currentVisualModels.models.find(({ modelId }) => modelId === model.modelId)?.phase === "downloading"
+    && previousCatalog.models.find(({ modelId }) => modelId === model.modelId)?.phase === "downloading"
   );
   if (completed) {
-    settingsNotice = { message: `${completed.displayName} is installed and ready.`, tone: "success" };
+    setSettingsNotice(`${completed.displayName} is installed and ready.`, "success");
   } else if (failed) {
-    settingsNotice = { message: failed.message ?? `${failed.displayName} could not be installed.`, tone: "error" };
+    setSettingsNotice(
+      failed.message ?? `${failed.displayName} could not be installed.`,
+      "error"
+    );
   }
-  currentVisualModels = catalog;
+  appStore.dispatch({ type: "visual/catalog", catalog });
   if (dialog.open && dialog.dataset.panel === "models") renderSettingsPanel();
   if (dialog.open && dialog.dataset.panel === "visual") renderVisualPanel();
 }
 
 function updatePrimaryAvailability() {
-  const stoppable = currentStatus.state === "starting"
-    || currentStatus.state === "capturing"
-    || currentStatus.state === "waiting";
+  const captureStatus = appState().captureStatus;
+  const stoppable = captureStatus.state === "starting"
+    || captureStatus.state === "capturing"
+    || captureStatus.state === "waiting";
   const blockedByVisual = visualEngaged();
   const model = selectedModel();
-  captureToggle.disabled = currentStatus.state === "stopping" || blockedByVisual
+  captureToggle.disabled = captureStatus.state === "stopping" || blockedByVisual
     || (!stoppable && (model.phase !== "ready" || !modelSupportsLanguage(model)));
   spokenLanguage.disabled = audioActive() || blockedByVisual;
 }
@@ -934,33 +923,31 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
 }
 
-function selectedModel(catalog = currentModels): ModelStatus {
+function selectedModel(catalog = appState().speechModels): ModelStatus {
   return catalog.models.find(({ modelId }) => modelId === catalog.selectedModelId)
     ?? catalog.models[0]
-    ?? FALLBACK_MODEL;
+    ?? FALLBACK_SPEECH_MODEL;
 }
 
 function renderModelStatus(catalog: ModelCatalogStatus) {
+  const previousCatalog = appState().speechModels;
   const completed = catalog.models.find((model) =>
     model.phase === "ready"
-    && currentModels.models.find(({ modelId }) => modelId === model.modelId)?.phase === "downloading"
+    && previousCatalog.models.find(({ modelId }) => modelId === model.modelId)?.phase === "downloading"
   );
   const failed = catalog.models.find((model) =>
     model.phase === "failed"
-    && currentModels.models.find(({ modelId }) => modelId === model.modelId)?.phase === "downloading"
+    && previousCatalog.models.find(({ modelId }) => modelId === model.modelId)?.phase === "downloading"
   );
   if (completed) {
-    settingsNotice = {
-      message: `${completed.displayName} is installed and ready to use.`,
-      tone: "success"
-    };
+    setSettingsNotice(`${completed.displayName} is installed and ready to use.`, "success");
   } else if (failed) {
-    settingsNotice = {
-      message: failed.message ?? `${failed.displayName} could not be installed.`,
-      tone: "error"
-    };
+    setSettingsNotice(
+      failed.message ?? `${failed.displayName} could not be installed.`,
+      "error"
+    );
   }
-  currentModels = catalog;
+  appStore.dispatch({ type: "speech/catalog", catalog });
   const status = selectedModel(catalog);
   const compatible = modelSupportsLanguage(status);
   const ready = status.phase === "ready" && compatible;
@@ -1003,7 +990,8 @@ function renderModelStatus(catalog: ModelCatalogStatus) {
 }
 
 function renderTranscript(snapshot: TranscriptSnapshot) {
-  currentTranscript = snapshot;
+  const accepted = appStore.dispatch({ type: "transcript/received", transcript: snapshot });
+  if (!accepted.changed && snapshot.revision < appState().transcript.revision) return;
   captionOutput.updateTranscript(snapshot);
   renderSessionPreview();
   if (dialog.open && dialog.dataset.panel === "transcript") renderTranscriptPanel();
@@ -1014,21 +1002,21 @@ type SourceRefreshResult =
   | { ok: false; message: string };
 
 async function refreshSources(): Promise<SourceRefreshResult> {
-  captureMessage.textContent = "";
+  setCaptureNotice(undefined);
   try {
     const nextSnapshot = await sourceSnapshot();
     populateSources(nextSnapshot);
     return { ok: true, snapshot: nextSnapshot };
   } catch (error) {
     const message = errorMessage(error);
-    captureMessage.textContent = message;
+    setCaptureNotice(message, "error");
     return { ok: false, message };
   }
 }
 
 async function refreshVisualSources(): Promise<VisualSourceSnapshot> {
   const next = await visualSourceSnapshot();
-  currentVisualSources = next;
+  appStore.dispatch({ type: "visual/sources", snapshot: next });
   if (dialog.open && dialog.dataset.panel === "visual") renderVisualPanel();
   return next;
 }
@@ -1091,8 +1079,9 @@ function appendTranscriptCaption(
 
 function renderSessionPreview(): void {
   sessionPreviewContent.replaceChildren();
-  const segments = currentTranscript.committed.slice(-6);
-  if (currentTranscript.provisional) segments.push(currentTranscript.provisional);
+  const transcript = appState().transcript;
+  const segments = transcript.committed.slice(-6);
+  if (transcript.provisional) segments.push(transcript.provisional);
   if (segments.length === 0) {
     const empty = document.createElement("div");
     empty.className = "session-preview-empty";
@@ -1120,6 +1109,7 @@ function renderSessionPreview(): void {
 }
 
 function renderTranscriptPanel(forceLatest = false) {
+  const transcript = appState().transcript;
   const content = dialogContent();
   content.className = "";
   const previousList = content.querySelector<HTMLOListElement>(".transcript-list");
@@ -1129,7 +1119,7 @@ function renderTranscriptPanel(forceLatest = false) {
     : 0;
   const shouldFollowLatest = forceLatest
     || !previousList
-    || transcriptFollowLatest
+    || appState().transcriptFollowLatest
     || previousDistanceFromBottom <= TRANSCRIPT_BOTTOM_THRESHOLD;
   content.replaceChildren();
 
@@ -1137,7 +1127,7 @@ function renderTranscriptPanel(forceLatest = false) {
   toolbar.className = "dialog-toolbar";
   const summary = document.createElement("span");
   summary.className = "dialog-summary";
-  summary.textContent = `${currentTranscript.committed.length} finalized ${currentTranscript.committed.length === 1 ? "caption" : "captions"}`;
+  summary.textContent = `${transcript.committed.length} finalized ${transcript.committed.length === 1 ? "caption" : "captions"}`;
   const actions = document.createElement("div");
   actions.className = "dialog-toolbar-actions";
   const latest = document.createElement("button");
@@ -1149,20 +1139,20 @@ function renderTranscriptPanel(forceLatest = false) {
   clear.type = "button";
   clear.className = "text-button";
   clear.textContent = "Clear";
-  clear.disabled = currentTranscript.committed.length === 0 && !currentTranscript.provisional;
+  clear.disabled = transcript.committed.length === 0 && !transcript.provisional;
   clear.addEventListener("click", async () => {
     try {
       await clearTranscript();
     } catch (error) {
-      captureMessage.textContent = error instanceof Error ? error.message : String(error);
+      setCaptureNotice(error instanceof Error ? error.message : String(error), "error");
     }
   });
   actions.append(latest, clear);
   toolbar.append(summary, actions);
   content.append(toolbar);
 
-  if (currentTranscript.committed.length === 0 && !currentTranscript.provisional) {
-    transcriptFollowLatest = true;
+  if (transcript.committed.length === 0 && !transcript.provisional) {
+    appStore.dispatch({ type: "transcript/follow-latest", follow: true });
     const empty = document.createElement("p");
     empty.className = "empty-copy";
     empty.textContent = "Finalized captions from this session will appear here.";
@@ -1173,7 +1163,7 @@ function renderTranscriptPanel(forceLatest = false) {
   const list = document.createElement("ol");
   list.className = "transcript-list";
   list.setAttribute("aria-label", "Session transcript");
-  for (const segment of currentTranscript.committed) {
+  for (const segment of transcript.committed) {
     const item = document.createElement("li");
     item.className = "transcript-segment";
     const timestamp = document.createElement("time");
@@ -1182,36 +1172,37 @@ function renderTranscriptPanel(forceLatest = false) {
     appendTranscriptCaption(item, segment);
     list.append(item);
   }
-  if (currentTranscript.provisional) {
+  if (transcript.provisional) {
     const item = document.createElement("li");
     item.className = "transcript-segment provisional";
     const timestamp = document.createElement("time");
     timestamp.textContent = "Live";
     item.append(timestamp);
-    appendTranscriptCaption(item, currentTranscript.provisional);
+    appendTranscriptCaption(item, transcript.provisional);
     list.append(item);
   }
   content.append(list);
 
   const updateFollowState = () => {
     const distanceFromBottom = list.scrollHeight - list.clientHeight - list.scrollTop;
-    transcriptFollowLatest = distanceFromBottom <= TRANSCRIPT_BOTTOM_THRESHOLD;
-    latest.hidden = transcriptFollowLatest;
+    const follow = distanceFromBottom <= TRANSCRIPT_BOTTOM_THRESHOLD;
+    appStore.dispatch({ type: "transcript/follow-latest", follow });
+    latest.hidden = follow;
   };
   list.addEventListener("scroll", updateFollowState, { passive: true });
   latest.addEventListener("click", () => {
-    transcriptFollowLatest = true;
+    appStore.dispatch({ type: "transcript/follow-latest", follow: true });
     list.scrollTop = list.scrollHeight;
     latest.hidden = true;
   });
 
   requestAnimationFrame(() => {
     if (shouldFollowLatest) {
-      transcriptFollowLatest = true;
+      appStore.dispatch({ type: "transcript/follow-latest", follow: true });
       list.scrollTop = list.scrollHeight;
       latest.hidden = true;
     } else {
-      transcriptFollowLatest = false;
+      appStore.dispatch({ type: "transcript/follow-latest", follow: false });
       list.scrollTop = Math.min(previousScrollTop, list.scrollHeight - list.clientHeight);
       latest.hidden = false;
     }
@@ -1222,14 +1213,14 @@ function renderSettingsPanel() {
   const content = dialogContent();
   const activeTranslationModel = selectedTranslationModel();
   settingsPanel.render(content, {
-    speechCatalog: currentModels,
-    translationCatalog: currentTranslations,
-    visualCatalog: currentVisualModels,
+    speechCatalog: appState().speechModels,
+    translationCatalog: appState().translations,
+    visualCatalog: appState().visualModels,
     spokenLanguage: spokenLanguage.value,
     modelChangesBlocked: audioActive() || visualEngaged(),
     translationRequested: translationRequested(),
     activeTranslationModelId: activeTranslationModel?.modelId,
-    visualRequested: currentVisualStatus.active
+    visualRequested: appState().visualStatus.active
   }, {
     announce: setSettingsNotice,
     installSpeech: installSpeechModel,
@@ -1258,6 +1249,7 @@ function renderSettingsPanel() {
 }
 
 function renderGeneralSettingsPanel(): void {
+  const currentViewMode = appState().navigation.viewMode;
   const content = dialogContent();
   content.className = "general-settings-content";
   content.innerHTML = `
@@ -1305,11 +1297,11 @@ function renderGeneralSettingsPanel(): void {
 
 function renderVisualPanel(): void {
   visualPanel.render(dialogContent(), {
-    capabilities: currentVisualCapabilities,
-    sources: currentVisualSources,
-    models: currentVisualModels,
-    translations: currentTranslations,
-    status: currentVisualStatus,
+    capabilities: appState().visualCapabilities,
+    sources: appState().visualSources,
+    models: appState().visualModels,
+    translations: appState().translations,
+    status: appState().visualStatus,
     audioActive: audioActive()
   }, {
     refreshSources: refreshVisualSources,
@@ -1357,6 +1349,7 @@ function renderAppearancePanel(): void {
 function renderSettingsNotice() {
   const status = document.querySelector<HTMLElement>("#settings-action-status");
   if (!status) return;
+  const settingsNotice = appState().notices.settings;
   status.textContent = settingsNotice?.message ?? "";
   status.dataset.tone = settingsNotice?.tone ?? "neutral";
   status.hidden = !settingsNotice || dialog.dataset.panel !== "models";
@@ -1364,8 +1357,20 @@ function renderSettingsNotice() {
 }
 
 function setSettingsNotice(message: string, tone: SettingsNoticeTone) {
-  settingsNotice = { message, tone };
+  appStore.dispatch({ type: "notice/settings", notice: { message, tone } });
   renderSettingsNotice();
+}
+
+function setCaptureNotice(
+  message: string | undefined,
+  tone: SettingsNoticeTone = "neutral"
+): void {
+  appStore.dispatch({
+    type: "notice/capture",
+    notice: message ? { message, tone } : undefined
+  });
+  captureMessage.textContent = message ?? "";
+  captureMessage.dataset.tone = tone;
 }
 
 async function updateSpokenLanguage() {
@@ -1373,43 +1378,48 @@ async function updateSpokenLanguage() {
   renderLanguageGuidance();
   populateTranslationTargets();
   renderCaptionOutputControl();
-  captureMessage.textContent = "";
+  setCaptureNotice(undefined);
   const current = selectedModel();
   if (modelSupportsLanguage(current, language)) {
-    acceptedSpokenLanguage = language;
-    renderModelStatus(currentModels);
+    appStore.dispatch({ type: "preferences/spoken-language", language });
+    renderModelStatus(appState().speechModels);
     return;
   }
 
-  const candidates = currentModels.models.filter((model) => modelSupportsLanguage(model, language));
+  const candidates = appState().speechModels.models.filter(
+    (model) => modelSupportsLanguage(model, language)
+  );
   const candidate = candidates.find(({ phase }) => phase === "ready") ?? candidates[0];
   if (!candidate) {
-    spokenLanguage.value = acceptedSpokenLanguage;
+    spokenLanguage.value = appState().preferences.acceptedSpokenLanguage;
     populateTranslationTargets();
-    captureMessage.textContent = `No installed model catalog supports ${languageLabel(language)}.`;
+    setCaptureNotice(`No installed model catalog supports ${languageLabel(language)}.`, "error");
     renderCaptionOutputControl();
-    renderModelStatus(currentModels);
+    renderModelStatus(appState().speechModels);
     return;
   }
 
   try {
     await selectSpeechModel(candidate.modelId);
-    acceptedSpokenLanguage = language;
+    appStore.dispatch({ type: "preferences/spoken-language", language });
     renderModelStatus(await modelStatus());
   } catch (error) {
-    spokenLanguage.value = acceptedSpokenLanguage;
+    spokenLanguage.value = appState().preferences.acceptedSpokenLanguage;
     populateTranslationTargets();
-    captureMessage.textContent = error instanceof Error ? error.message : String(error);
+    setCaptureNotice(error instanceof Error ? error.message : String(error), "error");
     renderCaptionOutputControl();
-    renderModelStatus(currentModels);
+    renderModelStatus(appState().speechModels);
   }
 }
 
 sourceSelect.addEventListener("change", updateSourceMode);
 spokenLanguage.addEventListener("change", () => void updateSpokenLanguage());
 translationTarget.addEventListener("change", () => {
-  preferredTranslationTarget = translationTarget.value;
-  localStorage.setItem(TRANSLATION_TARGET_STORAGE_KEY, preferredTranslationTarget);
+  appStore.dispatch({
+    type: "preferences/translation-target",
+    language: translationTarget.value
+  });
+  localStorage.setItem(TRANSLATION_TARGET_STORAGE_KEY, translationTarget.value);
   const targetLanguage = supportedTranslationLanguage(translationTarget.value);
   if (targetLanguage) captionOutput.setTranslationTarget(targetLanguage);
   requireElement<HTMLElement>("#translation-target-help").textContent = targetLanguage
@@ -1421,37 +1431,38 @@ translationTarget.addEventListener("change", () => {
 captionLanguage.addEventListener("change", () => {
   const mode = captionLanguage.value as CaptionOutputMode;
   if (mode !== "original" && mode !== "translated" && mode !== "both") return;
-  preferredCaptionMode = mode;
+  appStore.dispatch({ type: "preferences/caption-mode", mode });
   localStorage.setItem(CAPTION_MODE_STORAGE_KEY, mode);
   captionOutput.setOutputMode(mode);
   renderCaptionOutputControl();
   if (dialog.open && dialog.dataset.panel === "transcript") renderTranscriptPanel();
 });
 modelAction.addEventListener("click", async () => {
-  captureMessage.textContent = "";
+  setCaptureNotice(undefined);
   try {
     await installSpeechModel(selectedModel().modelId);
   } catch (error) {
-    captureMessage.textContent = error instanceof Error ? error.message : String(error);
+    setCaptureNotice(error instanceof Error ? error.message : String(error), "error");
   }
 });
 translationAction.addEventListener("click", async () => {
-  captureMessage.textContent = "";
+  setCaptureNotice(undefined);
   const model = selectedTranslationModel();
   if (!model) return;
   try {
     await translationService.install(model.modelId);
   } catch (error) {
-    captureMessage.textContent = error instanceof Error ? error.message : String(error);
+    setCaptureNotice(error instanceof Error ? error.message : String(error), "error");
   }
 });
 captureToggle.addEventListener("click", async () => {
-  captureMessage.textContent = "";
+  setCaptureNotice(undefined);
   try {
+    const status = appState().captureStatus;
     if (
-      currentStatus.state === "starting"
-      || currentStatus.state === "capturing"
-      || currentStatus.state === "waiting"
+      status.state === "starting"
+      || status.state === "capturing"
+      || status.state === "waiting"
     ) {
       await stopCapture();
     } else {
@@ -1469,7 +1480,7 @@ captureToggle.addEventListener("click", async () => {
     renderStatus({
       state: "failed",
       peak: 0,
-      droppedFrames: currentStatus.droppedFrames,
+      droppedFrames: appState().captureStatus.droppedFrames,
       message: errorMessage(error)
     });
   }
@@ -1482,12 +1493,12 @@ for (const button of document.querySelectorAll<HTMLButtonElement>("[data-appeara
 }
 
 viewModeToggle.addEventListener("click", () => {
-  void changeViewMode(currentViewMode === "full" ? "compact" : "full");
+  void changeViewMode(appState().navigation.viewMode === "full" ? "compact" : "full");
 });
 
 function reportWindowControlError(action: string, error: unknown): void {
   const message = error instanceof Error ? error.message : String(error);
-  captureMessage.textContent = `Window ${action} failed: ${message}`;
+  setCaptureNotice(`Window ${action} failed: ${message}`, "error");
   void reportFrontendDiagnostic("window-control", `${action}: ${message}`);
 }
 
@@ -1535,13 +1546,13 @@ function openDialogPanel(panel: DialogPanel): void {
   requireElement<HTMLElement>("#dialog-title").textContent = copy[panel].title;
   requireElement<HTMLElement>("#dialog-subtitle").textContent = copy[panel].subtitle;
   if (panel === "models") {
-    settingsNotice = undefined;
+    appStore.dispatch({ type: "notice/settings", notice: undefined });
     settingsPanel.resetView();
   } else {
     renderSettingsNotice();
   }
   if (!dialog.open) {
-    if (currentViewMode === "full") dialog.show();
+    if (appState().navigation.viewMode === "full") dialog.show();
     else dialog.showModal();
   }
   captionWorkspace.inert = true;
@@ -1555,6 +1566,7 @@ function openDialogPanel(panel: DialogPanel): void {
 }
 
 function setActiveNavigation(destination: DialogPanel | "captions"): void {
+  appStore.dispatch({ type: "navigation/destination", destination });
   for (const button of document.querySelectorAll<HTMLButtonElement>(".desktop-nav-action")) {
     const selected = destination === "captions"
       ? button.dataset.workspace === "captions"
@@ -1583,7 +1595,7 @@ for (const button of document.querySelectorAll<HTMLButtonElement>("[data-workspa
 
 requireElement<HTMLButtonElement>(".dialog-close").addEventListener("click", () => dialog.close());
 dialog.addEventListener("click", (event) => {
-  if (currentViewMode === "compact" && event.target === dialog) dialog.close();
+  if (appState().navigation.viewMode === "compact" && event.target === dialog) dialog.close();
 });
 dialog.addEventListener("close", () => {
   captionWorkspace.inert = false;
@@ -1607,7 +1619,7 @@ translationService.subscribeTelemetry((telemetry) => {
   );
 });
 renderViewMode();
-if (currentViewMode === "compact") {
+if (appState().navigation.viewMode === "compact") {
   void setWindowLayout("compact").catch((error) => reportWindowControlError("restore compact view", error));
 }
 populateSpokenLanguageOptions();
@@ -1648,7 +1660,12 @@ function acceptsVisualSessionEvent(
   runtimeRevision: number,
   allowTerminal = false
 ): boolean {
-  return acceptsVisualRuntimeEvent(runtimeCursor, sessionId, runtimeRevision, allowTerminal);
+  return acceptsVisualRuntimeEvent(
+    appState().runtime,
+    sessionId,
+    runtimeRevision,
+    allowTerminal
+  );
 }
 
 void Promise.all([
@@ -1658,21 +1675,22 @@ void Promise.all([
   }),
   refreshSources(),
   visualCapabilities().then((capabilities) => {
-    currentVisualCapabilities = capabilities;
+    appStore.dispatch({ type: "visual/capabilities", capabilities });
     if (dialog.open && dialog.dataset.panel === "visual") renderVisualPanel();
   }),
   refreshVisualSources().catch((error) => {
-    currentVisualCapabilities = {
-      ...currentVisualCapabilities,
+    const capabilities = {
+      ...appState().visualCapabilities,
       message: error instanceof Error ? error.message : String(error)
     };
+    appStore.dispatch({ type: "visual/capabilities", capabilities });
   }),
   initializeSessionRuntime(),
   modelStatus().then(renderModelStatus),
   visualModelStatus().then(renderVisualModelStatus),
   translationService.initialize().then(renderTranslationStatus).catch((error) => {
     const message = error instanceof Error ? error.message : String(error);
-    captureMessage.textContent = message;
+    setCaptureNotice(message, "error");
     void reportFrontendDiagnostic("translation-model", message);
   }),
   transcriptSnapshot().then(renderTranscript),
@@ -1686,7 +1704,8 @@ void Promise.all([
   }),
   onVisualTextClear((event) => {
     if (!acceptsVisualSessionEvent(event.sessionId, event.runtimeRevision, true)) return;
-    if (currentVisualStatus.active && currentVisualStatus.state === "capturing") {
+    const status = appState().visualStatus;
+    if (status.active && status.state === "capturing") {
       visualTranslation.rescan();
     } else {
       visualTranslation.clear();

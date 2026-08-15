@@ -1,13 +1,15 @@
 import "./styles.css";
 
-import {
+import { desktopBridge } from "./bridge";
+import { AppearancePanel } from "./appearance-panel";
+import { icons } from "./icons";
+
+const {
   closeAppearance,
   reportFrontendDiagnostic,
   startWindowDrag,
   windowAction
-} from "./bridge";
-import { AppearancePanel } from "./appearance-panel";
-import { icons } from "./icons";
+} = desktopBridge;
 
 const root = document.querySelector<HTMLElement>("#appearance-app");
 if (!root) throw new Error("missing appearance root");

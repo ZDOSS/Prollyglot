@@ -36,7 +36,7 @@ Why this direction:
 
 | Milestone | Integrated outcome | Status |
 | --- | --- | --- |
-| S. Structural integrity program | Replace patched orchestration with supervised sessions, bounded translation and presentation work, generated contracts, maintainable desktop pages, unified local state, and portable capture boundaries | In progress; S1 complete, S2 implementation complete pending native Windows re-smoke, S3 next |
+| S. Structural integrity program | Replace patched orchestration with supervised sessions, bounded translation and presentation work, generated contracts, maintainable desktop pages, unified local state, and portable capture boundaries | In progress; S1–S2 complete, first S3 integration point complete, persistent workspace/configuration next |
 | 1. Windows capture foundation | A real Windows desktop shell can enumerate and capture either a selected output device or selected application | Selected-device Windows smoke passed; application and lifecycle validation remain |
 | 2. Live English captions | Captured audio becomes stable partial and final English captions locally | Device-to-caption and corrected UI/context re-smokes passed; accented/conversational model evidence and application/lifecycle validation remain |
 | 3. Minimal customizable Windows app | The complete daily-use interface, overlay customization, transcript view, and controls work together | Pending |
@@ -360,6 +360,27 @@ removing their old global variables. Configuration migration first reads and
 validates old values without deleting them; legacy keys are removed only after a
 successful atomic write and restart readback.
 
+### Progress — 2026-08-14
+
+The first S3 integration point is complete in pre-release 0.1.8. One
+reducer-backed application store now owns the accepted runtime cursor, source
+snapshot, audio/visual projections, all model catalogs, transcript, translation
+catalog, navigation, preferences, notices, and transcript-follow state. Runtime
+and transcript revisions reject delayed startup results without depending on a
+live WebView, and deterministic tests cover ordering, feature independence, and
+store subscriptions.
+
+Desktop host access now passes through one typed `DesktopBridge`. Its native
+implementation contains Tauri commands/events/window operations; its preview
+implementation contains deterministic behavior and small fictional fixture
+builders using the generated runtime contract. The old mixed bridge and copied
+production-like speech catalog are gone, and translation control accepts an
+injected bridge. Production TypeScript compilation, 25 frontend tests, and a
+rendered preview start/live-transcript/Stop plus full/compact state-retention
+pass are green. Persistent full-view pages, feature-module extraction,
+stylesheet layers, and native versioned configuration remain the second S3
+integration point.
+
 ### Acceptance boundary
 
 - Full-view navigation changes persistent pages without opening a modal, making
@@ -469,10 +490,11 @@ from one to the next while the milestone direction remains clear.
 | S4 | Capture-backend and stable-application-identity cutover | Windows behavior remains complete behind the interface the later PipeWire adapter will implement |
 | S4 | Resource enforcement, documentation, and Windows soak | The implemented architecture is documented and the full structural program receives native acceptance |
 
-Published: all three S1 integration points and all three S2 implementation
-points are complete through pre-release 0.1.7. Native Windows S2 acceptance
-remains pending; continue with the S3 application-store and bridge separation
-without expanding capture or model scope.
+Published: all three S1 integration points, all three S2 implementation points,
+and the first S3 application-store/bridge point are complete through pre-release
+0.1.8. Native Windows S2 acceptance remains pending; continue with persistent
+workspace pages and configuration migration without expanding capture or model
+scope.
 
 - This documentation-only planning commit does not change the application
   version. Each later user-visible integrated correction follows
