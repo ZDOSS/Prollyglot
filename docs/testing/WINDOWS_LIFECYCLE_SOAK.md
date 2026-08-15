@@ -1,176 +1,121 @@
-# Windows lifecycle and inference-resource soak
+# What to test on Windows before structural sign-off
 
-Use this focused run after changing session supervision, source recovery,
-translation deadlines, inference ownership, or shutdown. It should take about
-45–60 minutes after models are installed.
+Use Prollyglot normally for roughly half an hour. Play media you understand,
+change modes when you feel like it, and be a little rough with Start and Stop.
+There is no required order, evidence folder, screenshot, recording, or form to
+fill out.
 
-This is not a proof-gathering exercise. Do not make an evidence folder, take
-pass screenshots, record the screen, or save a note for every action. Report
-only a failure, a surprising recovery time, or material memory growth. At the
-end, one command summarizes the privacy-safe application log.
+We are answering one practical question: after repeated use and ordinary Windows
+interruptions, does Prollyglot keep telling the truth about what it is doing,
+recover cleanly, and release work that is no longer needed?
 
-Run on native Windows 11 from a normal, non-administrator account. WSL and
-cross-compilation cannot satisfy this check.
-
-## 1. Prepare once
-
-Open PowerShell at the repository root—the directory containing `Cargo.toml`,
-`Prollyglot.md`, and `scripts`:
+Run the current `main` build from the repository root:
 
 ```powershell
-Set-Location C:\github\Prollyglot
 git pull --ff-only origin main
 .\scripts\check-windows.ps1
-```
-
-Close any old Prollyglot process. Start the current build in the same terminal:
-
-```powershell
 pnpm --dir apps/desktop tauri dev
 ```
 
-Have these installed before the run:
+## What needs to get exercised
 
-- one speech model you can use repeatedly;
-- Nemotron if its large-load cancellation is being checked;
-- one translation route for known source text; and
-- the Screen Text model.
+Cover these areas in any order. You do not need a special video or exact words.
 
-Open Task Manager's **Details** page and show Prollyglot's Memory column. Record
-one approximate starting value after the first normal session stops. That is the
-only baseline note needed.
+- **Ordinary captions:** Start and stop captions several times with the same
+  model and source. Stop once while a model is still loading, once while speech
+  is live, and once after silence. One click should always be enough. The app
+  must not remain stuck on Starting or Stopping, and old captions must not return
+  after Stop.
 
-## 2. Exercise ten supervised sessions
+- **Application capture recovery:** Caption one application, close that
+  application, and reopen it. Prollyglot should wait while it is gone and resume
+  the same application when it returns. It must not quietly start captioning a
+  different program. If two matching instances are open and Windows cannot
+  distinguish them safely, waiting is the correct result.
 
-Complete at least ten total Start attempts. Use the same ordinary speech source
-for at least three comparable caption sessions so post-stop memory samples have
-a meaningful baseline.
+- **Windows interruptions:** While captions are running, change the default
+  playback device if you have another one available. Disable and restore a
+  pinned device if that is convenient. Let the computer sleep and wake once.
+  Prollyglot may briefly say Waiting, but it should recover without restarting
+  the app. Skip hardware cases your machine cannot perform.
 
-1. Select a normal speech model, start captions, play speech until the state is
-   Live, press **Stop Captions once**, and wait for Stopped.
-2. Repeat that normal start/live/one-click-stop cycle twice. The overlay must
-   clear and no attempt may remain in Starting or Stopping.
-3. Select Nemotron, start captions, and press Stop once while the UI says it is
-   loading. The UI should acknowledge promptly; the eventual cleanup must not
-   revive the session or show stale captions.
-4. Start a translated-caption session. Let original and translated output both
-   appear, then stop once. Original output must remain usable if translation is
-   late or fails.
-5. Start captions for **Only this application**. Close the selected application
-   while it is speaking. Prollyglot should enter Waiting rather than bind an
-   unrelated process. Restart the same application and play audio; it should
-   resume under the same selection when exactly one safe match exists.
-6. If convenient, open a second instance that resolves to the same identity.
-   Prollyglot must remain Waiting and explain the ambiguity instead of choosing
-   silently. Close the duplicate and confirm recovery.
-7. With **Follow system default**, change Windows' default playback endpoint,
-   play speech through the new endpoint, and confirm the same session recovers.
-8. With a device pinned explicitly, disable or disconnect it, then restore it.
-   Prollyglot should remain responsive and resume the same pinned source.
-9. Start captions, put Windows to sleep, resume, and play speech. Recovery may
-   pass through Waiting but must not require restarting Prollyglot.
-10. Complete any remaining starts with the same normal speech model/profile used
-    in steps 1–2. Stop each once. After the final stop, compare Task Manager with
-    the baseline; note it only if memory keeps climbing materially across
-    comparable stopped sessions.
+- **Translated captions:** Use any installed translation route. Original text
+  should continue appearing even when translation is slower, and translated
+  text must not block Stop or revive an older caption. Use it long enough to see
+  several updates rather than judging one sentence.
 
-Silence, an exited application, or a missing device may legitimately show
-Waiting. A crash, contradictory active state, stale overlay from an old session,
-permanent Starting/Stopping, or a required second Stop click is a failure.
+- **Screen translation:** Start it on a region, application, or display that has
+  clear text. Move or change the source if possible, then Stop once. Labels
+  should follow current content, disappear promptly after Stop, and never require
+  repeated clicks. Moving between monitors or display scales is useful when the
+  machine supports it, but not mandatory on a single-monitor setup.
 
-## 3. Force a translation deadline
+- **Missing and offline models:** Remove a small model you can easily reinstall
+  and try the feature that needs it. The app should explain what is missing and
+  remain usable. Reinstall it, then launch once without a network connection and
+  use already-installed models. Do not corrupt a large model by hand.
 
-This uses a development-only delay that is inactive in production builds.
-Close the current app and stop `tauri dev` with `Ctrl+C`, then run:
+Those actions naturally create the repeated sessions needed to check cleanup.
+There is no magic total count. The log audit only asks that one equivalent setup
+was started and stopped at least three times, and that speech, translation, and
+screen OCR were each actually loaded once.
+
+## One deliberate slow-translation check
+
+Translation timeout/recovery is the only behavior that is hard to produce by
+normal use. For one development launch, close the current app and run:
 
 ```powershell
 $env:VITE_PROLLYGLOT_TRANSLATION_TEST_DELAY_MS = "3000"
 pnpm --dir apps/desktop tauri dev
 ```
 
-Use an already-installed compact Japanese-to-English, Spanish-to-English, or
-multilingual-to-English route. Three seconds exceeds the live-caption deadline
-but leaves a finalized caption enough time to complete. Start a caption session
-and play known speech. Confirm:
-
-- original text remains readable while translation is delayed;
-- the delayed job times out instead of blocking newer work forever;
-- later translation attempts proceed after the inference worker restarts; and
-- one Stop click returns the session to Stopped and clears the overlay.
-
-Close the delayed build, remove the variable, and relaunch normally:
+Use translated captions normally for a minute. Live translations are now
+deliberately slower than their deadline. Original captions should keep moving,
+later finalized translation should still recover, and one Stop click should end
+the session. Then close that build and clear the switch:
 
 ```powershell
 Remove-Item Env:VITE_PROLLYGLOT_TRANSLATION_TEST_DELAY_MS -ErrorAction SilentlyContinue
-pnpm --dir apps/desktop tauri dev
 ```
 
-## 4. Exercise visual-session cleanup
+You do not need to time the timeout or prove which internal worker restarted.
+The visible requirement is simply that slow translation cannot freeze captions
+or Stop.
 
-1. Start screen translation for a small region containing clear, static text.
-   Wait for at least one translated label.
-2. Press **Stop Screen Translation once**. The overlay should hide immediately
-   while background cleanup finishes; the button must not require repeated
-   clicks.
-3. Start it again for a display or application, then move the source between
-   monitors or display scales if the machine supports that. Labels must remain
-   aligned and an old frame must not reappear after stopping.
-4. Start and stop visual translation at least two more times so the log contains
-   comparable OCR load/release samples.
+## What counts as a failure
 
-Treat protected and unprotected sources alike. A blank protected surface does
-not authorize hooks or bypass work, but a same-route OBS Display Capture success
-and Prollyglot failure is a compatibility defect.
+Tell me if you see any of these:
 
-## 5. Check model and offline recovery
+- Start or Stop needs repeated clicks;
+- the UI stays in Starting, Stopping, or a false Live state;
+- captions or screen labels from a stopped/older session reappear;
+- reopening an application captions the wrong program or never recovers;
+- changing devices or waking Windows permanently kills the session;
+- slow or failed translation prevents original captions from continuing;
+- screen translation keeps running after Stop;
+- the app crashes, becomes permanently unresponsive, or becomes progressively
+  slower as sessions are repeated; or
+- memory continues climbing after equivalent sessions have stopped.
 
-Choose one installed model that is safe to re-download:
+Waiting is not itself a failure when a source is silent, closed, disconnected,
+or ambiguous. A clear missing-model message is also correct; becoming stuck is
+not.
 
-1. Stop all sessions and remove that model through **Models**. A new session that
-   requires it should fail clearly without leaving a loaded resource.
-2. Reinstall it, start and stop one session, then close Prollyglot.
-3. Disconnect the network, relaunch, and use an already installed speech and
-   translation route. Startup and inference must not require an account or
-   network access.
+## Let the log check the internal cleanup
 
-If deliberately testing a corrupt artifact, modify only a disposable downloaded
-model file that you are prepared to remove and reinstall. Prollyglot must reject
-it during verification rather than attempt inference. Do not corrupt the only
-copy of a large model merely to complete this soak.
-
-## 6. Audit the newest log
-
-Close Prollyglot normally so the final cleanup is recorded, then run from the
+When you are finished, close Prollyglot normally and run one command from the
 repository root:
 
 ```powershell
 node scripts/check-soak-log.mjs
 ```
 
-The checker automatically selects the newest log under
-`%LOCALAPPDATA%\com.prollyglot.desktop\logs`. It expects at least ten started
-sessions, at least one Speech, Translation, and VisualOcr load, balanced unload
-or forced-release records, post-stop memory samples, and no forbidden
-media-content fields. It also compares repeated post-stop profiles and flags
-more than 384 MiB of end-to-end growth by default.
+It reads the newest privacy-safe Prollyglot log automatically. It checks that
+speech, translation, and screen OCR were exercised; that a comparable setup was
+repeated; that no inference resource remained owned after Stop; that stopped
+memory did not show a large upward trend; and that no caption, OCR, translation,
+audio, or frame content appeared in diagnostics.
 
-If logs span midnight or another run became newest, pass the intended file:
-
-```powershell
-node scripts/check-soak-log.mjs "C:\path\to\prollyglot.log"
-```
-
-The threshold is a regression alarm, not a release memory budget. Investigate a
-steady upward trend even if it remains below the threshold.
-
-## Result to report
-
-A passing report can be one sentence:
-
-> Lifecycle soak passed: 10+ sessions, startup cancellation, app/device/sleep
-> recovery, translation timeout recovery, visual one-click stop, bounded memory,
-> and log audit passed.
-
-For a failure, send the action, visible state, approximate wait time, and exact
-error text. Include nearby log lines only when they help diagnose that failure;
-do not create routine proof for yourself.
+Send me that command's output and describe anything that felt wrong. If nothing
+felt wrong and it says PASS, that is the entire report.

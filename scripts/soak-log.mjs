@@ -2,7 +2,8 @@ const MIB = 1_048_576;
 const RESOURCE_KINDS = ["Speech", "VisualOcr", "Translation"];
 
 export function auditSoakLog(logText, options = {}) {
-  const minSessions = integerOption(options.minSessions, 10);
+  const minSessions = integerOption(options.minSessions, 0);
+  const minComparableSamples = integerOption(options.minComparableSamples, 3);
   const maxProfileGrowthBytes = integerOption(
     options.maxProfileGrowthBytes,
     384 * MIB
@@ -89,6 +90,12 @@ export function auditSoakLog(logText, options = {}) {
   }
   if (activeResources.size > 0) {
     failures.push(`${activeResources.size} inference resource ownership record(s) remained loaded.`);
+  }
+  if (!profileMemory.some(({ profile, samples }) =>
+    profile !== "none" && samples >= minComparableSamples)) {
+    failures.push(
+      `No equivalent inference profile has ${minComparableSamples} comparable post-stop samples.`
+    );
   }
   for (const profile of profileMemory) {
     if (profile.samples >= 3 && profile.growthBytes > maxProfileGrowthBytes) {

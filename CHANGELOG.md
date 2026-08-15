@@ -20,6 +20,9 @@ Versioning while it is in the `0.x` pre-release line.
   memory so native lifecycle testing can be evaluated without recording media.
 - Provide a development-only translation-delay switch for deterministic timeout
   and worker-recovery testing; production builds ignore it.
+- Replace the ordered Windows lifecycle script with plain-language areas to
+  exercise in any order, and judge repetition by comparable cleanup evidence
+  instead of an arbitrary total session count.
 - Make the native Windows validation script fail immediately when any Cargo or
   pnpm command returns a nonzero exit code, and include Windows audio-adapter
   tests in that gate.

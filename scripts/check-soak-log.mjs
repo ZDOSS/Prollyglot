@@ -6,7 +6,12 @@ import { join, resolve } from "node:path";
 import { auditSoakLog, formatSoakAudit } from "./soak-log.mjs";
 
 try {
-  const { logPath, minSessions, maxProfileGrowthBytes } = parseArguments(process.argv.slice(2));
+  const {
+    logPath,
+    minSessions,
+    minComparableSamples,
+    maxProfileGrowthBytes
+  } = parseArguments(process.argv.slice(2));
   const resolvedLog = logPath ? resolve(logPath) : latestWindowsLog();
   if (!resolvedLog || !existsSync(resolvedLog)) {
     console.error(
@@ -16,6 +21,7 @@ try {
   } else {
     const audit = auditSoakLog(readFileSync(resolvedLog, "utf8"), {
       minSessions,
+      minComparableSamples,
       maxProfileGrowthBytes
     });
     console.log(`Log: ${resolvedLog}`);
@@ -29,12 +35,15 @@ try {
 
 function parseArguments(arguments_) {
   let logPath;
-  let minSessions = 10;
+  let minSessions = 0;
+  let minComparableSamples = 3;
   let maxProfileGrowthBytes = 384 * 1_048_576;
   for (let index = 0; index < arguments_.length; index += 1) {
     const argument = arguments_[index];
     if (argument === "--min-sessions") {
       minSessions = requiredNumber(arguments_, ++index, argument);
+    } else if (argument === "--min-comparable-samples") {
+      minComparableSamples = requiredNumber(arguments_, ++index, argument);
     } else if (argument === "--max-profile-growth-mib") {
       maxProfileGrowthBytes = requiredNumber(arguments_, ++index, argument) * 1_048_576;
     } else if (argument?.startsWith("--")) {
@@ -44,7 +53,7 @@ function parseArguments(arguments_) {
       logPath = argument;
     }
   }
-  return { logPath, minSessions, maxProfileGrowthBytes };
+  return { logPath, minSessions, minComparableSamples, maxProfileGrowthBytes };
 }
 
 function requiredNumber(arguments_, index, option) {

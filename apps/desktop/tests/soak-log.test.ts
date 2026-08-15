@@ -26,7 +26,7 @@ test("a balanced lifecycle log reports session, resource, and memory evidence", 
     unloaded(2, "VisualOcr", "ocr-a"),
     released(2, 215_000_000)
   ].join("\n");
-  const audit = auditSoakLog(log, { minSessions: 2 });
+  const audit = auditSoakLog(log, { minSessions: 2, minComparableSamples: 1 });
 
   assert.equal(audit.ok, true);
   assert.equal(audit.startedSessions, 2);
@@ -41,6 +41,7 @@ test("an orphaned inference resource fails the audit", () => {
     released(4)
   ].join("\n"), {
     minSessions: 1,
+    minComparableSamples: 1,
     requiredKinds: ["Speech"]
   });
 
@@ -57,6 +58,7 @@ test("forbidden media-content fields fail the privacy audit", () => {
     "WARN frontend diagnostic caption_text=private-words"
   ].join("\n"), {
     minSessions: 1,
+    minComparableSamples: 1,
     requiredKinds: ["Speech"]
   });
 
@@ -79,10 +81,30 @@ test("session IDs reused after an application restart count as distinct sessions
   ].join("\n");
   const audit = auditSoakLog(log, {
     minSessions: 2,
+    minComparableSamples: 2,
     requiredKinds: ["Speech"]
   });
 
   assert.equal(audit.ok, true);
   assert.equal(audit.startedSessions, 2);
   assert.equal(audit.releaseSamples.length, 2);
+});
+
+test("a soak without repeated comparable cleanup evidence is incomplete", () => {
+  const log = [
+    runtime(7, "Starting"),
+    loaded(7, "Speech", "speech-a"),
+    unloaded(7, "Speech", "speech-a"),
+    released(7),
+    runtime(8, "Starting"),
+    loaded(8, "VisualOcr", "ocr-a"),
+    unloaded(8, "VisualOcr", "ocr-a"),
+    released(8)
+  ].join("\n");
+  const audit = auditSoakLog(log, {
+    requiredKinds: ["Speech", "VisualOcr"]
+  });
+
+  assert.equal(audit.ok, false);
+  assert.match(audit.failures.join("\n"), /comparable post-stop samples/u);
 });
