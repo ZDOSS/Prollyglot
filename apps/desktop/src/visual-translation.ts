@@ -1,5 +1,10 @@
-import { supportedTranslationLanguage } from "./language-catalog";
-import { TranslationService } from "./translation";
+import { supportedTranslationLanguage, type TranslationLanguage } from "./language-catalog";
+import { LatestPublisher } from "./latest-publisher";
+import {
+  TranslationService,
+  TranslationSession,
+  isExpectedTranslationCancellation
+} from "./translation";
 import type {
   StableVisualTextRegion,
   VisualDetectionMode,
@@ -14,65 +19,65 @@ interface TrackedVisualRegion extends VisualOutputRegion {
   removalTimer?: number;
 }
 
-interface QueuedTranslation {
+interface ActiveRequest {
   generation: number;
+  sessionId: string;
   trackId: number;
   textRevision: number;
-  text: string;
-  queuedAt: number;
 }
 
 const FOCUSED_REGION_BUDGET = 6;
 const ALL_TEXT_REGION_BUDGET = 12;
-const COMPACT_TRANSLATION_DEADLINE_MS = 5_000;
-const UNIVERSAL_TRANSLATION_DEADLINE_MS = 12_000;
-const DIAGNOSTIC_INTERVAL_MS = 15_000;
-
-class VisualTranslationTimeoutError extends Error {}
 
 export class VisualTranslationController {
   private readonly regions = new Map<number, TrackedVisualRegion>();
-  private queue: QueuedTranslation[] = [];
-  private active?: QueuedTranslation;
+  private readonly requests = new Map<string, ActiveRequest>();
   private generation = 0;
-  private translating = false;
+  private session?: TranslationSession;
   private scanning = false;
-  private publishSerial = Promise.resolve();
-  private sourceLanguage = "ja";
-  private targetLanguage = "en";
+  private sourceLanguage: TranslationLanguage = "ja";
+  private targetLanguage: TranslationLanguage = "en";
   private detectionMode: VisualDetectionMode = "focused";
   private sourceWidth = 1;
   private sourceHeight = 1;
-  private lastDiagnosticAt = 0;
-  private reportedFirstTranslation = false;
+  private activeRequestKey?: string;
+  private readonly outputPublisher: LatestPublisher<VisualOutputPayload>;
 
   constructor(
     private readonly translation: TranslationService,
-    private readonly publish: (output: VisualOutputPayload) => Promise<void>,
+    publish: (output: VisualOutputPayload) => Promise<void>,
     private readonly reportError: (message: string) => void,
     private readonly reportDiagnostic: (message: string) => void = () => undefined
-  ) {}
+  ) {
+    this.outputPublisher = new LatestPublisher(publish, (error) => {
+      this.reportError(error instanceof Error ? error.message : String(error));
+    });
+  }
 
   begin(
     sourceLanguage: string,
     targetLanguage: string,
     detectionMode: VisualDetectionMode = "focused"
   ): void {
-    if (!supportedTranslationLanguage(sourceLanguage) || !supportedTranslationLanguage(targetLanguage)) {
+    const supportedSource = supportedTranslationLanguage(sourceLanguage);
+    const supportedTarget = supportedTranslationLanguage(targetLanguage);
+    if (!supportedSource || !supportedTarget) {
       throw new Error("Visual translation requires a supported source and target language.");
     }
+    this.closeSession("A newer visual translation session started.");
     this.generation += 1;
-    this.sourceLanguage = sourceLanguage;
-    this.targetLanguage = targetLanguage;
+    this.sourceLanguage = supportedSource;
+    this.targetLanguage = supportedTarget;
     this.detectionMode = detectionMode;
     this.cancelRemovalTimers();
     this.regions.clear();
-    this.queue = [];
-    this.active = undefined;
+    this.requests.clear();
+    this.activeRequestKey = undefined;
     this.scanning = true;
     this.sourceWidth = 1;
     this.sourceHeight = 1;
-    void this.render();
+    this.openSession();
+    this.render();
   }
 
   update(update: VisualTextUpdate): void {
@@ -89,27 +94,33 @@ export class VisualTranslationController {
       this.mergeVisible(region, now, requested.has(regionKey(region)));
     }
     this.pruneRegions();
-    this.refreshQueue();
-    void this.render();
-    void this.pump();
+    this.scheduleTranslations(update.runtimeRevision);
+    this.render();
   }
 
   clear(): void {
-    this.reset(false);
+    this.reset(false, true);
   }
 
   rescan(): void {
-    this.reset(true);
+    this.reset(true, false);
   }
 
-  private reset(scanning: boolean): void {
+  private reset(scanning: boolean, closeSession: boolean): void {
     this.generation += 1;
     this.cancelRemovalTimers();
+    for (const region of this.regions.values()) this.cancelQueued(region.trackId);
     this.regions.clear();
-    this.queue = [];
-    this.active = undefined;
+    this.requests.clear();
+    this.activeRequestKey = undefined;
     this.scanning = scanning;
-    void this.render();
+    if (closeSession) {
+      this.closeSession("Visual translation stopped.");
+    } else if (scanning) {
+      this.closeSession("The visual source revision changed.");
+      this.openSession();
+    }
+    this.render();
   }
 
   private mergeVisible(
@@ -128,6 +139,7 @@ export class VisualTranslationController {
       }
     }
     if (previous?.removalTimer !== undefined) window.clearTimeout(previous.removalTimer);
+    if (!sameRevision) this.cancelQueued(region.trackId);
     this.regions.set(region.trackId, {
       trackId: region.trackId,
       textRevision: region.textRevision,
@@ -155,15 +167,27 @@ export class VisualTranslationController {
       const latest = this.regions.get(region.trackId);
       if (!latest?.retained || latest.textRevision !== region.textRevision) return;
       this.removeRegion(region.trackId);
-      this.refreshQueue();
-      void this.render();
+      this.render();
     }, 8_000);
   }
 
   private removeRegion(trackId: number): void {
     const region = this.regions.get(trackId);
     if (region?.removalTimer !== undefined) window.clearTimeout(region.removalTimer);
+    this.cancelQueued(trackId);
     this.regions.delete(trackId);
+  }
+
+  private cancelQueued(trackId: number): void {
+    if (!this.session) return;
+    try {
+      this.session.cancelQueued(
+        visualCoalesceKey(trackId),
+        "The recognized visual text is no longer current."
+      );
+    } catch {
+      // Session replacement already provides the same cancellation boundary.
+    }
   }
 
   private cancelRemovalTimers(): void {
@@ -172,41 +196,94 @@ export class VisualTranslationController {
     }
   }
 
-  private refreshQueue(): void {
-    const queuedAt = new Map(this.queue.map((request) => [regionKey(request), request.queuedAt]));
-    const activeKey = this.active ? regionKey(this.active) : undefined;
-    this.queue = [...this.regions.values()]
+  private scheduleTranslations(sourceRevision: number): void {
+    const session = this.session;
+    if (!session) return;
+    const ranked = [...this.regions.values()]
       .filter(({ retained, translationPending }) => !retained && translationPending)
-      .filter((region) => regionKey(region) !== activeKey)
       .sort((left, right) => this.regionPriority(right) - this.regionPriority(left))
-      .slice(0, this.regionBudget())
-      .map((region) => ({
+      .slice(0, this.regionBudget());
+    for (const region of ranked) {
+      const requestKey = regionKey(region);
+      const current = this.requests.get(requestKey);
+      if (current?.sessionId === session.id && current.generation === this.generation) continue;
+      const sourceLanguage = supportedTranslationLanguage(region.sourceLanguage)
+        ?? this.sourceLanguage;
+      const request: ActiveRequest = {
         generation: this.generation,
+        sessionId: session.id,
         trackId: region.trackId,
-        textRevision: region.textRevision,
-        text: region.original,
-        queuedAt: queuedAt.get(regionKey(region)) ?? Date.now()
-      }));
+        textRevision: region.textRevision
+      };
+      this.requests.set(requestKey, request);
+      void this.translateRegion(
+        session,
+        request,
+        sourceRevision,
+        sourceLanguage,
+        region.original
+      );
+    }
+  }
+
+  private async translateRegion(
+    session: TranslationSession,
+    request: ActiveRequest,
+    sourceRevision: number,
+    sourceLanguage: TranslationLanguage,
+    text: string
+  ): Promise<void> {
+    const requestKey = regionKey(request);
+    const startedAt = Date.now();
+    try {
+      const translated = await session.translate({
+        sourceRevision,
+        workloadProfile: this.translation.routeStatus(sourceLanguage, this.targetLanguage)?.kind
+          === "manyToMany" ? "visualUniversal" : "visualCompact",
+        sourceLanguage,
+        targetLanguage: this.targetLanguage,
+        text,
+        coalesceKey: visualCoalesceKey(request.trackId),
+        onStarted: () => {
+          if (!this.isCurrent(request)) return;
+          this.activeRequestKey = requestKey;
+          this.render();
+        }
+      });
+      if (!this.isCurrent(request)) return;
+      const latest = this.regions.get(request.trackId);
+      if (!latest || latest.textRevision !== request.textRevision) return;
+      latest.translation = translated;
+      latest.translationPending = false;
+    } catch (error) {
+      if (!this.isCurrent(request)) return;
+      const latest = this.regions.get(request.trackId);
+      if (latest?.textRevision === request.textRevision) latest.translationPending = false;
+      if (!isExpectedTranslationCancellation(error)) {
+        this.reportError(error instanceof Error ? error.message : String(error));
+      }
+    } finally {
+      if (this.requests.get(requestKey) === request) this.requests.delete(requestKey);
+      if (this.activeRequestKey === requestKey) this.activeRequestKey = undefined;
+      this.reportDiagnostic(
+        `${sourceLanguage} to ${this.targetLanguage} visual translation settled in `
+        + `${Date.now() - startedAt} ms.`
+      );
+      this.render();
+    }
+  }
+
+  private isCurrent(request: ActiveRequest): boolean {
+    return request.generation === this.generation
+      && request.sessionId === this.session?.id;
   }
 
   private pruneRegions(): void {
-    const activeTrackId = this.active?.generation === this.generation
-      ? this.active.trackId
-      : undefined;
     const ranked = [...this.regions.values()]
       .sort((left, right) => this.regionPriority(right) - this.regionPriority(left));
     const keep = new Set(
       ranked.slice(0, this.regionBudget()).map(({ trackId }) => trackId)
     );
-    if (activeTrackId !== undefined
-      && this.regions.has(activeTrackId)
-      && !keep.has(activeTrackId)) {
-      const lowestKept = [...ranked]
-        .reverse()
-        .find(({ trackId }) => keep.has(trackId));
-      if (lowestKept) keep.delete(lowestKept.trackId);
-      keep.add(activeTrackId);
-    }
     for (const trackId of this.regions.keys()) {
       if (!keep.has(trackId)) this.removeRegion(trackId);
     }
@@ -228,134 +305,10 @@ export class VisualTranslationController {
     return relativeHeight * 8 + relativeArea * 2 + shortTextSignal - longTextCost;
   }
 
-  private async pump(): Promise<void> {
-    if (this.translating) return;
-    this.translating = true;
-    try {
-      while (this.queue.length > 0) {
-        const request = this.queue.shift();
-        if (!request || request.generation !== this.generation) continue;
-        const current = this.regions.get(request.trackId);
-        if (!current
-          || current.textRevision !== request.textRevision
-          || !current.translationPending) continue;
-        const sourceLanguage = supportedTranslationLanguage(current.sourceLanguage)
-          ?? supportedTranslationLanguage(this.sourceLanguage);
-        const targetLanguage = supportedTranslationLanguage(this.targetLanguage);
-        if (!sourceLanguage || !targetLanguage) continue;
-        try {
-          await this.translation.prepare(sourceLanguage, targetLanguage);
-        } catch (error) {
-          if (request.generation === this.generation) {
-            const latest = this.regions.get(request.trackId);
-            if (latest?.textRevision === request.textRevision) {
-              latest.translationPending = false;
-            }
-            this.reportError(error instanceof Error ? error.message : String(error));
-            this.refreshQueue();
-            await this.render();
-          }
-          continue;
-        }
-        this.active = request;
-        await this.render();
-        const startedAt = Date.now();
-        let timedOut = false;
-        try {
-          const translated = await this.translateWithDeadline(
-            sourceLanguage,
-            targetLanguage,
-            request
-          );
-          if (request.generation !== this.generation) continue;
-          const latest = this.regions.get(request.trackId);
-          if (!latest || latest.textRevision !== request.textRevision) continue;
-          latest.translation = translated;
-          latest.translationPending = false;
-        } catch (error) {
-          timedOut = error instanceof VisualTranslationTimeoutError;
-          if (request.generation !== this.generation) continue;
-          const latest = this.regions.get(request.trackId);
-          if (latest?.textRevision === request.textRevision) {
-            latest.translationPending = false;
-          }
-          this.reportError(error instanceof Error ? error.message : String(error));
-        } finally {
-          if (this.active && requestKey(this.active) === requestKey(request)) {
-            this.active = undefined;
-          }
-          this.reportTiming(
-            sourceLanguage,
-            targetLanguage,
-            startedAt - request.queuedAt,
-            Date.now() - startedAt,
-            timedOut
-          );
-          this.refreshQueue();
-          await this.render();
-        }
-      }
-    } finally {
-      this.translating = false;
-      if (this.queue.length > 0) void this.pump();
-    }
-  }
-
-  private async translateWithDeadline(
-    sourceLanguage: NonNullable<ReturnType<typeof supportedTranslationLanguage>>,
-    targetLanguage: NonNullable<ReturnType<typeof supportedTranslationLanguage>>,
-    request: QueuedTranslation
-  ): Promise<string> {
-    const universal = this.translation.routeStatus(sourceLanguage, targetLanguage)?.kind === "manyToMany";
-    const deadlineMs = universal
-      ? UNIVERSAL_TRANSLATION_DEADLINE_MS
-      : COMPACT_TRANSLATION_DEADLINE_MS;
-    let timer: number | undefined;
-    const timeout = new Promise<never>((_resolve, reject) => {
-      timer = window.setTimeout(() => {
-        reject(new VisualTranslationTimeoutError(
-          `Visual translation did not finish within ${deadlineMs / 1_000} seconds; the local translator was restarted.`
-        ));
-      }, deadlineMs);
-    });
-    try {
-      return await Promise.race([
-        this.translation.translate(sourceLanguage, targetLanguage, request.text),
-        timeout
-      ]);
-    } catch (error) {
-      if (error instanceof VisualTranslationTimeoutError
-        && request.generation === this.generation) {
-        await this.translation.restart(error.message);
-      }
-      throw error;
-    } finally {
-      if (timer !== undefined) window.clearTimeout(timer);
-    }
-  }
-
-  private reportTiming(
-    sourceLanguage: string,
-    targetLanguage: string,
-    queueWaitMs: number,
-    inferenceMs: number,
-    timedOut: boolean
-  ): void {
-    const now = Date.now();
-    const slow = timedOut || queueWaitMs >= 2_000 || inferenceMs >= 2_000;
-    if (this.reportedFirstTranslation
-      && (!slow || now - this.lastDiagnosticAt < DIAGNOSTIC_INTERVAL_MS)) return;
-    this.reportedFirstTranslation = true;
-    this.lastDiagnosticAt = now;
-    this.reportDiagnostic(
-      `${sourceLanguage} to ${targetLanguage} visual translation ${timedOut ? "timed out" : "completed"} `
-      + `in ${inferenceMs} ms after ${queueWaitMs} ms queued; ${this.queue.length} region(s) remain queued.`
-    );
-  }
-
-  private render(): Promise<void> {
+  private render(): void {
     const regions = [...this.regions.values()]
-      .filter((region) => region.translation !== undefined || this.isActive(region))
+      .filter((region) => region.translation !== undefined
+        || this.activeRequestKey === regionKey(region))
       .sort((left, right) => left.bounds.y - right.bounds.y || left.bounds.x - right.bounds.x)
       .map(({
         sourceLanguage: _sourceLanguage,
@@ -363,39 +316,48 @@ export class VisualTranslationController {
         removalTimer: _removalTimer,
         ...region
       }) => region);
-    const output: VisualOutputPayload = {
+    this.outputPublisher.publish({
       sourceWidth: this.sourceWidth,
       sourceHeight: this.sourceHeight,
       sourceLanguage: this.sourceLanguage,
       targetLanguage: this.targetLanguage,
-      scanning: this.scanning,
+      scanning: this.scanning || (regions.length === 0 && this.requests.size > 0),
       regions
-    };
-    this.publishSerial = this.publishSerial
-      .then(() => this.publish(output), () => this.publish(output))
-      .catch((error) => {
-        this.reportError(error instanceof Error ? error.message : String(error));
-      });
-    return this.publishSerial;
+    });
   }
 
-  private isActive(region: TrackedVisualRegion): boolean {
-    return this.active?.generation === this.generation
-      && this.active.trackId === region.trackId
-      && this.active.textRevision === region.textRevision;
+  private closeSession(reason: string): void {
+    this.session?.close(reason);
+    this.session = undefined;
+  }
+
+  private openSession(): void {
+    const generation = this.generation;
+    const session = this.translation.openSession("visual");
+    this.session = session;
+    void session.prepare(this.sourceLanguage, this.targetLanguage).catch((error) => {
+      if (generation !== this.generation || this.session?.id !== session.id) return;
+      if (!isExpectedTranslationCancellation(error)) {
+        this.reportError(error instanceof Error ? error.message : String(error));
+      }
+    });
   }
 }
 
 function regionKey(region: Pick<TrackedVisualRegion, "trackId" | "textRevision">
-  | Pick<StableVisualTextRegion, "trackId" | "textRevision">): string {
+  | Pick<StableVisualTextRegion, "trackId" | "textRevision">
+  | Pick<ActiveRequest, "trackId" | "textRevision">): string {
   return `${region.trackId}:${region.textRevision}`;
 }
 
-function requestKey(request: Pick<QueuedTranslation, "generation" | "trackId" | "textRevision">): string {
-  return `${request.generation}:${request.trackId}:${request.textRevision}`;
+function visualCoalesceKey(trackId: number): string {
+  return `visual:${trackId}`;
 }
 
-function intersectionOverUnion(left: VisualOutputRegion["bounds"], right: VisualOutputRegion["bounds"]): number {
+function intersectionOverUnion(
+  left: VisualOutputRegion["bounds"],
+  right: VisualOutputRegion["bounds"]
+): number {
   const intersectionWidth = Math.max(
     0,
     Math.min(left.x + left.width, right.x + right.width) - Math.max(left.x, right.x)

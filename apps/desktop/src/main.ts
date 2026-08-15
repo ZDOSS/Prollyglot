@@ -575,7 +575,7 @@ function prepareSelectedTranslator(): void {
   const targetLanguage = supportedTranslationLanguage(translationTarget.value);
   const model = selectedTranslationModel();
   if (!sourceLanguage || !targetLanguage || !translationRequested() || model?.phase !== "ready") return;
-  void translationService.prepare(sourceLanguage, targetLanguage).catch((error) => {
+  void captionOutput.prepare(sourceLanguage).catch((error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
     captureMessage.textContent = `${languageLabel(targetLanguage)} translator could not start: ${message}`;
     void reportFrontendDiagnostic(
@@ -1313,10 +1313,6 @@ function renderVisualPanel(): void {
       captionOutput.setTranslationActive(false);
       visualTranslation.begin(sourceLanguage, targetLanguage, detectionMode);
       try {
-        await translationService.restartIfBusy(
-          "The local translator switched from audio captions to screen translation."
-        );
-        await translationService.prepare(supportedSource, supportedTarget);
         await startVisualTranslation(selection, sourceLanguage, targetLanguage, detectionMode);
       } catch (error) {
         visualTranslation.clear();
@@ -1584,6 +1580,20 @@ dialog.addEventListener("close", () => {
 });
 
 translationService.subscribe(renderTranslationStatus);
+translationService.subscribeTelemetry((telemetry) => {
+  const timing = telemetry.inferenceMs === undefined
+    ? ""
+    : ` inference=${telemetry.inferenceMs}ms queue=${telemetry.queueWaitMs ?? 0}ms`;
+  const route = telemetry.sourceLanguage && telemetry.targetLanguage
+    ? ` ${telemetry.sourceLanguage}->${telemetry.targetLanguage}`
+    : "";
+  void reportFrontendDiagnostic(
+    "translation-scheduler",
+    `${telemetry.event}${route} session=${telemetry.sessionId} queued=${telemetry.queuedJobs}${timing}`
+      + (telemetry.reason ? ` reason=${telemetry.reason}` : ""),
+    "info"
+  );
+});
 renderViewMode();
 if (currentViewMode === "compact") {
   void setWindowLayout("compact").catch((error) => reportWindowControlError("restore compact view", error));

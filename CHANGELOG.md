@@ -5,6 +5,35 @@ Versioning while it is in the `0.x` pre-release line.
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-08-14
+
+### Added
+
+- A session-scoped translation scheduler with typed workload profiles,
+  priorities, source revisions, coalescing keys, enqueue/deadline timestamps,
+  bounded queues, and privacy-safe load/unload/queue/inference telemetry.
+- Deterministic fast, slow, failing, never-resolving, replacement, and Stop
+  tests for caption and visual translation scheduling.
+
+### Changed
+
+- Split translation inventory, download, verification, and removal into a
+  lightweight control worker that remains responsive while a separate
+  disposable worker owns live WebAssembly inference.
+- Route final captions ahead of queued provisional work, coalesce changing live
+  utterances and visual tracks to their newest text, and publish visual overlay
+  changes through one in-flight plus one replaceable-latest update.
+- Begin visual OCR capture while the selected translator prepares instead of
+  keeping screen recognition idle behind translator cold-start time.
+
+### Fixed
+
+- Terminate and recreate only the active inference worker when a translation
+  exceeds its workload deadline, allowing current work to continue without an
+  application restart or a blocked model catalog.
+- Reject delayed inference from stopped or replaced caption/visual translation
+  sessions before it can update either output.
+
 ## [0.1.4] - 2026-08-14
 
 ### Added

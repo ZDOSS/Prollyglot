@@ -4,6 +4,8 @@ import {
 } from "./language-catalog";
 import {
   TranslationService,
+  TranslationSession,
+  isExpectedTranslationCancellation,
   translationStatusForRoute
 } from "./translation";
 import type {
@@ -16,9 +18,7 @@ import type {
 
 const MAX_OVERLAY_SEGMENTS = 4;
 const OVERLAY_CONTEXT_GAP_MICROS = 5_000_000;
-const MAX_TRANSLATION_QUEUE = 8;
-const SLOW_TRANSLATION_MS = 2_000;
-const TRANSLATION_DIAGNOSTIC_INTERVAL_MS = 15_000;
+const MAX_RECENT_FINAL_TRANSLATIONS = 8;
 const LIVE_TRANSLATION_DELAY_MS = 420;
 const LIVE_TRANSLATION_INTERVAL_MS = 900;
 const LIVE_TRANSLATION_MIN_CHARACTERS = 4;
@@ -27,10 +27,9 @@ type TranslationState =
   | { phase: "ready"; text: string }
   | { phase: "failed"; message: string };
 
-interface QueuedSegment {
-  key: string;
-  segment: TranscriptSegment;
-  queuedAtMs: number;
+interface PendingFinal {
+  sessionId: string;
+  targetLanguage: TranslationLanguage;
 }
 
 interface LiveTranslation {
@@ -46,17 +45,12 @@ export class CaptionOutputController {
   private targetLanguage: TranslationLanguage = "en";
   private catalog: TranslationCatalogStatus;
   private readonly translations = new Map<string, TranslationState>();
-  private readonly queued = new Set<string>();
-  private readonly pending = new Set<string>();
-  private queue: QueuedSegment[] = [];
-  private pumping = false;
+  private readonly pending = new Map<string, PendingFinal>();
   private translationActive = true;
-  private skippedStaleSegments = 0;
-  private lastDiagnosticAtMs = 0;
-  private reportedFirstTranslation = false;
+  private session?: TranslationSession;
   private liveCandidate?: TranscriptSegment;
   private liveTranslation?: LiveTranslation;
-  private liveRequest?: { key: string; utteranceKey: string };
+  private liveRequest?: { key: string; utteranceKey: string; sessionId: string };
   private liveReadyAtMs = 0;
   private lastLiveStartedAtMs = 0;
   private liveTimer?: number;
@@ -95,25 +89,31 @@ export class CaptionOutputController {
     return this.targetLanguage;
   }
 
+  prepare(sourceLanguage: TranslationLanguage): Promise<void> {
+    if (!this.translationEnabled()
+      || sourceLanguage === this.targetLanguage
+      || !this.translationModelUsable(sourceLanguage)) {
+      return Promise.resolve();
+    }
+    return this.ensureSession().prepare(sourceLanguage, this.targetLanguage);
+  }
+
   setTranslationActive(active: boolean): void {
     if (this.translationActive === active) return;
     this.translationActive = active;
-    if (!active) {
-      this.queue = [];
-      this.queued.clear();
-      this.pending.clear();
-      this.clearLiveScheduling();
-      this.liveRequest = undefined;
-    } else {
-      this.scheduleTranslations();
-    }
+    if (!active) this.closeSession("Audio-caption translation paused.");
+    else this.scheduleTranslations();
     this.publish();
   }
 
   setOutputMode(mode: CaptionOutputMode): void {
+    if (this.mode === mode) return;
     this.mode = mode;
-    if (mode === "original") this.clearLiveScheduling();
-    this.scheduleTranslations();
+    if (mode === "original") {
+      this.closeSession("Translated caption output was disabled.");
+    } else {
+      this.scheduleTranslations();
+    }
     this.publish();
   }
 
@@ -121,10 +121,8 @@ export class CaptionOutputController {
     if (this.targetLanguage === targetLanguage) return;
     this.targetLanguage = targetLanguage;
     this.translations.clear();
-    this.queue = [];
-    this.queued.clear();
-    this.clearLiveScheduling();
     this.liveTranslation = undefined;
+    this.closeSession("The caption translation language changed.");
     this.scheduleTranslations();
     this.publish();
   }
@@ -135,9 +133,8 @@ export class CaptionOutputController {
     for (const key of this.translations.keys()) {
       if (!currentKeys.has(key)) this.translations.delete(key);
     }
-    this.queue = this.queue.filter(({ key }) => currentKeys.has(key));
-    for (const key of this.queued) {
-      if (!currentKeys.has(key)) this.queued.delete(key);
+    for (const key of this.pending.keys()) {
+      if (!currentKeys.has(key)) this.pending.delete(key);
     }
 
     const provisional = transcript.provisional;
@@ -153,7 +150,7 @@ export class CaptionOutputController {
         && this.liveTranslation.targetLanguage === this.targetLanguage
         && this.liveTranslation.sourceText === provisional.text;
       if (
-        this.mode !== "original"
+        this.translationEnabled()
         && usable
         && provisional.text.trim().length >= LIVE_TRANSLATION_MIN_CHARACTERS
         && !alreadyTranslated
@@ -162,9 +159,6 @@ export class CaptionOutputController {
         const replacingSameUtterance = this.liveCandidate !== undefined
           && utteranceKey(this.liveCandidate) === utteranceKey(provisional);
         this.liveCandidate = provisional;
-        // Keep the first launch time while partial text is changing. Replacing
-        // the candidate should coalesce the newest words, not debounce until a
-        // speaker finally pauses.
         if (!replacingSameUtterance) {
           this.liveReadyAtMs = Math.max(
             Date.now() + LIVE_TRANSLATION_DELAY_MS,
@@ -205,7 +199,7 @@ export class CaptionOutputController {
   isTranslationPending(segment: TranscriptSegment): boolean {
     if (!this.translationActive) return false;
     const key = segmentKey(segment);
-    if (segment.isFinal) return this.pending.has(key) || this.queued.has(key);
+    if (segment.isFinal) return this.pending.has(key);
     return this.liveRequest?.utteranceKey === utteranceKey(segment)
       || (this.liveCandidate !== undefined
         && utteranceKey(this.liveCandidate) === utteranceKey(segment));
@@ -233,27 +227,168 @@ export class CaptionOutputController {
 
   private scheduleTranslations(): void {
     if (!this.translationEnabled()) return;
-    const candidates = this.transcript.committed.slice(-MAX_TRANSLATION_QUEUE);
-    for (const segment of candidates) {
+    const session = this.ensureSession();
+    for (const segment of this.transcript.committed.slice(-MAX_RECENT_FINAL_TRANSLATIONS)) {
       const sourceLanguage = supportedSourceLanguage(segment.sourceLanguage);
+      const key = segmentKey(segment);
       if (
         !sourceLanguage
         || sourceLanguage === this.targetLanguage
         || !this.translationModelUsable(sourceLanguage)
+        || this.translations.has(key)
+        || this.pending.has(key)
       ) continue;
-      const key = segmentKey(segment);
-      if (this.translations.has(key) || this.queued.has(key) || this.pending.has(key)) continue;
-      this.queue.push({ key, segment, queuedAtMs: Date.now() });
-      this.queued.add(key);
-      if (this.queue.length > MAX_TRANSLATION_QUEUE) {
-        const dropped = this.queue.shift();
-        if (dropped) {
-          this.queued.delete(dropped.key);
-          this.skippedStaleSegments += 1;
-        }
-      }
+      this.pending.set(key, { sessionId: session.id, targetLanguage: this.targetLanguage });
+      void this.translateFinal(session, segment, sourceLanguage);
     }
-    void this.pump();
+    this.armLiveTimer();
+  }
+
+  private async translateFinal(
+    session: TranslationSession,
+    segment: TranscriptSegment,
+    sourceLanguage: TranslationLanguage
+  ): Promise<void> {
+    const key = segmentKey(segment);
+    const targetLanguage = this.targetLanguage;
+    const startedAtMs = Date.now();
+    try {
+      const text = await session.translate({
+        sourceRevision: this.transcript.revision,
+        workloadProfile: "captionFinal",
+        sourceLanguage,
+        targetLanguage,
+        text: segment.text,
+        coalesceKey: `caption-final:${key}`
+      });
+      if (this.currentPending(key, session.id, targetLanguage) && this.hasCommittedSegment(key)) {
+        this.translations.set(key, { phase: "ready", text });
+      }
+    } catch (error) {
+      if (!isExpectedTranslationCancellation(error)
+        && this.currentPending(key, session.id, targetLanguage)
+        && this.hasCommittedSegment(key)) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.translations.set(key, { phase: "failed", message });
+        this.reportError(`Translation stopped: ${message}`);
+      }
+    } finally {
+      if (this.currentPending(key, session.id, targetLanguage)) this.pending.delete(key);
+      this.reportDiagnostic(
+        `${sourceLanguage} to ${targetLanguage} final caption settled in ${Date.now() - startedAtMs} ms.`
+      );
+      this.publish();
+    }
+  }
+
+  private armLiveTimer(): void {
+    if (!this.liveCandidate || this.liveTimer !== undefined || !this.translationEnabled()) return;
+    const delay = Math.max(0, this.liveReadyAtMs - Date.now());
+    this.liveTimer = window.setTimeout(() => {
+      this.liveTimer = undefined;
+      const candidate = this.liveCandidate;
+      this.liveCandidate = undefined;
+      if (candidate) void this.translateLive(candidate);
+    }, delay);
+  }
+
+  private async translateLive(segment: TranscriptSegment): Promise<void> {
+    const sourceLanguage = supportedSourceLanguage(segment.sourceLanguage);
+    if (
+      !sourceLanguage
+      || sourceLanguage === this.targetLanguage
+      || !this.translationModelUsable(sourceLanguage)
+      || !this.translationEnabled()
+    ) return;
+    const session = this.ensureSession();
+    const requestKey = segmentKey(segment);
+    const requestUtteranceKey = utteranceKey(segment);
+    const targetLanguage = this.targetLanguage;
+    this.liveRequest = { key: requestKey, utteranceKey: requestUtteranceKey, sessionId: session.id };
+    this.lastLiveStartedAtMs = Date.now();
+    this.publish();
+    try {
+      const text = await session.translate({
+        sourceRevision: this.transcript.revision,
+        workloadProfile: "captionLive",
+        sourceLanguage,
+        targetLanguage,
+        text: segment.text,
+        coalesceKey: `caption-live:${requestUtteranceKey}`
+      });
+      const current = this.transcript.provisional;
+      if (
+        this.translationEnabled()
+        && this.session?.id === session.id
+        && current
+        && this.targetLanguage === targetLanguage
+        && utteranceKey(current) === requestUtteranceKey
+      ) {
+        this.liveTranslation = {
+          utteranceKey: requestUtteranceKey,
+          sourceText: segment.text,
+          targetLanguage,
+          text
+        };
+      }
+    } catch (error) {
+      if (!isExpectedTranslationCancellation(error)) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.reportDiagnostic(`Live translation attempt stopped: ${message}`);
+      }
+    } finally {
+      if (this.liveRequest?.key === requestKey && this.liveRequest.sessionId === session.id) {
+        this.liveRequest = undefined;
+      }
+      const current = this.transcript.provisional;
+      if (
+        current
+        && this.translationEnabled()
+        && this.session?.id === session.id
+        && this.targetLanguage === targetLanguage
+        && utteranceKey(current) === requestUtteranceKey
+        && current.text !== segment.text
+      ) {
+        this.liveCandidate = current;
+        this.liveReadyAtMs = Math.max(
+          Date.now() + 120,
+          this.lastLiveStartedAtMs + LIVE_TRANSLATION_INTERVAL_MS
+        );
+        this.armLiveTimer();
+      }
+      this.publish();
+    }
+  }
+
+  private currentPending(
+    key: string,
+    sessionId: string,
+    targetLanguage: TranslationLanguage
+  ): boolean {
+    const pending = this.pending.get(key);
+    return pending?.sessionId === sessionId
+      && pending.targetLanguage === targetLanguage
+      && this.session?.id === sessionId
+      && this.targetLanguage === targetLanguage;
+  }
+
+  private ensureSession(): TranslationSession {
+    this.session ??= this.service.openSession("captions");
+    return this.session;
+  }
+
+  private closeSession(reason: string): void {
+    this.cancelLiveTimer();
+    this.liveCandidate = undefined;
+    this.liveRequest = undefined;
+    this.pending.clear();
+    this.session?.close(reason);
+    this.session = undefined;
+  }
+
+  private cancelLiveTimer(): void {
+    if (this.liveTimer !== undefined) window.clearTimeout(this.liveTimer);
+    this.liveTimer = undefined;
   }
 
   private translationModelUsable(sourceLanguage: TranslationLanguage): boolean {
@@ -269,197 +404,12 @@ export class CaptionOutputController {
     return this.translationActive && this.mode !== "original";
   }
 
-  private async pump(): Promise<void> {
-    if (this.pumping || !this.translationEnabled()) return;
-    this.pumping = true;
-    try {
-      while (true) {
-        if (!this.translationEnabled()) break;
-        const next = this.queue.pop();
-        if (next) {
-          await this.translateCommitted(next);
-          continue;
-        }
-
-        const live = this.takeReadyLiveCandidate();
-        if (live) {
-          await this.translateLive(live);
-          continue;
-        }
-        this.armLiveTimer();
-        break;
-      }
-    } finally {
-      this.pumping = false;
-    }
-  }
-
-  private async translateCommitted(next: QueuedSegment): Promise<void> {
-    this.queued.delete(next.key);
-    const sourceLanguage = supportedSourceLanguage(next.segment.sourceLanguage);
-    if (
-      !sourceLanguage
-      || sourceLanguage === this.targetLanguage
-      || !this.translationModelUsable(sourceLanguage)
-    ) return;
-    this.pending.add(next.key);
-    this.publish();
-    const startedAtMs = Date.now();
-    const targetLanguage = this.targetLanguage;
-    try {
-      const text = await this.service.translate(
-        sourceLanguage,
-        targetLanguage,
-        next.segment.text
-      );
-      if (this.translationEnabled()
-        && this.targetLanguage === targetLanguage
-        && this.hasCommittedSegment(next.key)) {
-        this.translations.set(next.key, { phase: "ready", text });
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (this.translationEnabled()
-        && this.targetLanguage === targetLanguage
-        && this.hasCommittedSegment(next.key)) {
-        this.translations.set(next.key, { phase: "failed", message });
-        this.reportError(`Translation stopped: ${message}`);
-      }
-    } finally {
-      this.pending.delete(next.key);
-      this.reportTranslationTiming(
-        sourceLanguage,
-        targetLanguage,
-        startedAtMs - next.queuedAtMs,
-        Date.now() - startedAtMs
-      );
-      this.scheduleTranslations();
-      this.publish();
-    }
-  }
-
-  private takeReadyLiveCandidate(): TranscriptSegment | undefined {
-    if (!this.liveCandidate || Date.now() < this.liveReadyAtMs) return undefined;
-    const candidate = this.liveCandidate;
-    this.liveCandidate = undefined;
-    return candidate;
-  }
-
-  private async translateLive(segment: TranscriptSegment): Promise<void> {
-    const sourceLanguage = supportedSourceLanguage(segment.sourceLanguage);
-    if (
-      !sourceLanguage
-      || sourceLanguage === this.targetLanguage
-      || !this.translationModelUsable(sourceLanguage)
-    ) return;
-    const requestKey = segmentKey(segment);
-    const requestUtteranceKey = utteranceKey(segment);
-    const targetLanguage = this.targetLanguage;
-    this.liveRequest = { key: requestKey, utteranceKey: requestUtteranceKey };
-    this.lastLiveStartedAtMs = Date.now();
-    const startedAtMs = this.lastLiveStartedAtMs;
-    this.publish();
-    try {
-      const text = await this.service.translate(
-        sourceLanguage,
-        targetLanguage,
-        segment.text
-      );
-      const current = this.transcript.provisional;
-      if (
-        this.translationEnabled()
-        &&
-        current
-        && this.targetLanguage === targetLanguage
-        && utteranceKey(current) === requestUtteranceKey
-      ) {
-        this.liveTranslation = {
-          utteranceKey: requestUtteranceKey,
-          sourceText: segment.text,
-          targetLanguage,
-          text
-        };
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.reportDiagnostic(`Live translation attempt stopped: ${message}`);
-    } finally {
-      if (this.liveRequest?.key === requestKey) this.liveRequest = undefined;
-      this.reportTranslationTiming(
-        sourceLanguage,
-        targetLanguage,
-        0,
-        Date.now() - startedAtMs
-      );
-      const current = this.transcript.provisional;
-      if (
-        current
-        && this.mode !== "original"
-        && this.targetLanguage === targetLanguage
-        && utteranceKey(current) === requestUtteranceKey
-        && current.text !== segment.text
-      ) {
-        this.liveCandidate = current;
-        this.liveReadyAtMs = Math.max(
-          Date.now() + 120,
-          this.lastLiveStartedAtMs + LIVE_TRANSLATION_INTERVAL_MS
-        );
-      }
-      this.publish();
-    }
-  }
-
-  private armLiveTimer(): void {
-    if (!this.liveCandidate || this.liveTimer !== undefined || this.mode === "original") return;
-    const delay = Math.max(0, this.liveReadyAtMs - Date.now());
-    this.liveTimer = window.setTimeout(() => {
-      this.liveTimer = undefined;
-      void this.pump();
-    }, delay);
-  }
-
-  private cancelLiveTimer(): void {
-    if (this.liveTimer !== undefined) window.clearTimeout(this.liveTimer);
-    this.liveTimer = undefined;
-  }
-
-  private clearLiveScheduling(): void {
-    this.cancelLiveTimer();
-    this.liveCandidate = undefined;
-  }
-
   private publish(): void {
     void this.publishOutput(this.payload());
   }
 
   private hasCommittedSegment(key: string): boolean {
     return this.transcript.committed.some((segment) => segmentKey(segment) === key);
-  }
-
-  private reportTranslationTiming(
-    sourceLanguage: TranslationLanguage,
-    targetLanguage: TranslationLanguage,
-    queueWaitMs: number,
-    inferenceMs: number
-  ): void {
-    const now = Date.now();
-    const slow = queueWaitMs >= SLOW_TRANSLATION_MS
-      || inferenceMs >= SLOW_TRANSLATION_MS
-      || this.skippedStaleSegments > 0;
-    if (
-      this.reportedFirstTranslation
-      && (!slow || now - this.lastDiagnosticAtMs < TRANSLATION_DIAGNOSTIC_INTERVAL_MS)
-    ) return;
-
-    const skipped = this.skippedStaleSegments;
-    this.skippedStaleSegments = 0;
-    this.reportedFirstTranslation = true;
-    this.lastDiagnosticAtMs = now;
-    this.reportDiagnostic(
-      `${sourceLanguage} to ${targetLanguage} completed in ${inferenceMs} ms after `
-      + `${queueWaitMs} ms queued; ${this.queue.length} caption(s) queued; `
-      + `${skipped} stale caption(s) skipped.`
-    );
   }
 }
 

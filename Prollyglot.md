@@ -1035,10 +1035,12 @@ Spanish-to-English retain compact direct q8 models. One compact multilingual
 OPUS model handles the remaining supported sources to English. An optional
 larger M2M100 q8 model translates directly among all 29 selectable languages.
 These are explicit downloads: the route resolver prefers an installed compact
-model, never silently downloads the universal model, and the worker keeps at
-most one translator loaded. Model revisions and every required artifact's size
-and SHA-256 digest are pinned; inference reads only the verified local cache and
-runs in a dedicated CPU/WebAssembly worker.
+model and never silently downloads the universal model. Inventory, download,
+verification, and removal run in a lightweight control worker; a separate
+disposable inference worker belongs to one active caption or visual translation
+session and keeps at most one translator loaded. Model revisions and every
+required artifact's size and SHA-256 digest are pinned; inference currently
+reads only the verified local cache and runs on CPU through WebAssembly.
 
 Original text renders immediately. Once a provisional caption has at least four
 characters, translation can begin from the newest coalesced partial after about
@@ -1049,10 +1051,16 @@ priority and is translated again unless an exact live result can be reused. For
 Nemotron, the adapter enforces a four-second continuous pause-light finalization
 safety boundary, but live translation no longer depends on reaching it.
 
-The translation queue is bounded and prioritizes the newest finalized caption.
-If translation falls behind, stale queued captions are skipped so the live
-display can return to the current edge instead of exhaustively replaying old
-work. The translated line fills its existing source/translation pair independently.
+Translation jobs carry their request and session identity, source revision,
+workload profile, priority, coalescing identity, enqueue time, and deadline.
+The bounded scheduler prioritizes finalized captions over provisional work.
+Changing partials replace queued text for the same utterance, and current visual
+text replaces queued work for the same track. If translation falls behind,
+expired or superseded work is rejected so the live display returns to the
+current edge instead of exhaustively replaying old work. A workload deadline
+terminates and recreates only the active inference worker; model control remains
+responsive, and delayed output from the old session is ignored. The translated
+line fills its existing source/translation pair independently.
 Translation failure falls back to original text and writes privacy-safe timing
 and failure diagnostics without logging caption contents.
 
@@ -1229,21 +1237,23 @@ two-pass stabilization and the lower size/confidence thresholds because its
 purpose is deliberately broader, with a twelve-region live-output budget so a
 dense desktop cannot create an unbounded translation or overlay surface. An
 unchanged confirmation pass is still allowed before static content goes idle.
-The selected translator finishes loading before capture begins, audio-caption
-translation is suspended while visual mode owns the shared worker, and pending
-work is continuously rebuilt from the highest-value current snapshot instead
-of draining stale fragments. Short, prominent labels receive priority over long
-paragraphs. Only the request actively running displays **Translating…**; queued
-regions appear progressively when their translations complete rather than
-covering the source with placeholders that imply parallel work. These defaults
+Translator preparation begins when visual translation is requested, but live
+capture and OCR no longer sit idle behind its cold start. Audio-caption
+translation is suspended while visual mode owns the inference session, and
+pending work is continuously rebuilt from the highest-value current snapshot
+instead of draining stale fragments. Short, prominent labels receive priority
+over long paragraphs. Only the request actively running displays
+**Translating…**; queued regions appear progressively when their translations
+complete rather than covering the source with placeholders that imply parallel
+work. These defaults
 should be tuned from native Windows latency, CPU, and recall evidence rather
 than exposed as premature performance controls.
 
 Translation generation is bounded in proportion to recognized input length so
 a short OCR label that misses an end token cannot consume the full 192-token
-ceiling. Once a route is loaded, a compact visual inference that has not
-returned after five seconds is abandoned and the local worker is recreated;
-the optional universal model receives twelve seconds because its performance
+ceiling. Once a route is loaded, a compact visual inference that has not returned
+within its 3.5-second live deadline is abandoned and the session worker is
+recreated; the optional universal model receives eight seconds because its performance
 profile is materially heavier. This is a liveness ceiling, not the ordinary
 latency target: a stable compact-route region should normally reach the overlay
 within two seconds. One timed-out region must not strand later regions, and the

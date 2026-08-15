@@ -36,7 +36,7 @@ Why this direction:
 
 | Milestone | Integrated outcome | Status |
 | --- | --- | --- |
-| S. Structural integrity program | Replace patched orchestration with supervised sessions, bounded translation and presentation work, generated contracts, maintainable desktop pages, unified local state, and portable capture boundaries | In progress; S1 complete, S2 bounded translation/model storage/presentation next |
+| S. Structural integrity program | Replace patched orchestration with supervised sessions, bounded translation and presentation work, generated contracts, maintainable desktop pages, unified local state, and portable capture boundaries | In progress; S1 complete and S2 scheduler published, native translation storage next |
 | 1. Windows capture foundation | A real Windows desktop shell can enumerate and capture either a selected output device or selected application | Selected-device Windows smoke passed; application and lifecycle validation remain |
 | 2. Live English captions | Captured audio becomes stable partial and final English captions locally | Device-to-caption and corrected UI/context re-smokes passed; accented/conversational model evidence and application/lifecycle validation remain |
 | 3. Minimal customizable Windows app | The complete daily-use interface, overlay customization, transcript view, and controls work together | Pending |
@@ -243,6 +243,24 @@ checks should the old write path be deleted. Likewise, publish the new overlay
 frame beside the old route only in a test adapter; production must cut over in
 one integration point so two presentation authorities never remain active.
 
+### Progress — 2026-08-14
+
+The first S2 integration point is complete in pre-release 0.1.5. Translation
+inventory/download/removal now runs in a lightweight control worker, while one
+disposable inference worker belongs to the active caption or visual translation
+session. Typed jobs carry request/session/source revision, workload profile,
+priority, coalescing identity, enqueue time, and deadline. Final captions outrank
+queued partials, partial utterances and visual tracks retain only their newest
+queued text, and a deadline terminates only the inference worker before current
+queued work continues on its replacement.
+
+Visual presentation publishing now keeps at most one native update in flight
+and one replaceable latest frame instead of replaying every intermediate state.
+Fast, slow, failing, never-resolving, coalescing, replacement, and Stop behavior
+is covered by deterministic frontend tests. The existing verified WebView cache
+remains the temporary read/write model store; native translation storage and the
+authoritative caption/visual presentation contracts are the next S2 cutovers.
+
 ### Acceptance boundary
 
 - A never-resolving translation reaches its deadline, clears or reports its
@@ -424,8 +442,9 @@ from one to the next while the milestone direction remains clear.
 | S4 | Capture-backend and stable-application-identity cutover | Windows behavior remains complete behind the interface the later PipeWire adapter will implement |
 | S4 | Resource enforcement, documentation, and Windows soak | The implemented architecture is documented and the full structural program receives native acceptance |
 
-Published: all three S1 integration points are complete through pre-release
-0.1.4. Continue with the S2 session-scoped translation scheduler.
+Published: all three S1 integration points and the S2 session-scoped scheduler
+are complete through pre-release 0.1.5. Continue with the native translation
+store cutover.
 
 - This documentation-only planning commit does not change the application
   version. Each later user-visible integrated correction follows
