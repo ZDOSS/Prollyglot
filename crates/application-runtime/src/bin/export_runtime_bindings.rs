@@ -29,7 +29,7 @@ fn run() -> Result<(), String> {
                 destination.display()
             )
         })?;
-        if current != generated {
+        if normalize_newlines(&current) != normalize_newlines(&generated) {
             return Err(
                 "runtime bindings are stale; run `cargo run -p prollyglot-application-runtime --bin export-runtime-bindings`"
                     .to_owned(),
@@ -58,6 +58,21 @@ fn run() -> Result<(), String> {
     Ok(())
 }
 
+fn normalize_newlines(value: &str) -> String {
+    value.replace("\r\n", "\n")
+}
+
 fn destination() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/desktop/src/generated/runtime.ts")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_newlines;
+
+    #[test]
+    fn generated_bindings_compare_equally_after_a_windows_checkout() {
+        assert_eq!(normalize_newlines("first\r\nsecond\r\n"), "first\nsecond\n");
+        assert_eq!(normalize_newlines("first\nsecond\n"), "first\nsecond\n");
+    }
 }

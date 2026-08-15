@@ -20,6 +20,19 @@ Versioning while it is in the `0.x` pre-release line.
   memory so native lifecycle testing can be evaluated without recording media.
 - Provide a development-only translation-delay switch for deterministic timeout
   and worker-recovery testing; production builds ignore it.
+- Make the native Windows validation script fail immediately when any Cargo or
+  pnpm command returns a nonzero exit code, and include Windows audio-adapter
+  tests in that gate.
+
+### Fixed
+
+- Normalize checkout line endings when verifying generated runtime bindings so
+  the same committed contract passes on Linux and Windows.
+- Give the desktop library and executable distinct artifact names, removing the
+  Windows PDB collision warning, and keep the visual session monitor within the
+  current stable Clippy boundary.
+- Exercise the resident-memory probe on Windows instead of allowing its desktop
+  test to become an empty platform-gated pass.
 
 ## [0.1.12] - 2026-08-14
 

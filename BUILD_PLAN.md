@@ -508,8 +508,12 @@ frontend build, and complete Tauri Windows library target pass locally. The
 repository now also includes architecture, build, contribution, and focused
 no-screenshot lifecycle-soak guidance. Runtime revisions, inference ownership,
 post-session resident memory, and privacy invariants can be checked with the
-automated soak-log auditor. The native Windows lifecycle soak remains the final
-external acceptance evidence before S4 can be called complete.
+automated soak-log auditor. The isolated native Windows MSVC gate now passes the
+Windows audio-adapter and desktop tests, generated-contract comparison,
+frontend tests/build, full speech-plus-OCR desktop link, and current stable
+Clippy without the former artifact-name collision. The interactive native
+Windows lifecycle soak remains the final external acceptance evidence before S4
+can be called complete.
 
 ### Acceptance boundary
 

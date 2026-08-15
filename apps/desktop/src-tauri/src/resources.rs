@@ -250,8 +250,8 @@ mod tests {
     use prollyglot_application_runtime::{SessionSource, SessionSourceKind, StartSessionRequest};
 
     #[test]
-    fn linux_resident_memory_probe_is_nonzero() {
-        #[cfg(target_os = "linux")]
+    fn supported_platform_resident_memory_probe_is_nonzero() {
+        #[cfg(any(target_os = "linux", target_os = "windows"))]
         assert!(process_resident_bytes().is_some_and(|bytes| bytes > 0));
     }
 

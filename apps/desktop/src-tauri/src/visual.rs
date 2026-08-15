@@ -711,13 +711,15 @@ pub async fn start_visual_translation(
     }
     publish_visual_runtime(&app, &state.visual.status, started.snapshot.clone());
     spawn_session_monitor(
-        app.clone(),
-        Arc::clone(&state.supervisor),
-        Arc::clone(&state.visual.resources),
-        Arc::clone(&state.visual.status),
-        Arc::clone(&state.visual.overlay_output),
-        Arc::clone(&state.visual.overlay_echoes),
-        state.resources.clone(),
+        VisualSessionMonitorContext {
+            app: app.clone(),
+            supervisor: Arc::clone(&state.supervisor),
+            resources: Arc::clone(&state.visual.resources),
+            status: Arc::clone(&state.visual.status),
+            overlay_output: Arc::clone(&state.visual.overlay_output),
+            overlay_echoes: Arc::clone(&state.visual.overlay_echoes),
+            inference_resources: state.resources.clone(),
+        },
         started.session_id,
     )
     .inspect_err(|error| {
@@ -1902,7 +1904,7 @@ fn fail_and_publish(
     }
 }
 
-fn spawn_session_monitor(
+struct VisualSessionMonitorContext {
     app: AppHandle,
     supervisor: Arc<Mutex<prollyglot_application_runtime::SessionSupervisor>>,
     resources: Arc<Mutex<Option<ActiveVisualResources>>>,
@@ -1910,8 +1912,21 @@ fn spawn_session_monitor(
     overlay_output: Arc<Mutex<VisualPresentationFrame>>,
     overlay_echoes: Arc<Mutex<Vec<String>>>,
     inference_resources: crate::resources::ResourceRuntime,
+}
+
+fn spawn_session_monitor(
+    context: VisualSessionMonitorContext,
     session_id: SessionId,
 ) -> Result<(), ApplicationError> {
+    let VisualSessionMonitorContext {
+        app,
+        supervisor,
+        resources,
+        status,
+        overlay_output,
+        overlay_echoes,
+        inference_resources,
+    } = context;
     thread::Builder::new()
         .name(format!("visual-session-supervisor-{session_id}"))
         .spawn(move || {

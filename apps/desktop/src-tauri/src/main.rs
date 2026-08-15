@@ -1,3 +1,3 @@
 fn main() {
-    prollyglot_desktop::run();
+    prollyglot_desktop_lib::run();
 }
