@@ -12,6 +12,9 @@ use prollyglot_core::{
 #[cfg(any(target_os = "windows", test))]
 mod identity;
 
+#[cfg(any(target_os = "windows", test))]
+mod timeline;
+
 #[cfg(target_os = "windows")]
 mod platform;
 

@@ -769,6 +769,7 @@ fn capture_worker(
     let mut starting = true;
     let mut last_recovery_message = None::<String>;
     let mut application_retry_interval = APPLICATION_RECONNECT_MIN_INTERVAL;
+    let mut timeline = crate::timeline::CaptureTimeline::new();
 
     loop {
         if stop_requested.load(Ordering::Acquire) {
@@ -844,7 +845,9 @@ fn capture_worker(
         application_retry_interval = APPLICATION_RECONNECT_MIN_INTERVAL;
         publish_event(&events, CaptureEvent::State(CaptureState::Capturing))?;
 
-        let capture_result = unsafe { stream.capture(&source_id, &events, &stop_requested) };
+        timeline.reopen();
+        let capture_result =
+            unsafe { stream.capture(&source_id, &events, &stop_requested, &mut timeline) };
         let stop_result = unsafe { stream.audio_client.Stop() }
             .map_err(|error| windows_error("stop WASAPI loopback stream", error));
 
@@ -1276,9 +1279,9 @@ impl WasapiCaptureStream {
         source_id: &SourceId,
         events: &Sender<CaptureEvent>,
         stop_requested: &AtomicBool,
+        timeline: &mut crate::timeline::CaptureTimeline,
     ) -> Result<CaptureEnd, CaptureError> {
         let started_at = Instant::now();
-        let mut sequence = 0_u64;
         let mut silence_buffer = Vec::<u8>::new();
         let mut activity = SignalActivity::new(SILENCE_TIMEOUT, SIGNAL_THRESHOLD);
         let mut pending_state = None;
@@ -1355,6 +1358,7 @@ impl WasapiCaptureStream {
                     });
                 let silent = flags & (AUDCLNT_BUFFERFLAGS_SILENT.0 as u32) != 0;
                 let discontinuity = flags & (AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY.0 as u32) != 0;
+                let (sequence, captured_at_micros, discontinuity) = timeline.next(discontinuity);
                 let elapsed = started_at.elapsed();
                 let frame_result = bytes_len.and_then(|bytes_len| {
                     let bytes = if silent {
@@ -1370,7 +1374,7 @@ impl WasapiCaptureStream {
                     normalize_interleaved(
                         sequence,
                         source_id.clone(),
-                        elapsed.as_micros().min(u128::from(u64::MAX)) as u64,
+                        captured_at_micros,
                         self.sample_format,
                         bytes,
                         silent,
@@ -1396,7 +1400,6 @@ impl WasapiCaptureStream {
                     &mut last_drop_report,
                 )?;
 
-                sequence = sequence.wrapping_add(1);
                 if publish_event(events, CaptureEvent::Frame(frame))? == PublishOutcome::Dropped {
                     dropped_frames = dropped_frames.saturating_add(1);
                 }

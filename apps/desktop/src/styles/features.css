@@ -230,7 +230,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-@media (max-width: 379px) {
+@media (max-width: 760px) {
   .visual-panel-intro {
     display: grid;
   }
@@ -637,9 +637,17 @@
     justify-content: center;
   }
 
-  .desktop-nav-action span,
   .desktop-nav-footer {
     display: none;
+  }
+
+  .desktop-nav-action span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 
   .caption-workspace-grid {

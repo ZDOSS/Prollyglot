@@ -1,6 +1,31 @@
 use serde::{Deserialize, Serialize};
 
-use crate::VisualFrame;
+use crate::{VisualFrame, VisualRect};
+
+/// Compare the actual text area, rather than requiring a whole-scene change
+/// before rejecting old OCR. This also validates static text after a slow pass.
+pub fn text_area_changed(previous: &VisualFrame, next: &VisualFrame, bounds: VisualRect) -> bool {
+    if previous.width != next.width || previous.height != next.height || !bounds.is_valid() {
+        return true;
+    }
+    let left = (bounds.x as u32).min(previous.width);
+    let top = (bounds.y as u32).min(previous.height);
+    let right = ((bounds.x + bounds.width).ceil() as u32).min(previous.width);
+    let bottom = ((bounds.y + bounds.height).ceil() as u32).min(previous.height);
+    let (mut count, mut changed) = (0_u64, 0_u64);
+    for y in top..bottom {
+        for x in left..right {
+            let old = y as usize * previous.stride + x as usize * 4;
+            let new = y as usize * next.stride + x as usize * 4;
+            let delta: u16 = (0..3)
+                .map(|c| u16::from(previous.pixels()[old + c].abs_diff(next.pixels()[new + c])))
+                .sum();
+            changed += u64::from(delta >= 60);
+            count += 1;
+        }
+    }
+    count == 0 || changed as f32 / count as f32 >= 0.15
+}
 
 /// The inexpensive Windows capture cadence. OCR remains separately bounded.
 pub const DEFAULT_LIVE_CAPTURE_FPS: u32 = 12;
@@ -16,6 +41,7 @@ pub enum FrameGateDecision {
     FirstFrame,
     Changed { score: f32 },
     Confirmation { score: f32 },
+    Refresh,
     Unchanged { score: f32 },
     RateLimited,
 }
@@ -24,7 +50,7 @@ impl FrameGateDecision {
     pub const fn should_analyze(self) -> bool {
         matches!(
             self,
-            Self::FirstFrame | Self::Changed { .. } | Self::Confirmation { .. }
+            Self::FirstFrame | Self::Changed { .. } | Self::Confirmation { .. } | Self::Refresh
         )
     }
 }
@@ -32,6 +58,7 @@ impl FrameGateDecision {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FrameGateConfig {
     pub minimum_interval_micros: u64,
+    pub refresh_interval_micros: u64,
     pub change_threshold: f32,
     pub changed_sample_ratio: f32,
     pub sample_delta_threshold: u8,
@@ -43,6 +70,7 @@ impl Default for FrameGateConfig {
     fn default() -> Self {
         Self {
             minimum_interval_micros: DEFAULT_OCR_INTERVAL_MICROS,
+            refresh_interval_micros: 1_000_000,
             change_threshold: 0.012,
             changed_sample_ratio: 0.006,
             sample_delta_threshold: 20,
@@ -55,6 +83,7 @@ impl Default for FrameGateConfig {
 pub struct FrameGate {
     config: FrameGateConfig,
     last_checked_at_micros: Option<u64>,
+    last_analyzed_at_micros: u64,
     accepted_fingerprint: Vec<u8>,
     awaiting_confirmation: bool,
 }
@@ -64,6 +93,7 @@ impl FrameGate {
         Self {
             config,
             last_checked_at_micros: None,
+            last_analyzed_at_micros: 0,
             accepted_fingerprint: Vec::new(),
             awaiting_confirmation: false,
         }
@@ -80,6 +110,7 @@ impl FrameGate {
         if self.accepted_fingerprint.len() != next.len() || self.accepted_fingerprint.is_empty() {
             self.accepted_fingerprint = next;
             self.awaiting_confirmation = true;
+            self.last_analyzed_at_micros = frame.captured_at_micros;
             return FrameGateDecision::FirstFrame;
         }
         let (mean_difference, changed_ratio) = change_metrics(
@@ -89,12 +120,22 @@ impl FrameGate {
         );
         let score = mean_difference.max(changed_ratio);
         if self.is_changed(mean_difference, changed_ratio) {
+            self.last_analyzed_at_micros = frame.captured_at_micros;
             self.accepted_fingerprint = next;
             self.awaiting_confirmation = true;
             FrameGateDecision::Changed { score }
         } else if self.awaiting_confirmation {
+            self.last_analyzed_at_micros = frame.captured_at_micros;
             self.awaiting_confirmation = false;
             FrameGateDecision::Confirmation { score }
+        } else if frame
+            .captured_at_micros
+            .saturating_sub(self.last_analyzed_at_micros)
+            >= self.config.refresh_interval_micros
+        {
+            self.last_analyzed_at_micros = frame.captured_at_micros;
+            self.accepted_fingerprint = next;
+            FrameGateDecision::Refresh
         } else {
             FrameGateDecision::Unchanged { score }
         }
@@ -159,16 +200,35 @@ fn change_metrics(previous: &[u8], next: &[u8], sample_delta_threshold: u8) -> (
 fn fingerprint(frame: &VisualFrame, requested_columns: u16, requested_rows: u16) -> Vec<u8> {
     let columns = u32::from(requested_columns).max(1).min(frame.width);
     let rows = u32::from(requested_rows).max(1).min(frame.height);
-    let mut result = Vec::with_capacity((columns * rows) as usize);
+    let mut result = Vec::with_capacity((columns * rows * 3) as usize);
     for sample_y in 0..rows {
-        let y = ((u64::from(sample_y) * u64::from(frame.height)) / u64::from(rows)) as usize;
+        let top = (u64::from(sample_y) * u64::from(frame.height) / u64::from(rows)) as usize;
+        let bottom = (u64::from(sample_y + 1) * u64::from(frame.height) / u64::from(rows)) as usize;
         for sample_x in 0..columns {
-            let x = ((u64::from(sample_x) * u64::from(frame.width)) / u64::from(columns)) as usize;
-            let offset = y * frame.stride + x * frame.pixel_format.bytes_per_pixel();
-            let blue = u16::from(frame.pixels()[offset]);
-            let green = u16::from(frame.pixels()[offset + 1]);
-            let red = u16::from(frame.pixels()[offset + 2]);
-            result.push(((29 * blue + 150 * green + 77 * red) >> 8) as u8);
+            let left = (u64::from(sample_x) * u64::from(frame.width) / u64::from(columns)) as usize;
+            let right =
+                (u64::from(sample_x + 1) * u64::from(frame.width) / u64::from(columns)) as usize;
+            let (mut sum, mut minimum, mut maximum) = (0_u64, 255_u8, 0_u8);
+            // Aggregate the whole tile: thin subtitle strokes can fall entirely
+            // between isolated sample points, particularly on a 4K display.
+            for y in top..bottom {
+                for x in left..right {
+                    let offset = y * frame.stride + x * frame.pixel_format.bytes_per_pixel();
+                    let pixel = &frame.pixels()[offset..offset + 3];
+                    let value = ((29 * u16::from(pixel[0])
+                        + 150 * u16::from(pixel[1])
+                        + 77 * u16::from(pixel[2]))
+                        >> 8) as u8;
+                    sum += u64::from(value);
+                    minimum = minimum.min(value);
+                    maximum = maximum.max(value);
+                }
+            }
+            result.extend([
+                (sum / ((bottom - top) * (right - left)) as u64) as u8,
+                minimum,
+                maximum,
+            ]);
         }
     }
     result
@@ -192,6 +252,64 @@ mod tests {
             pixel.repeat(16),
         )
         .expect("frame")
+    }
+
+    #[test]
+    fn thin_subtitles_between_old_sample_rows_trigger_ocr_and_local_staleness() {
+        let (width, height) = (1920, 1080);
+        let blank = vec![0; width * height * 4];
+        let mut pixels = blank.clone();
+        for y in 994..1018 {
+            for x in 510..1410 {
+                pixels[(y * width + x) * 4..(y * width + x) * 4 + 3].fill(255);
+            }
+        }
+        let frame = |time, pixels| {
+            VisualFrame::new(
+                time,
+                time,
+                width as u32,
+                height as u32,
+                width * 4,
+                PixelFormat::Bgra8,
+                pixels,
+            )
+            .unwrap()
+        };
+        let first = frame(0, blank.clone());
+        let mut gate = FrameGate::new(FrameGateConfig::default());
+        gate.evaluate(&first);
+        gate.evaluate(&frame(300_000, blank));
+        let changed = frame(600_000, pixels);
+        assert!(matches!(
+            gate.evaluate(&changed),
+            FrameGateDecision::Changed { .. }
+        ));
+        assert!(text_area_changed(
+            &changed,
+            &first,
+            VisualRect {
+                x: 510.0,
+                y: 994.0,
+                width: 900.0,
+                height: 24.0
+            }
+        ));
+    }
+
+    #[test]
+    fn static_frames_receive_a_bounded_refresh_even_without_a_change_signal() {
+        let mut gate = FrameGate::new(FrameGateConfig::default());
+        gate.evaluate(&solid(1, 0, 20));
+        gate.evaluate(&solid(2, 300_000, 20));
+        assert!(matches!(
+            gate.evaluate(&solid(3, 600_000, 20)),
+            FrameGateDecision::Unchanged { .. }
+        ));
+        assert_eq!(
+            gate.evaluate(&solid(4, 1_300_000, 20)),
+            FrameGateDecision::Refresh
+        );
     }
 
     #[test]

@@ -52,6 +52,8 @@ pub struct RapidOcr {
     detector: Option<TextDetector>,
     classifier: Option<TextClassifier>,
     recognizer: Option<TextRecognizer>,
+    full_resolution_crops: bool,
+    recognition_limit: usize,
 }
 
 impl RapidOcr {
@@ -102,7 +104,17 @@ impl RapidOcr {
             detector,
             classifier,
             recognizer,
+            full_resolution_crops: false,
+            recognition_limit: usize::MAX,
         })
+    }
+
+    /// Prollyglot live capture policy. Detection remains bounded; recognition
+    /// can preserve source pixels and prioritize prominent boxes before crops.
+    /// The default preserves upstream behavior for other callers.
+    pub fn set_live_crop_policy(&mut self, original_resolution: bool, maximum_regions: usize) {
+        self.full_resolution_crops = original_resolution;
+        self.recognition_limit = maximum_regions.max(1);
     }
 
     /// Alias for [`RapidOcr::new`].
@@ -280,8 +292,6 @@ impl RapidOcr {
     ) -> Result<(Vec<Quad>, Vec<image::RgbImage>, OcrTimings)> {
         let mut timings = OcrTimings::default();
         cancellation.checkpoint()?;
-        let original_width = image.width();
-        let original_height = image.height();
 
         let start = Instant::now();
         let (resized, ratio_w, ratio_h) =
@@ -299,34 +309,58 @@ impl RapidOcr {
         let mut boxes = det.boxes;
 
         let start = Instant::now();
-        // Crops are extracted from the exact padded detector image that produced
-        // the boxes. Only after crop generation do we remove padding and scale
-        // coordinates back to the caller's original image space.
-        let crops = if needs_crops {
-            let mut crops = Vec::with_capacity(boxes.len());
-            for bbox in &boxes {
-                cancellation.checkpoint()?;
-                crops.push(crop_perspective(&det_image, bbox)?);
-            }
-            crops
-        } else {
-            Vec::new()
-        };
-
-        for b in &mut boxes {
-            cancellation.checkpoint()?;
-            if padding_top > 0 {
-                for point in &mut b.points {
-                    point[1] -= padding_top as f32;
-                }
-            }
-            b.scale(ratio_w, ratio_h);
-            b.clip(original_width, original_height);
+        if needs_crops && boxes.len() > self.recognition_limit {
+            boxes.sort_by(|left, right| {
+                right
+                    .short_side()
+                    .total_cmp(&left.short_side())
+                    .then_with(|| right.width_f32().total_cmp(&left.width_f32()))
+            });
+            boxes.truncate(self.recognition_limit);
         }
+        let crops = source_crops(
+            image,
+            &det_image,
+            &mut boxes,
+            (ratio_w, ratio_h),
+            padding_top,
+            needs_crops,
+            self.full_resolution_crops,
+            cancellation,
+        )?;
         timings.crop_ms = elapsed_ms(start);
 
         Ok((boxes, crops, timings))
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn source_crops(
+    original: &image::RgbImage,
+    detector_image: &image::RgbImage,
+    boxes: &mut [Quad],
+    ratios: (f32, f32),
+    padding_top: u32,
+    needs_crops: bool,
+    original_resolution: bool,
+    cancellation: &OcrCancellationToken,
+) -> Result<Vec<image::RgbImage>> {
+    let mut crops = Vec::new();
+    for bbox in boxes {
+        cancellation.checkpoint()?;
+        if needs_crops && !original_resolution {
+            crops.push(crop_perspective(detector_image, bbox)?);
+        }
+        for point in &mut bbox.points {
+            point[1] -= padding_top as f32;
+        }
+        bbox.scale(ratios.0, ratios.1);
+        bbox.clip(original.width(), original.height());
+        if needs_crops && original_resolution {
+            crops.push(crop_perspective(original, bbox)?);
+        }
+    }
+    Ok(crops)
 }
 
 fn elapsed_ms(start: Instant) -> f64 {
@@ -336,6 +370,29 @@ fn elapsed_ms(start: Instant) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn prollyglot_source_crops_preserve_detail_and_remove_detector_padding() {
+        let original =
+            image::RgbImage::from_fn(120, 60, |x, _| image::Rgb([(x % 2 * 255) as u8; 3]));
+        let reduced = image::RgbImage::from_pixel(40, 24, image::Rgb([127; 3]));
+        let mut boxes = vec![Quad::from_xyxy(10.0, 8.0, 30.0, 16.0)];
+        let crops = source_crops(
+            &original,
+            &reduced,
+            &mut boxes,
+            (3.0, 3.0),
+            4,
+            true,
+            true,
+            &OcrCancellationToken::new(),
+        )
+        .unwrap();
+        assert_eq!(boxes[0].points[0], [30.0, 12.0]);
+        assert_eq!(crops[0].dimensions(), (60, 24));
+        assert!(crops[0].pixels().any(|pixel| pixel[0] < 100));
+        assert!(crops[0].pixels().any(|pixel| pixel[0] > 150));
+    }
 
     #[test]
     fn new_reports_missing_detection_model_with_path() {

@@ -10,6 +10,7 @@ cargo test --locked \
   -p prollyglot-config \
   -p prollyglot-core \
   -p prollyglot-audio-pipeline \
+  -p prollyglot-audio-windows \
   -p prollyglot-asr \
   -p prollyglot-asr-sherpa \
   -p prollyglot-transcript \
@@ -24,6 +25,7 @@ cargo clippy --locked \
   -p prollyglot-config \
   -p prollyglot-core \
   -p prollyglot-audio-pipeline \
+  -p prollyglot-audio-windows \
   -p prollyglot-asr \
   -p prollyglot-asr-sherpa \
   -p prollyglot-transcript \

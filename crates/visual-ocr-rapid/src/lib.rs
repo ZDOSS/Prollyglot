@@ -26,11 +26,43 @@ use rapidocr_core::{
 const LIVE_OCR_MAX_SIDE: u32 = 1_280;
 const FOCUSED_RESULT_LIMIT: usize = 6;
 
+#[derive(Clone, Debug)]
+pub struct OverlayText {
+    pub text: String,
+    pub bounds: VisualRect,
+}
+
+impl OverlayText {
+    pub fn matches(&self, observation: &OcrObservation) -> bool {
+        let bounds = observation.bounds;
+        let overlap_width = (bounds.x + bounds.width).min(self.bounds.x + self.bounds.width)
+            - bounds.x.max(self.bounds.x);
+        let overlap_height = (bounds.y + bounds.height).min(self.bounds.y + self.bounds.height)
+            - bounds.y.max(self.bounds.y);
+        let covered = overlap_width.max(0.0) * overlap_height.max(0.0) / bounds.area().max(1.0);
+        if covered < 0.7 {
+            return false;
+        }
+        let normalize = |text: &str| {
+            text.chars()
+                .filter(|c| c.is_alphanumeric())
+                .flat_map(char::to_lowercase)
+                .take(500)
+                .collect::<String>()
+        };
+        let candidate = normalize(&observation.text);
+        let echo = normalize(&self.text);
+        !candidate.is_empty()
+            && (candidate == echo || (candidate.chars().count() >= 4 && echo.contains(&candidate)))
+    }
+}
+
 pub struct RapidOcrEngine {
     runner: RapidOcr,
     language_hint: String,
     profile: RecognitionProfile,
     cancellation: RapidOcrCancellation,
+    timings: rapidocr_core::types::OcrTimings,
 }
 
 #[derive(Clone, Default)]
@@ -118,27 +150,51 @@ impl RapidOcrEngine {
             detector.limit_side_len = LIVE_OCR_MAX_SIDE;
             detector.max_candidates = 128;
         }
-        let runner = RapidOcr::new(config).map_err(|error| {
+        let mut runner = RapidOcr::new(config).map_err(|error| {
             OcrError::Unavailable(format!("PP-OCRv6 Small could not load: {error:#}"))
         })?;
+        runner.set_live_crop_policy(
+            true,
+            match profile {
+                RecognitionProfile::Focused => 24,
+                RecognitionProfile::AllText => 48,
+            },
+        );
         Ok(Self {
             runner,
             language_hint: language_hint.into(),
             profile,
             cancellation: RapidOcrCancellation::default(),
+            timings: rapidocr_core::types::OcrTimings::default(),
         })
     }
 
     pub fn cancellation(&self) -> RapidOcrCancellation {
         self.cancellation.clone()
     }
+
+    pub fn last_timings(&self) -> &rapidocr_core::types::OcrTimings {
+        &self.timings
+    }
 }
 
 impl OcrEngine for RapidOcrEngine {
     fn recognize(&mut self, frame: &VisualFrame) -> Result<Vec<OcrObservation>, OcrError> {
+        self.recognize_filtered(frame, |_| true)
+    }
+}
+
+impl RapidOcrEngine {
+    /// Filter raw lines before spatial grouping so an overlay cannot swallow
+    /// nearby source text when the two are merged into one observation.
+    pub fn recognize_filtered(
+        &mut self,
+        frame: &VisualFrame,
+        keep: impl Fn(&OcrObservation) -> bool,
+    ) -> Result<Vec<OcrObservation>, OcrError> {
         let cancellation = OcrCancellationToken::new();
         self.cancellation.begin(cancellation.clone());
-        let result = self.recognize_cancellable(frame, &cancellation);
+        let result = self.recognize_cancellable(frame, &cancellation, keep);
         self.cancellation.finish();
         result
     }
@@ -149,12 +205,13 @@ impl RapidOcrEngine {
         &mut self,
         frame: &VisualFrame,
         cancellation: &OcrCancellationToken,
+        keep: impl Fn(&OcrObservation) -> bool,
     ) -> Result<Vec<OcrObservation>, OcrError> {
         cancellation.checkpoint().map_err(|_| OcrError::Cancelled)?;
         let image = frame_to_rgb_cancellable(frame, cancellation)?;
         let output = self
             .runner
-            .run_image_cancellable(&image, cancellation)
+            .run_image_cancellable_timed(&image, cancellation)
             .map_err(|error| {
                 if is_cancelled_error(&error) || cancellation.is_cancelled() {
                     OcrError::Cancelled
@@ -162,7 +219,9 @@ impl RapidOcrEngine {
                     OcrError::Inference(format!("PP-OCRv6 inference failed: {error:#}"))
                 }
             })?;
+        self.timings = output.timings;
         let observations = output
+            .output
             .lines
             .into_iter()
             .filter_map(|line| {
@@ -175,6 +234,7 @@ impl RapidOcrEngine {
                     bounds,
                 })
             })
+            .filter(keep)
             .collect();
         Ok(prepare_observations(
             observations,
@@ -250,13 +310,8 @@ fn merge_nearby_lines(observations: Vec<OcrObservation>) -> Vec<OcrObservation> 
     }
     groups
         .into_values()
-        .map(|mut lines| {
-            lines.sort_by(|left, right| {
-                left.bounds
-                    .y
-                    .total_cmp(&right.bounds.y)
-                    .then_with(|| left.bounds.x.total_cmp(&right.bounds.x))
-            });
+        .map(|lines| {
+            let lines = reading_order(lines);
             let bounds = lines
                 .iter()
                 .map(|line| line.bounds)
@@ -297,6 +352,28 @@ fn merge_nearby_lines(observations: Vec<OcrObservation>) -> Vec<OcrObservation> 
                 script: None,
                 bounds,
             }
+        })
+        .collect()
+}
+
+fn reading_order(mut lines: Vec<OcrObservation>) -> Vec<OcrObservation> {
+    lines.sort_by(|left, right| left.bounds.y.total_cmp(&right.bounds.y));
+    let mut rows: Vec<(VisualRect, Vec<OcrObservation>)> = Vec::new();
+    for line in lines {
+        if let Some((_, row)) = rows.iter_mut().find(|(anchor, _)| {
+            let overlap = (anchor.y + anchor.height).min(line.bounds.y + line.bounds.height)
+                - anchor.y.max(line.bounds.y);
+            overlap / anchor.height.min(line.bounds.height).max(1.0) >= 0.58
+        }) {
+            row.push(line);
+        } else {
+            rows.push((line.bounds, vec![line]));
+        }
+    }
+    rows.into_iter()
+        .flat_map(|(_, mut row)| {
+            row.sort_by(|left, right| left.bounds.x.total_cmp(&right.bounds.x));
+            row
         })
         .collect()
 }
@@ -391,12 +468,10 @@ fn observation_is_useful(
         .chars()
         .filter(|character| character.is_alphabetic() || character.is_numeric())
         .count();
-    let minimum_characters = if matches!(expected_script(language), ScriptFamily::Latin) {
-        3
-    } else {
-        2
-    };
-    if non_whitespace < minimum_characters
+    // Short words (No, Sí, OK) and single Han characters carry real meaning.
+    // Demand stronger confidence for them, plus the same script/size evidence.
+    if non_whitespace == 0
+        || (non_whitespace < 3 && confidence < 0.85)
         || signal * 100 < non_whitespace.saturating_mul(55)
         || !matches_expected_script(trimmed, language)
     {
@@ -590,6 +665,86 @@ mod tests {
     use prollyglot_visual_pipeline::VisualFrame;
 
     use super::*;
+
+    fn observation(text: &str, x: f32, y: f32) -> OcrObservation {
+        OcrObservation {
+            text: text.into(),
+            confidence: 0.99,
+            language: Some("es".into()),
+            script: None,
+            bounds: VisualRect {
+                x,
+                y,
+                width: 100.0,
+                height: 32.0,
+            },
+        }
+    }
+
+    #[test]
+    fn short_spanish_words_and_single_han_characters_need_strong_evidence() {
+        for (language, text) in [("es", "No"), ("es", "Sí"), ("es", "OK"), ("zh", "猫")] {
+            for profile in [RecognitionProfile::Focused, RecognitionProfile::AllText] {
+                assert!(
+                    observation_is_useful(
+                        text,
+                        0.99,
+                        observation(text, 0.0, 0.0).bounds,
+                        1920,
+                        1080,
+                        language,
+                        profile
+                    ),
+                    "{text}"
+                );
+                assert!(!observation_is_useful(
+                    text,
+                    0.60,
+                    observation(text, 0.0, 0.0).bounds,
+                    1920,
+                    1080,
+                    language,
+                    profile
+                ));
+            }
+        }
+    }
+
+    #[test]
+    fn reading_order_tolerates_jitter_without_reversing_spanish_words() {
+        let merged = merge_nearby_lines(vec![
+            observation("Buenos", 100.0, 100.0),
+            observation("días", 210.0, 99.0),
+        ]);
+        assert_eq!(merged[0].text, "Buenos días");
+    }
+
+    #[test]
+    fn overlay_filtering_preserves_adjacent_source_and_identical_text_elsewhere() {
+        let echo = OverlayText {
+            text: "Good morning".into(),
+            bounds: VisualRect {
+                x: 100.0,
+                y: 160.0,
+                width: 220.0,
+                height: 33.0,
+            },
+        };
+        let observations = vec![
+            observation("Good morning", 100.0, 160.0),
+            observation("Buenos días", 100.0, 200.0),
+            observation("Good morning", 500.0, 500.0),
+        ];
+        let merged = merge_nearby_lines(
+            observations
+                .into_iter()
+                .filter(|line| !echo.matches(line))
+                .collect(),
+        );
+        assert_eq!(merged.len(), 2);
+        assert!(merged.iter().any(|line| line.text == "Buenos días"));
+        assert!(merged.iter().any(|line| line.text == "Good morning"));
+    }
 
     #[test]
     fn converts_strided_bgra_to_packed_rgb() {

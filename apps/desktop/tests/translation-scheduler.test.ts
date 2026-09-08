@@ -126,6 +126,53 @@ test("final captions outrank queued provisional and visual work", async () => {
   assert.deepEqual(executor.calls, ["blocker", "final", "sign", "partial"]);
 });
 
+test("cold preparation has its own budget for active and queued visual text", async () => {
+  const clock = new FakeClock();
+  const loaded = pending<{ modelId: string; coldStartMs: number }>();
+  const executor = new FakeExecutor();
+  executor.prepare = () => loaded.promise;
+  const scheduler = new TranslationScheduler(() => executor, undefined, clock);
+  scheduler.startSession("visual:1");
+  const first = scheduler.submit(job("visual:1", "你好世界", "visualCompact"));
+  clock.advance(2_000);
+  const second = scheduler.submit(job("visual:1", "Buenos días", "visualCompact"));
+  clock.advance(4_000);
+  loaded.resolve({ modelId: "fake", coldStartMs: 6_000 });
+  assert.deepEqual(await Promise.all([first, second]), ["translated:你好世界", "translated:Buenos días"]);
+  scheduler.stopSession("visual:1");
+});
+
+test("visual importance is preserved after the active job", async () => {
+  const blocker = pending<string>();
+  const executor = new FakeExecutor(text => text === "active" ? blocker.promise : Promise.resolve(text));
+  const scheduler = new TranslationScheduler(() => executor);
+  scheduler.startSession("visual:1");
+  const active = scheduler.submit(job("visual:1", "active", "visualCompact"));
+  await settle();
+  const jobs = [6, 5, 4, 3, 2, 1].map(importance => scheduler.submit({
+    ...job("visual:1", String(importance), "visualCompact"), importance
+  }));
+  blocker.resolve("active");
+  await Promise.all([active, ...jobs]);
+  assert.deepEqual(executor.calls, ["active", "6", "5", "4", "3", "2", "1"]);
+  scheduler.stopSession("visual:1");
+});
+
+test("a source disappearing during preparation is never sent to inference", async () => {
+  const loaded = pending<{ modelId: string; coldStartMs: number }>();
+  const executor = new FakeExecutor();
+  executor.prepare = () => loaded.promise;
+  const scheduler = new TranslationScheduler(() => executor);
+  scheduler.startSession("visual:1");
+  let visible = true;
+  const result = scheduler.submit({ ...job("visual:1", "No", "visualCompact"), isCurrent: () => visible });
+  visible = false;
+  loaded.resolve({ modelId: "fake", coldStartMs: 0 });
+  await assert.rejects(result, TranslationSupersededError);
+  assert.deepEqual(executor.calls, []);
+  scheduler.stopSession("visual:1");
+});
+
 test("new provisional text coalesces queued text from the same utterance", async () => {
   const blocker = pending<string>();
   const executor = new FakeExecutor((text) => text === "blocker"

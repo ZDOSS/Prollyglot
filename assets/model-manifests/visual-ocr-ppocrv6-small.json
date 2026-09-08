@@ -5,9 +5,8 @@
   "displayName": "PP-OCRv6 Small · Multilingual",
   "backend": "rapidocr-ppocrv6",
   "languages": [
-    "en", "ar", "bn", "bg", "zh", "hr", "cs", "da", "nl", "et",
-    "fi", "fr", "de", "hi", "hu", "it", "ja", "ko", "nb", "pl",
-    "pt", "ro", "ru", "sk", "es", "sv", "tr", "uk", "vi"
+    "en", "zh", "hr", "cs", "da", "nl", "et", "fi", "fr", "de", "hu",
+    "it", "ja", "nb", "pl", "pt", "ro", "sk", "es", "sv", "tr", "vi"
   ],
   "license": "Apache-2.0",
   "provenance": {

@@ -109,8 +109,12 @@
   position: absolute;
   display: grid;
   width: max-content;
+  box-sizing: border-box;
   min-width: min(180px, var(--visual-source-width));
-  max-width: min(560px, max(260px, calc(var(--visual-source-width) * 1.55)));
+  max-width: min(calc(100vw - 16px), 560px, max(260px, calc(var(--visual-source-width) * 1.55)));
+  max-height: calc(100vh - 16px);
+  overflow: hidden;
+  overflow-wrap: anywhere;
   gap: 3px;
   border: 1px solid rgb(255 255 255 / 18%);
   border-radius: 8px;
@@ -121,11 +125,6 @@
   line-height: 1.2;
   text-align: center;
   text-wrap: balance;
-  transform: translate(-50%, calc(-100% - 7px));
-}
-
-.visual-translation-label[data-placement="below"] {
-  transform: translate(-50%, 7px);
 }
 
 .visual-translation-label[data-retained="true"] {
@@ -137,6 +136,8 @@
   position: absolute;
   top: 18px;
   left: 50%;
+  max-width: calc(100vw - 16px);
+  overflow-wrap: anywhere;
   padding: 8px 13px;
   border: 1px solid rgb(255 255 255 / 18%);
   border-radius: 999px;

@@ -400,6 +400,7 @@ export function createPreviewBridge(): PreviewDesktopBridge {
           };
           publishVisualStatus();
           publishVisualText({
+            frameAgeMs: 0,
             sessionId,
             runtimeRevision,
             source: geometry,

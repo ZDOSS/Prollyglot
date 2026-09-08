@@ -5,6 +5,8 @@ Versioning while it is in the `0.x` pre-release line.
 
 ## [Unreleased]
 
+## [0.1.13] - 2026-09-07
+
 ### Added
 
 - Architecture, build, and contribution guides describing the implemented
@@ -27,6 +29,14 @@ Versioning while it is in the `0.x` pre-release line.
   pnpm command returns a nonzero exit code, and include Windows audio-adapter
   tests in that gate.
 
+- Recognize detected regions from original-resolution pixels and cap recognition
+  crops before expensive inference (24 prominent / 48 all-text candidates).
+- Add OCR stage timings, Chinese/Spanish static and timed fixtures, a local OCR
+  evaluator, and repeatable browser checks. Small full-display text remains an
+  observed detector limitation; Windows live-media acceptance is still pending.
+- Advance the generated runtime contract to version 5 for source age and measured
+  overlay geometry.
+
 ### Fixed
 
 - Normalize checkout line endings when verifying generated runtime bindings so
@@ -36,6 +46,20 @@ Versioning while it is in the `0.x` pre-release line.
   current stable Clippy boundary.
 - Exercise the resident-memory probe on Windows instead of allowing its desktop
   test to become an empty platform-gated pass.
+
+- Give translator loading its own deadline, preserve visual priority in the queue,
+  and retry current visual text up to three times with a bounded backoff.
+- Suppress late translations after their source disappears; verify old OCR against
+  its text areas and reject output from outdated capture dimensions.
+- Detect thin subtitle changes between sampling points, periodically refresh static
+  OCR, preserve short confident Spanish/Chinese text, and correct word order under
+  vertical OCR-box jitter.
+- Filter overlay echoes using measured label positions before grouping source lines.
+  Clamp rendered labels to capture edges and keep narrow setup controls accessible.
+- Preserve one audio timestamp/sequence across WASAPI reconnects and explicitly
+  mark the first recovered packet as discontinuous.
+- Limit OCR source choices to scripts the installed dictionary supports while
+  preserving the broader translation target choices.
 
 ## [0.1.12] - 2026-08-14
 

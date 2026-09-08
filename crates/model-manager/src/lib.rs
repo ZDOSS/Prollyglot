@@ -1011,6 +1011,36 @@ mod tests {
     }
 
     #[test]
+    fn visual_sources_match_dictionary_scripts_without_restricting_translation_targets() {
+        let visual = visual_ocr_manifest().expect("visual manifest");
+        for language in ["zh", "ja", "es", "en"] {
+            assert!(
+                visual
+                    .languages
+                    .iter()
+                    .any(|candidate| candidate == language)
+            );
+        }
+        for language in ["ar", "bn", "hi", "ko", "ru", "uk", "bg"] {
+            assert!(
+                !visual
+                    .languages
+                    .iter()
+                    .any(|candidate| candidate == language)
+            );
+            assert!(
+                translation_model_manifests()
+                    .expect("translators")
+                    .iter()
+                    .any(|model| model
+                        .languages
+                        .iter()
+                        .any(|candidate| candidate == language))
+            );
+        }
+    }
+
+    #[test]
     fn manifest_rejects_directory_traversal() {
         let mut manifest = initial_english_manifest().expect("built-in manifest");
         manifest.artifacts[0].path = "../outside.bin".into();

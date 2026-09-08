@@ -319,6 +319,7 @@ pub fn run() {
             visual::install_visual_model,
             visual::remove_visual_model,
             visual::update_visual_presentation,
+            visual::update_visual_overlay_layout,
             visual::start_visual_translation,
             visual::stop_visual_translation,
         ])

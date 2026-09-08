@@ -923,15 +923,20 @@ by that API, while PP-OCR provides one shared Windows/Linux direction.
 
 ### Acceptance boundary
 
-- Representative Japanese and Spanish video subtitles, game UI, menus, and
+- Representative Chinese, Japanese, and Spanish video subtitles, game UI, menus, and
   signs produce useful translated text without saving frames or using a cloud
   service.
 - The Windows matrix records WGC window, WGC display, DXGI display, and
   equivalent OBS Display Capture behavior for representative media. OBS-only
   display success is a Prollyglot compatibility defect; an OS-protected blank
   surface is reported without attempting injection or capture-control bypass.
-- Static text is not repeatedly recognized or translated, and scene changes
-  cannot create an unbounded stale-work queue.
+- Static text receives bounded one-second OCR refreshes to recover missed text;
+  unchanged revisions reuse translations. Scene changes cannot create an
+  unbounded stale-work queue, and disappeared pending text cannot appear late.
+- The Chinese/Spanish fixture and local evaluator in
+  `docs/testing/VISUAL_RELIABILITY_EVALUATION.md` record misses and stage latency.
+  Full-display small-text recall and native Windows end-to-end timing remain
+  acceptance work; do not infer those results from passing synthetic regressions.
 - On the reference Windows machine, a stable changed text region normally
   reaches the overlay within two seconds for a compact-to-English route;
   universal translation is measured separately and may have a higher profile.

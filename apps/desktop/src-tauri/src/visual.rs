@@ -27,7 +27,9 @@ use prollyglot_model_manager::{
     visual_ocr_manifest, visual_ocr_manifest_by_id,
 };
 use prollyglot_resource_coordinator::InferenceResourceLease;
-use prollyglot_visual_ocr_rapid::{RapidOcrCancellation, RapidOcrEngine, RecognitionProfile};
+use prollyglot_visual_ocr_rapid::{
+    OverlayText, RapidOcrCancellation, RapidOcrEngine, RecognitionProfile,
+};
 use prollyglot_visual_pipeline::{
     FrameGate, FrameGateConfig, OcrEngine, OcrError, OcrObservation, StabilizerUpdate,
     TextStabilizer, TextStabilizerConfig, VisualFrame, VisualPipeline, VisualPipelineStats,
@@ -158,20 +160,37 @@ impl ActiveVisualResources {
     }
 }
 
+struct OverlayEcho {
+    text: OverlayText,
+    expires_at: Option<Instant>,
+}
+type OverlayEchoHistory = Vec<OverlayEcho>;
+
 struct EchoFilteringEngine {
     inner: RapidOcrEngine,
-    overlay_echoes: Arc<Mutex<Vec<String>>>,
+    overlay_echoes: Arc<Mutex<OverlayEchoHistory>>,
     _resource: InferenceResourceLease,
 }
 
 impl OcrEngine for EchoFilteringEngine {
     fn recognize(&mut self, frame: &VisualFrame) -> Result<Vec<OcrObservation>, OcrError> {
-        let observations = self.inner.recognize(frame)?;
-        let echoes = self.overlay_echoes.lock();
-        Ok(observations
-            .into_iter()
-            .filter(|observation| !matches_overlay_echo(&observation.text, &echoes))
-            .collect())
+        let echoes = &self.overlay_echoes;
+        let result = self.inner.recognize_filtered(frame, |observation| {
+            !echoes.lock().iter().any(|echo| {
+                echo.expires_at.is_none_or(|expiry| Instant::now() < expiry)
+                    && echo.text.matches(observation)
+            })
+        });
+        let timings = self.inner.last_timings();
+        tracing::debug!(
+            detector_ms = timings.det_inference_ms,
+            recognition_ms = timings.rec_inference_ms,
+            preprocess_ms = timings.pipeline_preprocess_ms,
+            crop_ms = timings.crop_ms,
+            total_ms = timings.total_ms,
+            "visual OCR stage timings"
+        );
+        result
     }
 }
 
@@ -229,7 +248,7 @@ pub struct VisualRuntime {
     inspecting: Arc<AtomicBool>,
     status: SharedVisualStatus,
     resources: Arc<Mutex<Option<ActiveVisualResources>>>,
-    overlay_echoes: Arc<Mutex<Vec<String>>>,
+    overlay_echoes: Arc<Mutex<OverlayEchoHistory>>,
     overlay_output: Arc<Mutex<VisualPresentationFrame>>,
 }
 
@@ -377,16 +396,6 @@ pub fn update_visual_presentation(
     })?;
 
     let region_count = frame.regions.len() as u64;
-    let echoes = frame
-        .regions
-        .iter()
-        .filter_map(|region| region.translation.as_deref())
-        .take(48)
-        .filter_map(|text| {
-            let normalized = normalize_overlay_text(text);
-            (normalized.chars().count() >= 4).then_some(normalized)
-        })
-        .collect();
     let (previous, changed) = {
         let mut current = state.visual.overlay_output.lock();
         if current.session_id != frame.session_id
@@ -408,7 +417,6 @@ pub fn update_visual_presentation(
             Some(frame.session_id),
         ));
     }
-    *state.visual.overlay_echoes.lock() = echoes;
 
     if runtime_snapshot.lifecycle == SessionLifecycle::Running {
         overlay
@@ -1286,11 +1294,31 @@ fn run_visual_processor(worker: VisualProcessorWorker) -> Result<(), Application
                 .captured_at_micros
                 .saturating_sub(frame.captured_at_micros)
         });
+        let areas_changed = newest_frame.as_ref().is_some_and(|newest| {
+            frame.width != newest.width
+                || frame.height != newest.height
+                || outcome.update.as_ref().is_some_and(|update| {
+                    update.visible.iter().any(|region| {
+                        prollyglot_visual_pipeline::text_area_changed(&frame, newest, region.bounds)
+                    })
+                })
+        });
+        let current_source = source.lock().clone();
+        let geometry_changed =
+            current_source.width != frame.width || current_source.height != frame.height;
+        let scene_changed = newest_frame.as_ref().is_some_and(|newest| {
+            pipeline.source_substantially_changed_since_last_analysis(newest)
+        });
         let stale_for_changed_source = outcome.update.is_some()
-            && result_age_micros > MAX_VISUAL_RESULT_AGE_MICROS
-            && newest_frame.as_ref().is_some_and(|newest| {
-                pipeline.source_substantially_changed_since_last_analysis(newest)
-            });
+            && (geometry_changed
+                || (result_age_micros > MAX_VISUAL_RESULT_AGE_MICROS
+                    && (areas_changed || scene_changed)));
+        let elapsed_micros = pass_elapsed.as_micros().min(u128::from(u64::MAX)) as u64;
+        let evidence_age_micros = if newest_frame.is_some() && !areas_changed {
+            elapsed_micros.saturating_sub(result_age_micros)
+        } else {
+            elapsed_micros.max(result_age_micros)
+        };
         if outcome.update.is_some()
             && pass_elapsed >= Duration::from_millis(750)
             && last_slow_pass_log.elapsed() >= Duration::from_secs(5)
@@ -1327,8 +1355,13 @@ fn run_visual_processor(worker: VisualProcessorWorker) -> Result<(), Application
                     "discarded stale visual OCR output after the source changed"
                 );
             } else if let Some(update) = outcome.update {
-                let payload =
-                    visual_text_contract(session_id, snapshot.revision, &source.lock(), update);
+                let payload = visual_text_contract(
+                    session_id,
+                    snapshot.revision,
+                    &current_source,
+                    update,
+                    (evidence_age_micros / 1_000).min(u64::from(u32::MAX)) as u32,
+                );
                 if let Err(error) = app.emit_to(
                     "main",
                     prollyglot_application_runtime::ipc::VISUAL_TEXT_EVENT,
@@ -1629,27 +1662,78 @@ fn validate_visual_presentation(frame: &VisualPresentationFrame) -> Result<(), S
     Ok(())
 }
 
-fn normalize_overlay_text(text: &str) -> String {
-    text.chars()
-        .filter(|character| character.is_alphanumeric())
-        .flat_map(char::to_lowercase)
-        .take(500)
-        .collect()
-}
-
-fn matches_overlay_echo(text: &str, echoes: &[String]) -> bool {
-    let candidate = normalize_overlay_text(text);
-    let candidate_length = candidate.chars().count();
-    if candidate_length < 4 {
-        return false;
+#[tauri::command]
+pub fn update_visual_overlay_layout(
+    caller: WebviewWindow,
+    state: State<'_, RuntimeState>,
+    layout: prollyglot_application_runtime::VisualOverlayLayout,
+) -> Result<bool, String> {
+    if caller.label() != "visual-overlay" {
+        return Err("Only the visual overlay may report its rendered label positions.".into());
     }
-    echoes.iter().any(|echo| {
-        let echo_length = echo.chars().count();
-        echo_length >= 4
-            && (candidate == *echo
-                || (candidate_length >= 6
-                    && (candidate.contains(echo) || echo.contains(&candidate))))
-    })
+    let output = state.visual.overlay_output.lock();
+    if layout.session_id != output.session_id
+        || layout.presentation_revision != output.presentation_revision
+    {
+        return Ok(false);
+    }
+    if layout.labels.len() > 48 {
+        return Err("Too many overlay labels.".into());
+    }
+    let mut reported = Vec::new();
+    for label in layout.labels {
+        let bounds = prollyglot_visual_pipeline::VisualRect {
+            x: label.bounds.x,
+            y: label.bounds.y,
+            width: label.bounds.width,
+            height: label.bounds.height,
+        };
+        if !bounds.is_valid()
+            || bounds.x + bounds.width > output.source_width as f32 + 1.0
+            || bounds.y + bounds.height > output.source_height as f32 + 1.0
+        {
+            return Err("Overlay label is outside the capture area.".into());
+        }
+        if label.track_id == 0 && output.scanning && output.regions.is_empty() {
+            reported.push(OverlayText {
+                text: "Scanning for text…".into(),
+                bounds,
+            });
+        } else if let Some(region) = output.regions.iter().find(|region| {
+            region.track_id == label.track_id && region.text_revision == label.text_revision
+        }) {
+            let text = region
+                .translation
+                .clone()
+                .unwrap_or_else(|| "Translating…".into());
+            reported.push(OverlayText { text, bounds });
+        }
+    }
+    let now = Instant::now();
+    let mut echoes = state.visual.overlay_echoes.lock();
+    echoes.retain(|echo| echo.expires_at.is_none_or(|expiry| now < expiry));
+    for echo in echoes.iter_mut() {
+        echo.expires_at.get_or_insert(now + Duration::from_secs(3));
+    }
+    for text in reported {
+        if let Some(echo) = echoes
+            .iter_mut()
+            .find(|echo| echo.text.text == text.text && echo.text.bounds == text.bounds)
+        {
+            echo.expires_at = None;
+        } else {
+            echoes.push(OverlayEcho {
+                text,
+                expires_at: None,
+            });
+        }
+    }
+    // Current labels stay excluded even if a static source stops delivering
+    // frames. Recently replaced geometry survives only an in-flight OCR pass.
+    let excess = echoes.len().saturating_sub(96);
+    echoes.sort_by_key(|echo| echo.expires_at.is_none());
+    echoes.drain(..excess);
+    Ok(true)
 }
 
 fn validate_language_pair(source: &str, target: &str) -> Result<(), String> {
@@ -1657,7 +1741,11 @@ fn validate_language_pair(source: &str, target: &str) -> Result<(), String> {
     if !manifest.languages.iter().any(|language| language == source) {
         return Err("The visual recognition model does not support that source language.".into());
     }
-    if !manifest.languages.iter().any(|language| language == target) {
+    if !prollyglot_model_manager::translation_model_manifests()
+        .map_err(|error| error.to_string())?
+        .iter()
+        .any(|model| model.languages.iter().any(|language| language == target))
+    {
         return Err("The selected visual translation target is unsupported.".into());
     }
     if source == target {
@@ -1910,7 +1998,7 @@ struct VisualSessionMonitorContext {
     resources: Arc<Mutex<Option<ActiveVisualResources>>>,
     status: SharedVisualStatus,
     overlay_output: Arc<Mutex<VisualPresentationFrame>>,
-    overlay_echoes: Arc<Mutex<Vec<String>>>,
+    overlay_echoes: Arc<Mutex<OverlayEchoHistory>>,
     inference_resources: crate::resources::ResourceRuntime,
 }
 
@@ -1989,7 +2077,7 @@ fn schedule_cleanup(
     supervisor: &Arc<Mutex<prollyglot_application_runtime::SessionSupervisor>>,
     status: &SharedVisualStatus,
     overlay_output: &Arc<Mutex<VisualPresentationFrame>>,
-    overlay_echoes: &Arc<Mutex<Vec<String>>>,
+    overlay_echoes: &Arc<Mutex<OverlayEchoHistory>>,
     session_id: SessionId,
     resources: Option<ActiveVisualResources>,
 ) {
@@ -2070,7 +2158,7 @@ fn take_resources(
 fn clear_visual_output(
     app: &AppHandle,
     output: &Arc<Mutex<VisualPresentationFrame>>,
-    echoes: &Arc<Mutex<Vec<String>>>,
+    echoes: &Arc<Mutex<OverlayEchoHistory>>,
     session_id: SessionId,
     runtime_revision: u32,
 ) {
@@ -2200,8 +2288,10 @@ fn visual_text_contract(
     runtime_revision: u32,
     source: &PickedVisualSource,
     update: StabilizerUpdate,
+    frame_age_ms: u32,
 ) -> VisualTextUpdate {
     VisualTextUpdate {
+        frame_age_ms,
         session_id,
         runtime_revision,
         source: VisualCaptureGeometry {
@@ -2311,20 +2401,6 @@ fn finish_reporter(reporter: &mut Option<WorkerReporter>, outcome: WorkerOutcome
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn overlay_echo_matching_ignores_spacing_and_punctuation() {
-        let echoes = vec![normalize_overlay_text("Good morning, everyone!")];
-        assert!(matches_overlay_echo("Good morning everyone", &echoes));
-        assert!(matches_overlay_echo("Morning, everyone", &echoes));
-    }
-
-    #[test]
-    fn overlay_echo_matching_does_not_hide_short_source_words() {
-        let echoes = vec![normalize_overlay_text("No")];
-        assert!(!matches_overlay_echo("No", &echoes));
-        assert!(!matches_overlay_echo("News update", &echoes));
-    }
 
     #[test]
     fn visual_presentation_validation_allows_retained_pending_text() {

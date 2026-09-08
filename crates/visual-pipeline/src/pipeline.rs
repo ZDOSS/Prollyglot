@@ -53,6 +53,7 @@ impl<E: OcrEngine> VisualPipeline<E> {
                     self.stats.frames_unchanged = self.stats.frames_unchanged.saturating_add(1);
                 }
                 FrameGateDecision::FirstFrame
+                | FrameGateDecision::Refresh
                 | FrameGateDecision::Changed { .. }
                 | FrameGateDecision::Confirmation { .. } => {}
             }

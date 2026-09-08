@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prollyglot Chinese and Spanish visual evaluation</title>
+<style>
+  html, body { margin: 0; width: 100%; height: 100%; background: #191919; color: white; font: 16px system-ui; }
+  header { padding: 24px; max-width: 760px; }
+  button, select { font: inherit; margin: 6px; padding: 8px; }
+  #subtitle-area { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); width: min(980px, 96vw); height: 180px; display: grid; place-items: center; }
+  #subtitle { text-align: center; font-family: "Microsoft YaHei", "WenQuanYi Zen Hei", sans-serif; }
+  body[data-fixture="true"] header { display: none; }
+</style>
+<header>
+  <h1>Visual translation evaluation</h1>
+  <p>Select this window, the display, or the area around the subtitle. Each sentence remains for three seconds, followed by one second of blank screen. Check that translations begin while the original is visible.</p>
+  <label>Language <select id="language"><option value="zh">Chinese</option><option value="es">Spanish</option></select></label>
+  <label>Text size <select id="size"><option>24</option><option>48</option></select></label>
+  <button id="play">Play sequence</button><button id="static">Hold first sentence</button>
+  <p id="status" role="status">Static sentence</p>
+</header>
+<div id="subtitle-area"><span id="subtitle"></span></div>
+<script>
+  const sentences = {
+    zh: ["你好世界。欢迎回来。", "猫", "今天我们学习新的语言。"],
+    es: ["Buenos días. ¿Cómo estás?", "No", "Sí", "OK", "Hoy aprendemos un idioma nuevo."]
+  };
+  const params = new URLSearchParams(location.search);
+  const language = document.querySelector('#language');
+  const size = document.querySelector('#size');
+  const subtitle = document.querySelector('#subtitle');
+  const status = document.querySelector('#status');
+  document.body.dataset.fixture = String(params.has('fixture'));
+  language.value = params.get('language') === 'es' ? 'es' : 'zh';
+  size.value = params.get('size') === '48' ? '48' : '24';
+  let timer;
+  function show(text) { subtitle.textContent = text; subtitle.lang = language.value; subtitle.style.fontSize = `${size.value}px`; }
+  function hold() { clearTimeout(timer); show(sentences[language.value][0]); status.textContent = 'Static sentence'; }
+  function play(index = 0) {
+    clearTimeout(timer);
+    const lines = sentences[language.value];
+    show(lines[index % lines.length]);
+    status.textContent = `Sentence ${index % lines.length + 1} · visible for 3 seconds`;
+    timer = setTimeout(() => { show(''); status.textContent = 'Blank for 1 second'; timer = setTimeout(() => play(index + 1), 1000); }, 3000);
+  }
+  document.querySelector('#play').onclick = () => play();
+  document.querySelector('#static').onclick = hold;
+  language.onchange = size.onchange = hold;
+  hold();
+</script>
+</html>

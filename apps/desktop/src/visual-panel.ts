@@ -332,7 +332,14 @@ export class VisualPanel {
     const languages = create("div", "visual-language-grid");
     const sourceLanguage = create("select");
     sourceLanguage.id = this.id("source-language");
-    sourceLanguage.append(...SPOKEN_LANGUAGES.map(({ code, label }) =>
+    const supportedSources = state.models.models[0]?.languages ?? [];
+    if (!supportedSources.includes(this.sourceLanguage)) {
+      const unavailable = option(this.sourceLanguage,
+        `${languageLabel(this.sourceLanguage)} · unsupported by OCR`, true);
+      unavailable.disabled = true;
+      sourceLanguage.append(unavailable);
+    }
+    sourceLanguage.append(...SPOKEN_LANGUAGES.filter(({ code }) => supportedSources.includes(code)).map(({ code, label }) =>
       option(code, label, code === this.sourceLanguage)));
     sourceLanguage.disabled = this.busy;
     sourceLanguage.addEventListener("change", () => {
@@ -346,7 +353,7 @@ export class VisualPanel {
     languages.append(selectField(
       "Text on screen",
       sourceLanguage,
-      "Choose the language used to route recognized text into translation."
+      "This OCR pack reads Chinese, Japanese, English, and supported Latin-script languages."
     ));
 
     const targetLanguage = create("select");
@@ -558,6 +565,9 @@ export class VisualPanel {
     }
     if (state.models.models[0]?.phase !== "ready") {
       return { ok: false, reason: "Download the visual text-recognition pack first." };
+    }
+    if (!state.models.models[0].languages.includes(this.sourceLanguage)) {
+      return { ok: false, reason: "Choose a source language supported by the installed OCR pack." };
     }
     const source = supportedTranslationLanguage(this.sourceLanguage);
     const target = supportedTranslationLanguage(this.targetLanguage);

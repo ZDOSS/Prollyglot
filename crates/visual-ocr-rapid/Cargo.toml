@@ -11,3 +11,6 @@ image.workspace = true
 prollyglot-visual-pipeline = { path = "../visual-pipeline" }
 rapidocr-core.workspace = true
 
+[dev-dependencies]
+image = { workspace = true, features = ["png"] }
+serde_json.workspace = true

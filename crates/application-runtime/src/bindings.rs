@@ -145,6 +145,8 @@ pub fn typescript_bindings() -> String {
     push_declaration::<UpdateCaptionPresentationCommand>(&config, &mut output);
     push_declaration::<VisualPresentationRegion>(&config, &mut output);
     push_declaration::<VisualPresentationFrame>(&config, &mut output);
+    push_declaration::<crate::VisualOverlayLabel>(&config, &mut output);
+    push_declaration::<crate::VisualOverlayLayout>(&config, &mut output);
     push_declaration::<StartVisualTranslationCommand>(&config, &mut output);
     push_declaration::<UpdateVisualPresentationCommand>(&config, &mut output);
     push_declaration::<RuntimeSnapshot>(&config, &mut output);

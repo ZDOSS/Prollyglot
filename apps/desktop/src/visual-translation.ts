@@ -1,10 +1,10 @@
-import { supportedTranslationLanguage, type TranslationLanguage } from "./language-catalog";
-import { LatestPublisher } from "./latest-publisher";
-import {
+import { supportedTranslationLanguage, type TranslationLanguage } from "./language-catalog.ts";
+import { LatestPublisher } from "./latest-publisher.ts";
+import type {
   TranslationService,
-  TranslationSession,
-  isExpectedTranslationCancellation
+  TranslationSession
 } from "./translation";
+import { isExpectedTranslationCancellation } from "./translation-scheduler.ts";
 import type {
   StableVisualTextRegion,
   VisualDetectionMode,
@@ -16,6 +16,9 @@ import type {
 interface TrackedVisualRegion extends VisualPresentationRegion {
   sourceLanguage: string;
   firstSeenAt: number;
+  lastSeenAt: number;
+  attempts: number;
+  retryTimer?: number;
   removalTimer?: number;
 }
 
@@ -31,14 +34,22 @@ interface ActiveRequest {
   textRevision: number;
 }
 
+type VisualSession = Pick<TranslationSession, "id" | "translate" | "prepare" | "cancelQueued" | "close">;
+interface VisualTranslator {
+  openSession(kind: "visual"): VisualSession;
+  routeStatus: TranslationService["routeStatus"];
+}
+
 const FOCUSED_REGION_BUDGET = 6;
 const ALL_TEXT_REGION_BUDGET = 12;
+const MAX_SOURCE_AGE_MS = 3_000;
+const MAX_TRANSLATION_ATTEMPTS = 3;
 
 export class VisualTranslationController {
   private readonly regions = new Map<number, TrackedVisualRegion>();
   private readonly requests = new Map<string, ActiveRequest>();
   private generation = 0;
-  private session?: TranslationSession;
+  private session?: VisualSession;
   private scanning = false;
   private sourceLanguage: TranslationLanguage = "ja";
   private targetLanguage: TranslationLanguage = "en";
@@ -49,13 +60,19 @@ export class VisualTranslationController {
   private presentationEpoch?: VisualPresentationEpoch;
   private presentationRevision = 0;
   private readonly outputPublisher: LatestPublisher<VisualPresentationFrame>;
+  private readonly translation: VisualTranslator;
+  private readonly reportError: (message: string) => void;
+  private readonly reportDiagnostic: (message: string) => void;
 
   constructor(
-    private readonly translation: TranslationService,
+    translation: VisualTranslator,
     publish: (frame: VisualPresentationFrame) => Promise<void>,
-    private readonly reportError: (message: string) => void,
-    private readonly reportDiagnostic: (message: string) => void = () => undefined
+    reportError: (message: string) => void,
+    reportDiagnostic: (message: string) => void = () => undefined
   ) {
+    this.translation = translation;
+    this.reportError = reportError;
+    this.reportDiagnostic = reportDiagnostic;
     this.outputPublisher = new LatestPublisher(publish, (error) => {
       this.reportError(error instanceof Error ? error.message : String(error));
     });
@@ -117,7 +134,7 @@ export class VisualTranslationController {
       if (!visibleTrackIds.has(trackId)) this.retainOrRemove(region, now);
     }
     for (const region of update.visible) {
-      this.mergeVisible(region, now, requested.has(regionKey(region)));
+      this.mergeVisible(region, now - update.frameAgeMs, requested.has(regionKey(region)));
     }
     this.pruneRegions();
     this.scheduleTranslations(update.runtimeRevision);
@@ -165,7 +182,10 @@ export class VisualTranslationController {
       }
     }
     if (previous?.removalTimer !== undefined) window.clearTimeout(previous.removalTimer);
-    if (!sameRevision) this.cancelQueued(region.trackId);
+    if (!sameRevision) {
+      this.cancelQueued(region.trackId);
+      if (previous?.retryTimer !== undefined) window.clearTimeout(previous.retryTimer);
+    }
     this.regions.set(region.trackId, {
       trackId: region.trackId,
       textRevision: region.textRevision,
@@ -177,14 +197,19 @@ export class VisualTranslationController {
       retained: false,
       bounds: region.bounds,
       sourceLanguage: region.language ?? this.sourceLanguage,
-      firstSeenAt: sameRevision ? previous.firstSeenAt : now
+      firstSeenAt: sameRevision ? previous.firstSeenAt : now,
+      lastSeenAt: now,
+      attempts: sameRevision ? previous.attempts : 0,
+      retryTimer: sameRevision ? previous.retryTimer : undefined
     });
   }
 
   private retainOrRemove(region: TrackedVisualRegion, now: number): void {
     if (region.retained) return;
     const visibleFor = now - region.firstSeenAt;
-    if (visibleFor >= 12_000) {
+    // Retention is reading time for an already displayed translation, never a
+    // license to start displaying a late answer to text that has disappeared.
+    if (!region.translation || visibleFor >= 12_000) {
       this.removeRegion(region.trackId);
       return;
     }
@@ -200,6 +225,7 @@ export class VisualTranslationController {
   private removeRegion(trackId: number): void {
     const region = this.regions.get(trackId);
     if (region?.removalTimer !== undefined) window.clearTimeout(region.removalTimer);
+    if (region?.retryTimer !== undefined) window.clearTimeout(region.retryTimer);
     this.cancelQueued(trackId);
     this.regions.delete(trackId);
   }
@@ -219,6 +245,7 @@ export class VisualTranslationController {
   private cancelRemovalTimers(): void {
     for (const region of this.regions.values()) {
       if (region.removalTimer !== undefined) window.clearTimeout(region.removalTimer);
+      if (region.retryTimer !== undefined) window.clearTimeout(region.retryTimer);
     }
   }
 
@@ -226,7 +253,9 @@ export class VisualTranslationController {
     const session = this.session;
     if (!session) return;
     const ranked = [...this.regions.values()]
-      .filter(({ retained, translationPending }) => !retained && translationPending)
+      .filter(({ retained, translationPending, retryTimer, lastSeenAt, attempts }) =>
+        !retained && translationPending && retryTimer === undefined
+        && attempts < MAX_TRANSLATION_ATTEMPTS && Date.now() - lastSeenAt <= MAX_SOURCE_AGE_MS)
       .sort((left, right) => this.regionPriority(right) - this.regionPriority(left))
       .slice(0, this.regionBudget());
     for (const region of ranked) {
@@ -242,6 +271,7 @@ export class VisualTranslationController {
         textRevision: region.textRevision
       };
       this.requests.set(requestKey, request);
+      region.attempts += 1;
       void this.translateRegion(
         session,
         request,
@@ -253,7 +283,7 @@ export class VisualTranslationController {
   }
 
   private async translateRegion(
-    session: TranslationSession,
+    session: VisualSession,
     request: ActiveRequest,
     sourceRevision: number,
     sourceLanguage: TranslationLanguage,
@@ -270,13 +300,15 @@ export class VisualTranslationController {
         targetLanguage: this.targetLanguage,
         text,
         coalesceKey: visualCoalesceKey(request.trackId),
+        importance: this.regionPriority(this.regions.get(request.trackId)!),
+        isCurrent: () => this.requestIsVisible(request),
         onStarted: () => {
           if (!this.isCurrent(request)) return;
           this.activeRequestKey = requestKey;
           this.render();
         }
       });
-      if (!this.isCurrent(request)) return;
+      if (!this.requestIsVisible(request)) return;
       const latest = this.regions.get(request.trackId);
       if (!latest || latest.textRevision !== request.textRevision) return;
       latest.translation = translated;
@@ -284,7 +316,18 @@ export class VisualTranslationController {
     } catch (error) {
       if (!this.isCurrent(request)) return;
       const latest = this.regions.get(request.trackId);
-      if (latest?.textRevision === request.textRevision) latest.translationPending = false;
+      if (latest?.textRevision === request.textRevision && !latest.retained) {
+        latest.translationPending = latest.attempts < MAX_TRANSLATION_ATTEMPTS;
+        if (latest.translationPending) {
+          latest.retryTimer = window.setTimeout(() => {
+            if (!this.isCurrent(request)) return;
+            const current = this.regions.get(request.trackId);
+            if (current?.textRevision !== request.textRevision) return;
+            current.retryTimer = undefined;
+            this.scheduleTranslations(sourceRevision);
+          }, 500 * latest.attempts);
+        }
+      }
       if (!isExpectedTranslationCancellation(error)) {
         this.reportError(error instanceof Error ? error.message : String(error));
       }
@@ -302,6 +345,12 @@ export class VisualTranslationController {
   private isCurrent(request: ActiveRequest): boolean {
     return request.generation === this.generation
       && request.sessionId === this.session?.id;
+  }
+
+  private requestIsVisible(request: ActiveRequest): boolean {
+    const region = this.regions.get(request.trackId);
+    return this.isCurrent(request) && region?.textRevision === request.textRevision
+      && !region.retained && Date.now() - region.lastSeenAt <= MAX_SOURCE_AGE_MS;
   }
 
   private pruneRegions(): void {
@@ -341,6 +390,9 @@ export class VisualTranslationController {
       .map(({
         sourceLanguage: _sourceLanguage,
         firstSeenAt: _firstSeenAt,
+        lastSeenAt: _lastSeenAt,
+        attempts: _attempts,
+        retryTimer: _retryTimer,
         removalTimer: _removalTimer,
         ...region
       }) => region);

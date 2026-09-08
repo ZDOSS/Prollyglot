@@ -46,6 +46,8 @@ export interface SessionTranslationRequest {
   targetLanguage: TranslationLanguage;
   text: string;
   coalesceKey: string;
+  importance?: number;
+  isCurrent?: () => boolean;
   onStarted?: () => void;
 }
 

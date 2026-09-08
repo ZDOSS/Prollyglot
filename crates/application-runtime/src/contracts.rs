@@ -3,7 +3,7 @@ use std::{error::Error, fmt};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const APPLICATION_RUNTIME_CONTRACT_VERSION: u16 = 4;
+pub const APPLICATION_RUNTIME_CONTRACT_VERSION: u16 = 5;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 pub struct SessionId(pub u32);
@@ -631,6 +631,8 @@ pub struct StableVisualTextRegion {
 #[serde(rename_all = "camelCase")]
 #[ts(rename_all = "camelCase")]
 pub struct VisualTextUpdate {
+    // Age of the source evidence at publication, excluding verified unchanged pixels.
+    pub frame_age_ms: u32,
     pub session_id: SessionId,
     pub runtime_revision: u32,
     pub source: VisualCaptureGeometry,
@@ -771,6 +773,28 @@ pub struct StartVisualTranslationCommand {
 #[ts(rename_all = "camelCase")]
 pub struct UpdateVisualPresentationCommand {
     pub frame: VisualPresentationFrame,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct VisualOverlayLabel {
+    // Track zero is reserved for the overlay's scanning status.
+    #[ts(type = "number")]
+    pub track_id: u64,
+    #[ts(type = "number")]
+    pub text_revision: u64,
+    pub bounds: VisualRect,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct VisualOverlayLayout {
+    pub session_id: SessionId,
+    #[ts(type = "number")]
+    pub presentation_revision: u64,
+    pub labels: Vec<VisualOverlayLabel>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -1077,6 +1101,7 @@ mod tests {
             },
         };
         let update = VisualTextUpdate {
+            frame_age_ms: 0,
             session_id: SessionId(9),
             runtime_revision: 14,
             source: VisualCaptureGeometry {

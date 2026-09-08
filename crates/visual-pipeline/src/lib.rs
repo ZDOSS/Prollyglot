@@ -14,7 +14,7 @@ mod stabilize;
 
 pub use change::{
     DEFAULT_CAPTURE_FRAME_INTERVAL_MICROS, DEFAULT_LIVE_CAPTURE_FPS, DEFAULT_OCR_INTERVAL_MICROS,
-    FrameGate, FrameGateConfig, FrameGateDecision,
+    FrameGate, FrameGateConfig, FrameGateDecision, text_area_changed,
 };
 pub use frame::{PixelFormat, VisualFrame};
 pub use geometry::{PixelRect, VisualRect};

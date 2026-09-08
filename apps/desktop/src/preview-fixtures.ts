@@ -3,6 +3,7 @@ import {
   RUNTIME_CONTRACT_VERSION
 } from "./generated/runtime.ts";
 import { SPOKEN_LANGUAGES } from "./language-catalog.ts";
+import visualManifest from "../../../assets/model-manifests/visual-ocr-ppocrv6-small.json" with { type: "json" };
 import type {
   ConfigurationSnapshot,
   CaptureStatus,
@@ -116,7 +117,7 @@ export function previewVisualModelCatalog(): VisualModelCatalogStatus {
       displayName: "Preview Multilingual OCR",
       profile: "Preview · Visual OCR",
       description: "A deterministic browser-preview fixture for screen translation.",
-      languages: SPOKEN_LANGUAGES.map(({ code }) => code),
+      languages: [...visualManifest.languages],
       downloadedBytes: 0,
       totalBytes: 32 * 1024 * 1024
     }]

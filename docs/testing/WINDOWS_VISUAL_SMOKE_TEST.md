@@ -45,9 +45,9 @@ installing the OCR pack does not install every translator.
    **Prominent text** for the first pass. Confirm **Scanning for text…** appears
    promptly, then a high-confidence first OCR pass can translate near the
    original text without waiting for a second full inference. The translator
-   loads before capture begins, so **Starting…** may last longer on the first
-   route load, but model loading should not cover the source with pending
-   labels. Once capture is active, a compact Japanese/Spanish-to-English result
+   prepares alongside capture and OCR with its own deadline. Its cold start
+   must not permanently strand still-visible text or publish text that has
+   disappeared while it was loading. Once capture is active, a compact Japanese/Spanish-to-English result
    should normally begin appearing within two seconds. Dense **All detected
    text** sources fill progressively and only the one region actually being
    processed should say **Translating…**. A compact inference still running at
@@ -61,11 +61,13 @@ installing the OCR pack does not install every translator.
    both at zero means recognition did not produce a stable region.
 5. Change scenes or move the selected window. Confirm current labels follow the
    source rather than creating an ever-growing queue. A recognition result that
-   is already more than three seconds behind after a broad scene change should
-   be discarded; a cursor, clock, video control, or small localized text change
-   should not clear an otherwise useful result. The scanning indicator may
+   is already more than three seconds behind after its text area or a broad scene has changed should
+   be discarded. A cursor or control outside the recognized text area should
+   not clear an otherwise useful result. The scanning indicator may
    return while the newest frame is processed. Newly
-   disappeared text may remain readable for up to eight seconds; text that was
+   disappeared text with an already displayed translation may remain readable
+   for up to eight seconds; unfinished translation must never appear after
+   disappearance. Text that was
    already visible for twelve seconds or longer should clear as soon as its
    absence is recognized.
 6. Choose **Stop Screen Translation once**. The overlay should clear at once,
@@ -92,3 +94,6 @@ the labels were readable and stayed attached. For a failure, send the source
 type, what was visible, and the exact message in the app. A screenshot or the
 privacy-safe diagnostic log is useful only if we need it to troubleshoot that
 specific problem.
+
+For repeatable Chinese/Spanish short words, timed subtitles, full-display and
+region comparisons, use [the reliability evaluation](VISUAL_RELIABILITY_EVALUATION.md).

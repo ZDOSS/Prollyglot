@@ -20,4 +20,17 @@ manifest makes only these packaging changes:
   installation goes through Prollyglot's atomic, size- and SHA-256-verified
   model manager.
 
-The Rust source is otherwise unchanged from the upstream crate release.
+The local `set_live_crop_policy` opt-in now also bounds recognition candidates
+before perspective cropping and extracts recognition pixels from the original
+image after undoing detector padding/scale. Other callers retain the upstream
+default. A focused unit test verifies original pixel detail and coordinate
+mapping. No model, tokenizer, or inference-provider change is included.
+
+Run that source regression with:
+
+```sh
+cargo test --manifest-path vendor/rapidocr-core/Cargo.toml --no-default-features --lib prollyglot_source_crops
+```
+
+The vendor test creates its own ignored build directory and a disposable local
+Cargo.lock; the application continues to use the repository root lockfile.

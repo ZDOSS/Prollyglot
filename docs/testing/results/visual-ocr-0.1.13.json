@@ -1,0 +1,106 @@
+{
+  "date": "2026-09-07",
+  "host": "WSL2, AMD Ryzen 7 8745HS",
+  "provider": "CPU, 4 inference threads",
+  "profile": "All detected text",
+  "model": "ppocrv6-small-multilingual v3.9.0; SHA-256 verified against the repository manifest",
+  "scope": "Synthetic PNG OCR only; excludes OS capture, translation, overlay delivery. Two warm passes per fixture; not a statistical performance certification.",
+  "cases": [
+    {
+      "fixture": "es-1920-24-region.png",
+      "exactTextPasses": 3,
+      "totalPasses": 3,
+      "warmMedianOcrMs": 78.9
+    },
+    {
+      "fixture": "es-1920-24.png",
+      "exactTextPasses": 3,
+      "totalPasses": 3,
+      "warmMedianOcrMs": 425.2
+    },
+    {
+      "fixture": "es-1920-48-region.png",
+      "exactTextPasses": 3,
+      "totalPasses": 3,
+      "warmMedianOcrMs": 119.2
+    },
+    {
+      "fixture": "es-1920-48.png",
+      "exactTextPasses": 3,
+      "totalPasses": 3,
+      "warmMedianOcrMs": 366.6
+    },
+    {
+      "fixture": "es-3840-24-region.png",
+      "exactTextPasses": 3,
+      "totalPasses": 3,
+      "warmMedianOcrMs": 80.4
+    },
+    {
+      "fixture": "es-3840-24.png",
+      "exactTextPasses": 0,
+      "totalPasses": 3,
+      "warmMedianOcrMs": 604.9
+    },
+    {
+      "fixture": "es-3840-48-region.png",
+      "exactTextPasses": 3,
+      "totalPasses": 3,
+      "warmMedianOcrMs": 105.1
+    },
+    {
+      "fixture": "es-3840-48.png",
+      "exactTextPasses": 0,
+      "totalPasses": 3,
+      "warmMedianOcrMs": 586.9
+    },
+    {
+      "fixture": "zh-1920-24-region.png",
+      "exactTextPasses": 3,
+      "totalPasses": 3,
+      "warmMedianOcrMs": 84.4
+    },
+    {
+      "fixture": "zh-1920-24.png",
+      "exactTextPasses": 3,
+      "totalPasses": 3,
+      "warmMedianOcrMs": 395.8
+    },
+    {
+      "fixture": "zh-1920-48-region.png",
+      "exactTextPasses": 3,
+      "totalPasses": 3,
+      "warmMedianOcrMs": 100.0
+    },
+    {
+      "fixture": "zh-1920-48.png",
+      "exactTextPasses": 3,
+      "totalPasses": 3,
+      "warmMedianOcrMs": 426.6
+    },
+    {
+      "fixture": "zh-3840-24-region.png",
+      "exactTextPasses": 3,
+      "totalPasses": 3,
+      "warmMedianOcrMs": 84.8
+    },
+    {
+      "fixture": "zh-3840-24.png",
+      "exactTextPasses": 0,
+      "totalPasses": 3,
+      "warmMedianOcrMs": 532.8
+    },
+    {
+      "fixture": "zh-3840-48-region.png",
+      "exactTextPasses": 3,
+      "totalPasses": 3,
+      "warmMedianOcrMs": 82.0
+    },
+    {
+      "fixture": "zh-3840-48.png",
+      "exactTextPasses": 0,
+      "totalPasses": 3,
+      "warmMedianOcrMs": 530.1
+    }
+  ]
+}

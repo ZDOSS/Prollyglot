@@ -22,9 +22,12 @@ the pack available.
 | Recognition | `PP-OCRv6_rec_small.onnx` | RapidOCR `v3.9.0` | 21,234,383 | `6f327246b50388f3c176ae304bd95767ea6dc0c9ae92153ef8cbe210b3c14884` |
 | Dictionary | `ppocrv6_dict.txt` | RapidOCR `master`, content pinned by hash | 74,947 | `b5f2bfe2bdd9448429e3e82b51c789775d9b42f2403d082b00662eb77e401c5d` |
 
-The unified recognizer is exposed for the 29 language choices shared with the
-current translation UI. That catalog is a product routing surface, not a claim
-that every language has already passed representative accuracy testing.
+The OCR source catalog exposes 22 choices: Chinese, Japanese, English, and
+19 supported Latin-script languages. The pinned dictionary contains no Arabic,
+Bengali, Devanagari, Hangul, or Cyrillic characters; those source choices are
+therefore unavailable with this pack. Translation targets remain independent.
+This matches the upstream [PP-OCRv6 language description](https://www.paddleocr.ai/latest/en/version3.x/algorithm/PP-OCRv6/PP-OCRv6.html),
+not a claim that every exposed language has passed representative accuracy tests.
 
 ## Runtime
 
@@ -35,8 +38,8 @@ Apache-2.0. The published package records upstream commit
 `2afdaea55d9e8daf8f547a48a7fb45a43dbe076db3b9489c34386521cbdac294`.
 That exact package source is vendored under `vendor/rapidocr-core` because the
 published manifest forces ONNX Runtime default features that conflict with the
-desktop bundle. The Rust implementation is unchanged. Packaging-only manifest
-changes pin ONNX Runtime rc.13, use Rustls for its build-time download, copy the
+desktop bundle. A local opt-in preserves source-resolution recognition crops and bounds
+recognition candidates. Manifest changes pin ONNX Runtime rc.13, use Rustls for its build-time download, copy the
 required runtime library, and disable unused image codecs and RapidOCR's own
 downloader. Full details live in
 [`vendor/rapidocr-core/PROLLYGLOT-VENDOR-NOTES.md`](../../vendor/rapidocr-core/PROLLYGLOT-VENDOR-NOTES.md).

@@ -14,6 +14,9 @@ export interface TranslationJobRequest {
   targetLanguage: TranslationLanguage;
   text: string;
   coalesceKey: string;
+  /** Importance within one workload; captions retain latest-first ordering. */
+  importance?: number;
+  isCurrent?: () => boolean;
   onStarted?: () => void;
 }
 
@@ -176,6 +179,7 @@ export class TranslationScheduler {
     if (session.preparation) return session.preparation;
 
     const generation = session.generation;
+    const preparationStartedAt = this.clock.now();
     const operation = this.withDeadline(
       session,
       session.executor.prepare(sourceLanguage, targetLanguage),
@@ -204,6 +208,13 @@ export class TranslationScheduler {
       }
       throw normalized;
     }).finally(() => {
+      // Loading has its own bounded deadline. Only time actually spent waiting
+      // for preparation is excluded from each job's queue/inference budget.
+      for (const queued of [...session.queue, ...(session.active ? [session.active] : [])]) {
+        queued.job.deadlineAtMs += Math.max(
+          0, this.clock.now() - Math.max(preparationStartedAt, queued.job.enqueueTimeMs)
+        );
+      }
       if (this.isCurrent(sessionId, generation) && session.preparation === operation) {
         session.preparation = undefined;
       }
@@ -276,7 +287,9 @@ export class TranslationScheduler {
   private enforceBound(session: ActiveSession): void {
     while (session.queue.length > MAX_QUEUED_JOBS) {
       const oldestLowestPriority = [...session.queue]
-        .sort((left, right) => left.job.priority - right.job.priority || left.sequence - right.sequence)[0];
+        .sort((left, right) => left.job.priority - right.job.priority
+          || (left.job.importance ?? 0) - (right.job.importance ?? 0)
+          || left.sequence - right.sequence)[0];
       if (!oldestLowestPriority) return;
       session.queue.splice(session.queue.indexOf(oldestLowestPriority), 1);
       oldestLowestPriority.deferred.reject(new TranslationSupersededError(
@@ -287,7 +300,9 @@ export class TranslationScheduler {
 
   private takeNext(session: ActiveSession): QueuedJob | undefined {
     session.queue.sort((left, right) =>
-      right.job.priority - left.job.priority || right.sequence - left.sequence
+      right.job.priority - left.job.priority
+      || (right.job.importance ?? 0) - (left.job.importance ?? 0)
+      || right.sequence - left.sequence
     );
     return session.queue.shift();
   }
@@ -329,6 +344,9 @@ export class TranslationScheduler {
         await this.prepare(session.id, job.sourceLanguage, job.targetLanguage);
       }
       if (!this.isCurrent(session.id, session.generation) || result.settled) return;
+      if (job.isCurrent?.() === false) {
+        throw new TranslationSupersededError("The translation input is no longer visible.");
+      }
       inferenceStartedAt = this.clock.now();
       if (inferenceStartedAt >= job.deadlineAtMs) {
         result.reject(new TranslationDeadlineError(
@@ -353,6 +371,9 @@ export class TranslationScheduler {
         `${job.workloadProfile} translation exceeded its deadline.`
       );
       if (!this.isCurrent(session.id, session.generation) || result.settled) return;
+      if (job.isCurrent?.() === false) {
+        throw new TranslationSupersededError("The translation input is no longer visible.");
+      }
       result.resolve(translated);
       this.publish(
         "completed",

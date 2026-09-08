@@ -22,9 +22,10 @@ pub use contracts::{
     ShowVisualRegionSelectorCommand, SourceSnapshot, StableVisualTextRegion, StartCaptureCommand,
     StartSessionRequest, StartVisualTranslationCommand, UpdateCaptionPresentationCommand,
     UpdateVisualPresentationCommand, VisualCaptureCapabilities, VisualCaptureGeometry,
-    VisualCaptureSelection, VisualDetectionMode, VisualPresentationFrame, VisualPresentationRegion,
-    VisualRect, VisualRegionSelected, VisualRegionSelectorRequest, VisualSource, VisualSourceKind,
-    VisualSourceSnapshot, VisualState, VisualStatus, VisualTextClear, VisualTextUpdate,
+    VisualCaptureSelection, VisualDetectionMode, VisualOverlayLabel, VisualOverlayLayout,
+    VisualPresentationFrame, VisualPresentationRegion, VisualRect, VisualRegionSelected,
+    VisualRegionSelectorRequest, VisualSource, VisualSourceKind, VisualSourceSnapshot, VisualState,
+    VisualStatus, VisualTextClear, VisualTextUpdate,
 };
 pub use prollyglot_config::{
     ApplicationConfiguration, AudioSourcePreference, BilingualLayout, CONFIGURATION_SCHEMA_VERSION,
