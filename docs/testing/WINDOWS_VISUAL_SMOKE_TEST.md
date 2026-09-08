@@ -5,6 +5,13 @@ the ordinary audio-caption smoke and should take roughly five minutes after the
 models are installed. No screenshots, recordings, evidence folder, or formal
 timing sheet are required.
 
+For the repeatable synthetic capture check, run
+`scripts/check-visual-windows.ps1 -ModelDirectory 'PATH\TO\OCR\MODELS'` in native
+PowerShell. It briefly opens its own fullscreen Chinese/Spanish fixture and
+tests window, display, region, and repeated capture shutdown. The
+[evaluation report](VISUAL_RELIABILITY_EVALUATION.md) distinguishes that automated
+evidence from the application/translation checks below.
+
 ## 1. Launch from the repository
 
 Open PowerShell in the repository root:

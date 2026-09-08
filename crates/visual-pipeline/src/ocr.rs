@@ -44,4 +44,12 @@ pub enum OcrError {
 
 pub trait OcrEngine: Send {
     fn recognize(&mut self, frame: &VisualFrame) -> Result<Vec<OcrObservation>, OcrError>;
+
+    /// Bounded regional OCR may need another current frame even if the scene
+    /// is static. The ordinary minimum inference interval still applies.
+    fn has_pending_work(&self) -> bool {
+        false
+    }
+
+    fn reset(&mut self) {}
 }

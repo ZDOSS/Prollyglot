@@ -5,6 +5,26 @@ Versioning while it is in the `0.x` pre-release line.
 
 ## [Unreleased]
 
+## [0.1.14] - 2026-09-08
+
+### Fixed
+
+- Preserve small full-display text with native-resolution contrast regions and
+  overlapping detection tiles instead of shrinking every display to 1280 pixels.
+- Bound each OCR pass, continue pending scans on current frames, and alternate
+  known-text priority with fair discovery of the rest of a busy display.
+- Reuse unchanged recognition only after checking its actual source pixels;
+  invalidate changed text and release cached pixels at tracking reset or Stop.
+- Keep readable 24-pixel subtitles eligible on 4K displays in Prominent text
+  mode, and prevent a large false background detection from absorbing a subtitle.
+
+### Added
+
+- Chinese/Spanish OCR acceptance fixtures for corners, tile seams, short words,
+  and textured backgrounds, with expected text and capture-space geometry.
+- Native Windows fixture verification for window, display, and region capture,
+  repeated Start/Stop, detection latency, and bounded capture shutdown.
+
 ## [0.1.13] - 2026-09-07
 
 ### Added

@@ -4,12 +4,15 @@
 //! confidence, and capture-space geometry. It never writes source frames to
 //! disk and never includes pixels in an error or diagnostic value.
 
+mod regions;
+
 use std::{
     path::Path,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     },
+    time::{Duration, Instant},
 };
 
 use image::RgbImage;
@@ -63,6 +66,15 @@ pub struct RapidOcrEngine {
     profile: RecognitionProfile,
     cancellation: RapidOcrCancellation,
     timings: rapidocr_core::types::OcrTimings,
+    scanner: regions::RegionScanner,
+    scan_stats: OcrScanStats,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct OcrScanStats {
+    pub areas_scanned: usize,
+    pub areas_pending: usize,
+    pub reused_lines: usize,
 }
 
 #[derive(Clone, Default)]
@@ -166,6 +178,8 @@ impl RapidOcrEngine {
             profile,
             cancellation: RapidOcrCancellation::default(),
             timings: rapidocr_core::types::OcrTimings::default(),
+            scanner: regions::RegionScanner::default(),
+            scan_stats: OcrScanStats::default(),
         })
     }
 
@@ -176,11 +190,29 @@ impl RapidOcrEngine {
     pub fn last_timings(&self) -> &rapidocr_core::types::OcrTimings {
         &self.timings
     }
+
+    pub fn last_scan_stats(&self) -> OcrScanStats {
+        self.scan_stats
+    }
+
+    /// Drop transient source pixels and pending detection when the source or
+    /// its tracking generation is invalidated. Model sessions remain loaded.
+    pub fn reset_scan(&mut self) {
+        self.scanner.reset();
+    }
 }
 
 impl OcrEngine for RapidOcrEngine {
     fn recognize(&mut self, frame: &VisualFrame) -> Result<Vec<OcrObservation>, OcrError> {
         self.recognize_filtered(frame, |_| true)
+    }
+
+    fn has_pending_work(&self) -> bool {
+        self.scanner.pending()
+    }
+
+    fn reset(&mut self) {
+        self.reset_scan();
     }
 }
 
@@ -208,36 +240,66 @@ impl RapidOcrEngine {
         keep: impl Fn(&OcrObservation) -> bool,
     ) -> Result<Vec<OcrObservation>, OcrError> {
         cancellation.checkpoint().map_err(|_| OcrError::Cancelled)?;
-        let image = frame_to_rgb_cancellable(frame, cancellation)?;
-        let output = self
-            .runner
-            .run_image_cancellable_timed(&image, cancellation)
-            .map_err(|error| {
-                if is_cancelled_error(&error) || cancellation.is_cancelled() {
-                    OcrError::Cancelled
-                } else {
-                    OcrError::Inference(format!("PP-OCRv6 inference failed: {error:#}"))
-                }
-            })?;
-        self.timings = output.timings;
-        let observations = output
-            .output
-            .lines
-            .into_iter()
-            .filter_map(|line| {
-                let bounds = quad_bounds(&line.bbox)?;
-                Some(OcrObservation {
-                    text: line.text,
-                    confidence: line.score,
-                    language: Some(self.language_hint.clone()),
-                    script: None,
-                    bounds,
+        let started = Instant::now();
+        self.timings = rapidocr_core::types::OcrTimings::default();
+        self.scan_stats = OcrScanStats::default();
+        self.scanner.prepare(frame, cancellation)?;
+        self.scan_stats.reused_lines = self.scanner.observations().len();
+        let mut pixels = 0;
+        for (index, bounds) in self.scanner.work() {
+            // One inference is indivisible, so this is a soft wall-time limit.
+            // Every area has a hard dimension bound; never queue old frames.
+            if pixels > 0
+                && (pixels + regions::area(bounds) > regions::PIXEL_BUDGET
+                    || started.elapsed() >= Duration::from_millis(450))
+            {
+                break;
+            }
+            cancellation.checkpoint().map_err(|_| OcrError::Cancelled)?;
+            let cropped = frame
+                .crop(bounds)
+                .map_err(|error| OcrError::Inference(error.to_string()))?;
+            let image = frame_to_rgb_cancellable(&cropped, cancellation)?;
+            let output = self
+                .runner
+                .run_image_cancellable_timed(&image, cancellation)
+                .map_err(|error| {
+                    if is_cancelled_error(&error) || cancellation.is_cancelled() {
+                        OcrError::Cancelled
+                    } else {
+                        OcrError::Inference(format!("PP-OCRv6 inference failed: {error:#}"))
+                    }
+                })?;
+            self.timings.add_assign(&output.timings);
+            let observations = output
+                .output
+                .lines
+                .into_iter()
+                .filter_map(|line| {
+                    let mut line_bounds = quad_bounds(&line.bbox)?;
+                    line_bounds.x += bounds.x as f32;
+                    line_bounds.y += bounds.y as f32;
+                    Some(OcrObservation {
+                        text: line.text,
+                        confidence: line.score,
+                        language: Some(self.language_hint.clone()),
+                        script: None,
+                        bounds: line_bounds,
+                    })
                 })
-            })
-            .filter(keep)
-            .collect();
+                .collect();
+            self.scanner.complete(index, observations);
+            self.scan_stats.areas_scanned += 1;
+            pixels += regions::area(bounds);
+        }
+        self.scan_stats.areas_pending = self.scanner.work().len();
+        self.timings.total_ms = started.elapsed().as_secs_f64() * 1000.0;
         Ok(prepare_observations(
-            observations,
+            self.scanner
+                .observations()
+                .into_iter()
+                .filter(keep)
+                .collect(),
             frame.width,
             frame.height,
             &self.language_hint,
@@ -397,7 +459,10 @@ fn lines_belong_together(left: VisualRect, right: VisualRect) -> bool {
     let stacked_lines = vertical_gap <= maximum_height * 0.62
         && (horizontal_overlap / minimum_width >= 0.45
             || center_distance <= left.width.max(right.width) * 0.18);
-    same_line || stacked_lines
+    // A large false-positive background box must not absorb a nearby subtitle
+    // and borrow its language/confidence. Different text sizes form separate
+    // labels, as headings and body text normally should.
+    maximum_height <= minimum_height * 2.0 && (same_line || stacked_lines)
 }
 
 fn union_bounds(left: VisualRect, right: VisualRect) -> VisualRect {
@@ -495,7 +560,9 @@ fn observation_is_useful(
         {
             return false;
         }
-        let minimum_height = (frame_height as f32 * 0.02).clamp(16.0, 32.0);
+        // A 24-pixel subtitle is still readable source text on a 4K display.
+        // Whole-display dimensions must not undo resolution-preserving OCR.
+        let minimum_height = (frame_height as f32 * 0.012).clamp(16.0, 24.0);
         let wide_prominent =
             bounds.width >= frame_width as f32 * 0.2 && bounds.height >= minimum_height * 0.72;
         if bounds.height < minimum_height && !wide_prominent {
@@ -717,6 +784,26 @@ mod tests {
             observation("días", 210.0, 99.0),
         ]);
         assert_eq!(merged[0].text, "Buenos días");
+    }
+
+    #[test]
+    fn background_box_cannot_absorb_a_small_4k_subtitle() {
+        let mut noise = observation("0", 1760.0, 928.0);
+        noise.bounds.width = 1279.0;
+        noise.bounds.height = 864.0;
+        let subtitle = observation("你好世界。欢迎回来。", 1800.0, 2030.0);
+        for profile in [RecognitionProfile::Focused, RecognitionProfile::AllText] {
+            let result = prepare_observations(
+                vec![noise.clone(), subtitle.clone()],
+                3840,
+                2160,
+                "zh",
+                profile,
+            );
+            assert_eq!(result.len(), 1);
+            assert_eq!(result[0].text, subtitle.text);
+            assert_eq!(result[0].bounds, subtitle.bounds);
+        }
     }
 
     #[test]

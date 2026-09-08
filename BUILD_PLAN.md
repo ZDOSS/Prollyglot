@@ -720,6 +720,19 @@ and records live-request timing without caption text. A 20.4-second installed-
 model Spanish probe completed at 0.26 real-time factor with 30 partial updates;
 German media and simultaneous ASR/translator contention remain native checks.
 
+Pre-release `0.1.14` replaces whole-display detector downscaling with native-scale
+contrast regions and bounded overlapping scans. Pixel-validated recognition
+reuse, fair pending work, and text-size-aware grouping address the reproduced
+4K misses and background-box contamination. Automated Chinese/Spanish fixtures
+now cover corners, seams, short text, and textured scenes. Native Windows WGC
+verification exercises both languages through window, display, and region
+capture with repeated starts/stops; the native test suite and desktop MSVC link
+also run locally. Results and remaining real-media, translation, mixed-DPI,
+and lifecycle acceptance are tracked in
+[`VISUAL_RELIABILITY_EVALUATION.md`](docs/testing/VISUAL_RELIABILITY_EVALUATION.md).
+This retires the reproduced detector failure without treating synthetic OCR
+or capture checks as completion of the Windows application soak.
+
 Routine development now uses [`docs/testing/WINDOWS_SMOKE_TEST.md`](docs/testing/WINDOWS_SMOKE_TEST.md). Interrupted-download recovery, formal latency measurement, screenshots, OBS parity, and sustained-resource evidence are intentionally deferred to milestone hardening or release boundaries rather than imposed on every pre-release build.
 
 ## Milestone 1 — Windows capture foundation

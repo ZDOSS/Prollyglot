@@ -14,3 +14,4 @@ rapidocr-core.workspace = true
 [dev-dependencies]
 image = { workspace = true, features = ["png"] }
 serde_json.workspace = true
+prollyglot-visual-windows = { path = "../visual-windows" }

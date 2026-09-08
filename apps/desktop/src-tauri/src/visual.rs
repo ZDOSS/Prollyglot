@@ -173,6 +173,14 @@ struct EchoFilteringEngine {
 }
 
 impl OcrEngine for EchoFilteringEngine {
+    fn has_pending_work(&self) -> bool {
+        self.inner.has_pending_work()
+    }
+
+    fn reset(&mut self) {
+        self.inner.reset_scan();
+    }
+
     fn recognize(&mut self, frame: &VisualFrame) -> Result<Vec<OcrObservation>, OcrError> {
         let echoes = &self.overlay_echoes;
         let result = self.inner.recognize_filtered(frame, |observation| {
@@ -182,7 +190,11 @@ impl OcrEngine for EchoFilteringEngine {
             })
         });
         let timings = self.inner.last_timings();
+        let scan = self.inner.last_scan_stats();
         tracing::debug!(
+            areas_scanned = scan.areas_scanned,
+            areas_pending = scan.areas_pending,
+            reused_lines = scan.reused_lines,
             detector_ms = timings.det_inference_ms,
             recognition_ms = timings.rec_inference_ms,
             preprocess_ms = timings.pipeline_preprocess_ms,

@@ -42,7 +42,9 @@ impl<E: OcrEngine> VisualPipeline<E> {
 
     pub fn process(&mut self, frame: &VisualFrame) -> Result<VisualProcessOutcome, OcrError> {
         self.stats.frames_received = self.stats.frames_received.saturating_add(1);
-        let gate = self.gate.evaluate(frame);
+        let gate = self
+            .gate
+            .evaluate_with_pending_work(frame, self.ocr.has_pending_work());
         if !gate.should_analyze() {
             match gate {
                 FrameGateDecision::RateLimited => {
@@ -86,6 +88,7 @@ impl<E: OcrEngine> VisualPipeline<E> {
     }
 
     pub fn reset_text_tracks(&mut self) {
+        self.ocr.reset();
         self.stabilizer.reset();
         self.stats.stable_regions = 0;
     }
@@ -98,6 +101,23 @@ mod tests {
     use super::*;
 
     struct FixedOcr;
+
+    struct PartialOcr(usize);
+
+    impl OcrEngine for PartialOcr {
+        fn recognize(&mut self, frame: &VisualFrame) -> Result<Vec<OcrObservation>, OcrError> {
+            self.0 = self.0.saturating_sub(1);
+            FixedOcr.recognize(frame)
+        }
+
+        fn has_pending_work(&self) -> bool {
+            self.0 > 0
+        }
+
+        fn reset(&mut self) {
+            self.0 = 4;
+        }
+    }
 
     impl OcrEngine for FixedOcr {
         fn recognize(&mut self, _frame: &VisualFrame) -> Result<Vec<OcrObservation>, OcrError> {
@@ -127,6 +147,40 @@ mod tests {
             [shade, shade, shade, 255].repeat(4),
         )
         .expect("frame")
+    }
+
+    #[test]
+    fn regional_scan_continues_on_static_frames_without_bypassing_rate_limit() {
+        let mut pipeline = VisualPipeline::new(
+            FrameGate::new(FrameGateConfig::default()),
+            PartialOcr(4),
+            TextStabilizer::new(TextStabilizerConfig::default()),
+        );
+        for pass in 0..4 {
+            assert!(
+                pipeline
+                    .process(&frame(pass, pass * 250_000, 40))
+                    .unwrap()
+                    .update
+                    .is_some()
+            );
+            assert_eq!(
+                pipeline
+                    .process(&frame(pass, pass * 250_000 + 1, 40))
+                    .unwrap()
+                    .gate,
+                FrameGateDecision::RateLimited
+            );
+        }
+        assert!(matches!(
+            pipeline.process(&frame(5, 1_000_000, 40)).unwrap().gate,
+            FrameGateDecision::Unchanged { .. }
+        ));
+        pipeline.reset_text_tracks();
+        assert_eq!(
+            pipeline.process(&frame(6, 1_250_000, 40)).unwrap().gate,
+            FrameGateDecision::Refresh
+        );
     }
 
     #[test]

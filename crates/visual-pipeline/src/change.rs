@@ -100,6 +100,14 @@ impl FrameGate {
     }
 
     pub fn evaluate(&mut self, frame: &VisualFrame) -> FrameGateDecision {
+        self.evaluate_with_pending_work(frame, false)
+    }
+
+    pub fn evaluate_with_pending_work(
+        &mut self,
+        frame: &VisualFrame,
+        pending: bool,
+    ) -> FrameGateDecision {
         if self.last_checked_at_micros.is_some_and(|last| {
             frame.captured_at_micros.saturating_sub(last) < self.config.minimum_interval_micros
         }) {
@@ -128,10 +136,11 @@ impl FrameGate {
             self.last_analyzed_at_micros = frame.captured_at_micros;
             self.awaiting_confirmation = false;
             FrameGateDecision::Confirmation { score }
-        } else if frame
-            .captured_at_micros
-            .saturating_sub(self.last_analyzed_at_micros)
-            >= self.config.refresh_interval_micros
+        } else if pending
+            || frame
+                .captured_at_micros
+                .saturating_sub(self.last_analyzed_at_micros)
+                >= self.config.refresh_interval_micros
         {
             self.last_analyzed_at_micros = frame.captured_at_micros;
             self.accepted_fingerprint = next;

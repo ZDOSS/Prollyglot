@@ -1229,13 +1229,14 @@ translated label anchored above or beside the source text
 
 The current optional OCR pack is pinned PP-OCRv6 Small: detection,
 classification, unified recognition, and dictionary artifacts total 31,824,456
-bytes (30.4 MiB). The manifest exposes the same 29 language choices currently
-available to the translation UI and records source provenance, byte size, and
+bytes (30.4 MiB). The manifest exposes 22 source languages supported by its
+recognition dictionary; translation targets retain the broader 29-language
+catalog. The manifest records source provenance, byte size, and
 SHA-256 for every artifact (the dictionary's mutable upstream URL is pinned by
 content hash). The pack is never bundled or downloaded without an explicit user
 action. Its `rapidocr-core` runtime is vendored at the exact
-0.2.2 source release with packaging-only dependency changes documented beside
-the source.
+0.2.2 source release with packaging and opt-in original-resolution recognition
+crop changes documented beside the source.
 
 Windows' built-in `Windows.Media.Ocr` remains a potentially useful
 zero-download comparison because it returns word positions and uses installed
@@ -1300,10 +1301,30 @@ unchanged confirmation pass is still allowed, followed by bounded one-second
 refreshes. Translation is reused when the recognized text revision is unchanged.
 The recognizer crops the original pixels after mapping detector boxes back to
 capture space; at most 24 prominent or 48 all-text boxes reach recognition.
+Large sources first group areas with local pixel contrast at native resolution.
+This preserves small text that disappeared when a whole 4K display was reduced
+to the detector's input size. Areas larger than 1280 × 864 pixels use overlapping
+tiles. A pass admits approximately 700,000 source pixels and stops scheduling
+after 450 ms; one indivisible inference may exceed these soft limits, while tile
+dimensions and recognition-candidate counts remain bounded. Pending work resumes
+on current frames at the ordinary 250 ms minimum cadence, including static
+frames. Known text receives the first slot on alternate passes; oldest areas
+receive the other passes so background activity cannot starve discovery.
+Initial ties favor small areas and the lower center before scanning elsewhere.
+Cached raw lines are reused only while their source pixels remain identical,
+and overlay filtering is reapplied to every output. Changed lines are removed
+before a deferred rescan, and source/track reset releases the transient cache.
+This is progressive coverage: a densely textured 4K display can take several
+seconds to finish scanning on CPU even when its first subtitle is found quickly.
+It does not establish a two-second guarantee for every position or background.
 Short strings such as “No”, “Sí”, “OK”, and a single Han character require stronger
 confidence (0.85) plus the normal geometry/script checks instead of a blanket
 minimum character count. Words sharing a row are sorted left-to-right despite
 small vertical box jitter.
+Lines with substantially different text heights form separate groups, preventing
+a large spurious background box from borrowing a real subtitle's language and
+confidence. The prominent-size threshold is capped at 24 native pixels so a
+readable small subtitle remains eligible on a 4K display.
 Translator preparation begins when visual translation is requested, but live
 capture and OCR do not sit idle behind its cold start. Model preparation has a
 separate 120-second ceiling and does not consume the bounded job budget. Jobs

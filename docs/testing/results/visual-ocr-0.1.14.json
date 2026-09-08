@@ -1,0 +1,3633 @@
+{
+  "version": "0.1.14",
+  "date": "2026-09-08",
+  "environment": {
+    "ocrHost": "WSL2 on Windows 11, AMD Ryzen 7 8745HS",
+    "inferenceThreads": 4,
+    "provider": "CPU",
+    "modelManifest": "assets/model-manifests/visual-ocr-ppocrv6-small.json",
+    "modelManifestSha256": "72ca7b1d0416b27162e81b41dd9d8805d7011bb3d57161c86459aef60e8887f1",
+    "artifactsVerifiedBySizeAndSha256": true
+  },
+  "method": {
+    "fixtures": 32,
+    "profiles": [
+      "Focused",
+      "AllText"
+    ],
+    "passesPerFixtureAndProfile": 3,
+    "resetScanBeforeEachPass": true,
+    "scans": "back-to-back static input, no live capture/stabilization cadence",
+    "geometryMinimumIoU": 0.3,
+    "unchangedAndOverlayFilterAssertions": true,
+    "disappearanceAssertionAfterEachFixture": true,
+    "competingBuildsDuringOcrEvaluation": false
+  },
+  "summary": {
+    "ocrPasses": 192,
+    "exactTextPasses": 192,
+    "geometryPasses": 192,
+    "nativeCaptureSessions": 18,
+    "nativeCaptureMatches": 18
+  },
+  "fixtures": [
+    {
+      "fixture": "es-1920-24-region.png",
+      "profile": "AllText",
+      "width": 980,
+      "height": 180,
+      "expectedText": "Buenos días. ¿Cómo estás?",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 28.0,
+            "width": 304.0,
+            "x": 338.0,
+            "y": 77.0
+          },
+          "confidence": 0.9996625781059265,
+          "language": "es",
+          "script": "Latn",
+          "text": "Buenos días. ¿Cómo estás?"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 77.552746,
+          "elapsedMs": 77.553146,
+          "maxScanMs": 77.520585,
+          "scans": 1,
+          "cacheMs": 0.147545
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 63.72563400000001,
+          "elapsedMs": 63.72602500000001,
+          "maxScanMs": 63.709213,
+          "scans": 1,
+          "cacheMs": 0.13183499999999998
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 55.536248,
+          "elapsedMs": 55.536519,
+          "maxScanMs": 55.524786999999996,
+          "scans": 1,
+          "cacheMs": 0.072795
+        }
+      ]
+    },
+    {
+      "fixture": "es-1920-24-region.png",
+      "profile": "Focused",
+      "width": 980,
+      "height": 180,
+      "expectedText": "Buenos días. ¿Cómo estás?",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 28.0,
+            "width": 304.0,
+            "x": 338.0,
+            "y": 77.0
+          },
+          "confidence": 0.9996625781059265,
+          "language": "es",
+          "script": "Latn",
+          "text": "Buenos días. ¿Cómo estás?"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 83.09357200000001,
+          "elapsedMs": 83.093693,
+          "maxScanMs": 83.076791,
+          "scans": 1,
+          "cacheMs": 0.065151
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 59.845108,
+          "elapsedMs": 59.845288000000004,
+          "maxScanMs": 59.826764,
+          "scans": 1,
+          "cacheMs": 0.126626
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 59.75217,
+          "elapsedMs": 59.752581,
+          "maxScanMs": 59.738454000000004,
+          "scans": 1,
+          "cacheMs": 0.054652
+        }
+      ]
+    },
+    {
+      "fixture": "es-1920-24.png",
+      "profile": "AllText",
+      "width": 1920,
+      "height": 1080,
+      "expectedText": "Buenos días. ¿Cómo estás?",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 30.0,
+            "width": 305.0,
+            "x": 808.0,
+            "y": 956.0
+          },
+          "confidence": 0.999722957611084,
+          "language": "es",
+          "script": "Latn",
+          "text": "Buenos días. ¿Cómo estás?"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 40.588285,
+          "elapsedMs": 40.588565,
+          "maxScanMs": 40.574850000000005,
+          "scans": 1,
+          "cacheMs": 0.498436
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 29.883148,
+          "elapsedMs": 29.883268,
+          "maxScanMs": 29.871226,
+          "scans": 1,
+          "cacheMs": 0.552999
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 30.133354,
+          "elapsedMs": 30.133484,
+          "maxScanMs": 30.122885,
+          "scans": 1,
+          "cacheMs": 0.48106499999999996
+        }
+      ]
+    },
+    {
+      "fixture": "es-1920-24.png",
+      "profile": "Focused",
+      "width": 1920,
+      "height": 1080,
+      "expectedText": "Buenos días. ¿Cómo estás?",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 30.0,
+            "width": 305.0,
+            "x": 808.0,
+            "y": 956.0
+          },
+          "confidence": 0.999722957611084,
+          "language": "es",
+          "script": "Latn",
+          "text": "Buenos días. ¿Cómo estás?"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 38.290286,
+          "elapsedMs": 38.290366,
+          "maxScanMs": 38.269357,
+          "scans": 1,
+          "cacheMs": 1.375698
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 33.631488000000004,
+          "elapsedMs": 33.631989000000004,
+          "maxScanMs": 33.618083,
+          "scans": 1,
+          "cacheMs": 0.55393
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 31.863921000000005,
+          "elapsedMs": 31.864212000000002,
+          "maxScanMs": 31.850326,
+          "scans": 1,
+          "cacheMs": 0.515789
+        }
+      ]
+    },
+    {
+      "fixture": "es-1920-48-region.png",
+      "profile": "AllText",
+      "width": 980,
+      "height": 180,
+      "expectedText": "Buenos días. ¿Cómo estás?",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 55.0,
+            "width": 606.0,
+            "x": 187.0,
+            "y": 64.0
+          },
+          "confidence": 0.9836643934249878,
+          "language": "es",
+          "script": "Latn",
+          "text": "Buenos días. ¿Cómo estás?"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 62.834011,
+          "elapsedMs": 62.834151000000006,
+          "maxScanMs": 62.81637800000001,
+          "scans": 1,
+          "cacheMs": 0.06725500000000001
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 54.510352,
+          "elapsedMs": 54.510562,
+          "maxScanMs": 54.49843,
+          "scans": 1,
+          "cacheMs": 0.075851
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 59.682631,
+          "elapsedMs": 59.682851,
+          "maxScanMs": 59.671389999999995,
+          "scans": 1,
+          "cacheMs": 0.068628
+        }
+      ]
+    },
+    {
+      "fixture": "es-1920-48-region.png",
+      "profile": "Focused",
+      "width": 980,
+      "height": 180,
+      "expectedText": "Buenos días. ¿Cómo estás?",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 55.0,
+            "width": 606.0,
+            "x": 187.0,
+            "y": 64.0
+          },
+          "confidence": 0.9836643934249878,
+          "language": "es",
+          "script": "Latn",
+          "text": "Buenos días. ¿Cómo estás?"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 65.82186700000001,
+          "elapsedMs": 65.822087,
+          "maxScanMs": 65.807981,
+          "scans": 1,
+          "cacheMs": 0.05869
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 63.01886399999999,
+          "elapsedMs": 63.019014999999996,
+          "maxScanMs": 63.006851000000005,
+          "scans": 1,
+          "cacheMs": 0.07709300000000001
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 59.561836,
+          "elapsedMs": 59.562177,
+          "maxScanMs": 59.547149,
+          "scans": 1,
+          "cacheMs": 0.066804
+        }
+      ]
+    },
+    {
+      "fixture": "es-1920-48.png",
+      "profile": "AllText",
+      "width": 1920,
+      "height": 1080,
+      "expectedText": "Buenos días. ¿Cómo estás?",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 53.0,
+            "width": 601.0,
+            "x": 659.0,
+            "y": 945.0
+          },
+          "confidence": 0.9996160268783569,
+          "language": "es",
+          "script": "Latn",
+          "text": "Buenos días. ¿Cómo estás?"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 46.979929,
+          "elapsedMs": 46.98008,
+          "maxScanMs": 46.966315,
+          "scans": 1,
+          "cacheMs": 0.473831
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 43.945312,
+          "elapsedMs": 43.945522000000004,
+          "maxScanMs": 43.934732,
+          "scans": 1,
+          "cacheMs": 0.485533
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 42.466721,
+          "elapsedMs": 42.466861,
+          "maxScanMs": 42.456151,
+          "scans": 1,
+          "cacheMs": 0.5599109999999999
+        }
+      ]
+    },
+    {
+      "fixture": "es-1920-48.png",
+      "profile": "Focused",
+      "width": 1920,
+      "height": 1080,
+      "expectedText": "Buenos días. ¿Cómo estás?",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 53.0,
+            "width": 601.0,
+            "x": 659.0,
+            "y": 945.0
+          },
+          "confidence": 0.9996160268783569,
+          "language": "es",
+          "script": "Latn",
+          "text": "Buenos días. ¿Cómo estás?"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 50.670392,
+          "elapsedMs": 50.670531999999994,
+          "maxScanMs": 50.657068,
+          "scans": 1,
+          "cacheMs": 0.512954
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 46.368708,
+          "elapsedMs": 46.368828,
+          "maxScanMs": 46.356025,
+          "scans": 1,
+          "cacheMs": 0.497195
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 46.712252,
+          "elapsedMs": 46.713113,
+          "maxScanMs": 46.698056,
+          "scans": 1,
+          "cacheMs": 0.519055
+        }
+      ]
+    },
+    {
+      "fixture": "es-3840-24-bottom-left.png",
+      "profile": "AllText",
+      "width": 3840,
+      "height": 2160,
+      "expectedText": "Buenos días. ¿Cómo estás?",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 30.0,
+            "width": 307.0,
+            "x": 3.0,
+            "y": 2122.0
+          },
+          "confidence": 0.9911516308784485,
+          "language": "es",
+          "script": "Latn",
+          "text": "Buenos días. ¿Cómo estás?"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 71.379491,
+          "elapsedMs": 71.38020300000001,
+          "maxScanMs": 71.363732,
+          "scans": 1,
+          "cacheMs": 1.9820049999999998
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 74.72055399999999,
+          "elapsedMs": 74.720935,
+          "maxScanMs": 74.700506,
+          "scans": 1,
+          "cacheMs": 5.376377
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 53.765637999999996,
+          "elapsedMs": 53.766399,
+          "maxScanMs": 53.754257,
+          "scans": 1,
+          "cacheMs": 2.048529
+        }
+      ]
+    },
+    {
+      "fixture": "es-3840-24-bottom-left.png",
+      "profile": "Focused",
+      "width": 3840,
+      "height": 2160,
+      "expectedText": "Buenos días. ¿Cómo estás?",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 30.0,
+            "width": 307.0,
+            "x": 3.0,
+            "y": 2122.0
+          },
+          "confidence": 0.9911516308784485,
+          "language": "es",
+          "script": "Latn",
+          "text": "Buenos días. ¿Cómo estás?"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 67.655116,
+          "elapsedMs": 67.65533599999999,
+          "maxScanMs": 67.638775,
+          "scans": 1,
+          "cacheMs": 3.9393049999999996
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 68.227039,
+          "elapsedMs": 68.227169,
+          "maxScanMs": 68.214997,
+          "scans": 1,
+          "cacheMs": 1.949625
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 43.00669,
+          "elapsedMs": 43.00681,
+          "maxScanMs": 42.995639000000004,
+          "scans": 1,
+          "cacheMs": 1.9733900000000002
+        }
+      ]
+    },
+    {
+      "fixture": "es-3840-24-bottom-right.png",
+      "profile": "AllText",
+      "width": 3840,
+      "height": 2160,
+      "expectedText": "Buenos días. ¿Cómo estás?",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 28.0,
+            "width": 306.0,
+            "x": 3531.0,
+            "y": 2123.0
+          },
+          "confidence": 0.9996110796928406,
+          "language": "es",
+          "script": "Latn",
+          "text": "Buenos días. ¿Cómo estás?"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 72.727814,
+          "elapsedMs": 72.72794400000001,
+          "maxScanMs": 72.707465,
+          "scans": 1,
+          "cacheMs": 1.880818
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 59.254428999999995,
+          "elapsedMs": 59.25457,
+          "maxScanMs": 59.242728,
+          "scans": 1,
+          "cacheMs": 3.772024
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 60.379376,
+          "elapsedMs": 60.379796999999996,
+          "maxScanMs": 60.361874,
+          "scans": 1,
+          "cacheMs": 5.08752
+        }
+      ]
+    },
+    {
+      "fixture": "es-3840-24-bottom-right.png",
+      "profile": "Focused",
+      "width": 3840,
+      "height": 2160,
+      "expectedText": "Buenos días. ¿Cómo estás?",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 28.0,
+            "width": 306.0,
+            "x": 3531.0,
+            "y": 2123.0
+          },
+          "confidence": 0.9996110796928406,
+          "language": "es",
+          "script": "Latn",
+          "text": "Buenos días. ¿Cómo estás?"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 61.102662,
+          "elapsedMs": 61.102742,
+          "maxScanMs": 61.081482,
+          "scans": 1,
+          "cacheMs": 4.130700999999999
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 53.553508,
+          "elapsedMs": 53.553577999999995,
+          "maxScanMs": 53.541616,
+          "scans": 1,
+          "cacheMs": 1.9901710000000001
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 61.243985,
+          "elapsedMs": 61.244054999999996,
+          "maxScanMs": 61.231802,
+          "scans": 1,
+          "cacheMs": 1.9171049999999998
+        }
+      ]
+    },
+    {
+      "fixture": "es-3840-24-region.png",
+      "profile": "AllText",
+      "width": 980,
+      "height": 180,
+      "expectedText": "Buenos días. ¿Cómo estás?",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 28.0,
+            "width": 304.0,
+            "x": 338.0,
+            "y": 77.0
+          },
+          "confidence": 0.9996625781059265,
+          "language": "es",
+          "script": "Latn",
+          "text": "Buenos días. ¿Cómo estás?"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 66.64176099999999,
+          "elapsedMs": 66.642112,
+          "maxScanMs": 66.611715,
+          "scans": 1,
+          "cacheMs": 0.173162
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 61.150621,
+          "elapsedMs": 61.150871,
+          "maxScanMs": 61.139319,
+          "scans": 1,
+          "cacheMs": 0.066654
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 61.80664,
+          "elapsedMs": 61.806779999999996,
+          "maxScanMs": 61.786833,
+          "scans": 1,
+          "cacheMs": 0.076042
+        }
+      ]
+    },
+    {
+      "fixture": "es-3840-24-region.png",
+      "profile": "Focused",
+      "width": 980,
+      "height": 180,
+      "expectedText": "Buenos días. ¿Cómo estás?",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 28.0,
+            "width": 304.0,
+            "x": 338.0,
+            "y": 77.0
+          },
+          "confidence": 0.9996625781059265,
+          "language": "es",
+          "script": "Latn",
+          "text": "Buenos días. ¿Cómo estás?"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 63.71031000000001,
+          "elapsedMs": 63.71052000000001,
+          "maxScanMs": 63.691154,
+          "scans": 1,
+          "cacheMs": 0.054662
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 58.43687,
+          "elapsedMs": 58.43723,
+          "maxScanMs": 58.423806,
+          "scans": 1,
+          "cacheMs": 0.067105
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 57.48037,
+          "elapsedMs": 57.48059,
+          "maxScanMs": 57.468948999999995,
+          "scans": 1,
+          "cacheMs": 0.058309
+        }
+      ]
+    },
+    {
+      "fixture": "es-3840-24-seam.png",
+      "profile": "AllText",
+      "width": 3840,
+      "height": 2160,
+      "expectedText": "Buenos días. ¿Cómo estás?",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 27.0,
+            "width": 303.0,
+            "x": 809.0,
+            "y": 532.0
+          },
+          "confidence": 0.9743778705596924,
+          "language": "es",
+          "script": "Latn",
+          "text": "Buenos días. ¿Cómo estás?"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 87.416843,
+          "elapsedMs": 87.416983,
+          "maxScanMs": 87.403508,
+          "scans": 1,
+          "cacheMs": 1.94696
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 52.347331,
+          "elapsedMs": 52.347550999999996,
+          "maxScanMs": 52.336940999999996,
+          "scans": 1,
+          "cacheMs": 3.3550590000000002
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 57.434520000000006,
+          "elapsedMs": 57.434830999999996,
+          "maxScanMs": 57.418731,
+          "scans": 1,
+          "cacheMs": 5.613929
+        }
+      ]
+    },
+    {
+      "fixture": "es-3840-24-seam.png",
+      "profile": "Focused",
+      "width": 3840,
+      "height": 2160,
+      "expectedText": "Buenos días. ¿Cómo estás?",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 27.0,
+            "width": 303.0,
+            "x": 809.0,
+            "y": 532.0
+          },
+          "confidence": 0.9743778705596924,
+          "language": "es",
+          "script": "Latn",
+          "text": "Buenos días. ¿Cómo estás?"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 82.039344,
+          "elapsedMs": 82.039584,
+          "maxScanMs": 82.018074,
+          "scans": 1,
+          "cacheMs": 4.240626
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 54.195433,
+          "elapsedMs": 54.195603,
+          "maxScanMs": 54.182148,
+          "scans": 1,
+          "cacheMs": 2.1037719999999998
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 54.718489000000005,
+          "elapsedMs": 54.71863,
+          "maxScanMs": 54.705867,
+          "scans": 1,
+          "cacheMs": 2.0283919999999998
+        }
+      ]
+    },
+    {
+      "fixture": "es-3840-24-short-No.png",
+      "profile": "AllText",
+      "width": 3840,
+      "height": 2160,
+      "expectedText": "No",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 36.0,
+            "width": 44.0,
+            "x": 804.0,
+            "y": 527.0
+          },
+          "confidence": 0.9995478391647339,
+          "language": "es",
+          "script": "Latn",
+          "text": "No"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 76.808817,
+          "elapsedMs": 76.809067,
+          "maxScanMs": 76.797055,
+          "scans": 1,
+          "cacheMs": 2.238562
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 51.090424000000006,
+          "elapsedMs": 51.090614,
+          "maxScanMs": 51.080836,
+          "scans": 1,
+          "cacheMs": 3.0183530000000003
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 42.996012,
+          "elapsedMs": 42.996263,
+          "maxScanMs": 42.989489999999996,
+          "scans": 1,
+          "cacheMs": 1.9958509999999998
+        }
+      ]
+    },
+    {
+      "fixture": "es-3840-24-short-No.png",
+      "profile": "Focused",
+      "width": 3840,
+      "height": 2160,
+      "expectedText": "No",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 36.0,
+            "width": 44.0,
+            "x": 804.0,
+            "y": 527.0
+          },
+          "confidence": 0.9995478391647339,
+          "language": "es",
+          "script": "Latn",
+          "text": "No"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 108.131592,
+          "elapsedMs": 108.131793,
+          "maxScanMs": 108.10367,
+          "scans": 1,
+          "cacheMs": 1.9625290000000002
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 43.018779,
+          "elapsedMs": 43.019961,
+          "maxScanMs": 43.00282,
+          "scans": 1,
+          "cacheMs": 4.712468
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 55.598166,
+          "elapsedMs": 55.598326,
+          "maxScanMs": 55.591052000000005,
+          "scans": 1,
+          "cacheMs": 2.128117
+        }
+      ]
+    },
+    {
+      "fixture": "es-3840-24-short-OK.png",
+      "profile": "AllText",
+      "width": 3840,
+      "height": 2160,
+      "expectedText": "OK",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 33.0,
+            "width": 43.0,
+            "x": 807.0,
+            "y": 529.0
+          },
+          "confidence": 0.9993283748626709,
+          "language": "es",
+          "script": "Latn",
+          "text": "OK"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 66.238409,
+          "elapsedMs": 66.23854,
+          "maxScanMs": 66.229403,
+          "scans": 1,
+          "cacheMs": 1.9963009999999999
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 45.108284999999995,
+          "elapsedMs": 45.108516,
+          "maxScanMs": 45.099519,
+          "scans": 1,
+          "cacheMs": 5.190221
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 43.031247,
+          "elapsedMs": 43.031367,
+          "maxScanMs": 43.025246,
+          "scans": 1,
+          "cacheMs": 1.999208
+        }
+      ]
+    },
+    {
+      "fixture": "es-3840-24-short-OK.png",
+      "profile": "Focused",
+      "width": 3840,
+      "height": 2160,
+      "expectedText": "OK",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 33.0,
+            "width": 43.0,
+            "x": 807.0,
+            "y": 529.0
+          },
+          "confidence": 0.9993283748626709,
+          "language": "es",
+          "script": "Latn",
+          "text": "OK"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 94.313277,
+          "elapsedMs": 94.313878,
+          "maxScanMs": 94.295905,
+          "scans": 1,
+          "cacheMs": 5.106346
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 59.177327000000005,
+          "elapsedMs": 59.177938,
+          "maxScanMs": 59.170964,
+          "scans": 1,
+          "cacheMs": 1.929077
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 58.407219000000005,
+          "elapsedMs": 58.407439,
+          "maxScanMs": 58.397180999999996,
+          "scans": 1,
+          "cacheMs": 3.778877
+        }
+      ]
+    },
+    {
+      "fixture": "es-3840-24-short-Sí.png",
+      "profile": "AllText",
+      "width": 3840,
+      "height": 2160,
+      "expectedText": "Sí",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 31.0,
+            "width": 32.0,
+            "x": 807.0,
+            "y": 529.0
+          },
+          "confidence": 0.9994214773178101,
+          "language": "es",
+          "script": "Latn",
+          "text": "Sí"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 66.909549,
+          "elapsedMs": 66.90971900000001,
+          "maxScanMs": 66.89923999999999,
+          "scans": 1,
+          "cacheMs": 1.902558
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 41.757488,
+          "elapsedMs": 41.757649,
+          "maxScanMs": 41.751227,
+          "scans": 1,
+          "cacheMs": 1.9505869999999998
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 57.248484000000005,
+          "elapsedMs": 57.248714,
+          "maxScanMs": 57.241702,
+          "scans": 1,
+          "cacheMs": 1.8993820000000001
+        }
+      ]
+    },
+    {
+      "fixture": "es-3840-24-short-Sí.png",
+      "profile": "Focused",
+      "width": 3840,
+      "height": 2160,
+      "expectedText": "Sí",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 31.0,
+            "width": 32.0,
+            "x": 807.0,
+            "y": 529.0
+          },
+          "confidence": 0.9994214773178101,
+          "language": "es",
+          "script": "Latn",
+          "text": "Sí"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 64.570623,
+          "elapsedMs": 64.570824,
+          "maxScanMs": 64.560304,
+          "scans": 1,
+          "cacheMs": 1.921944
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 43.556619,
+          "elapsedMs": 43.556829,
+          "maxScanMs": 43.544416000000005,
+          "scans": 1,
+          "cacheMs": 5.099303
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 41.018054,
+          "elapsedMs": 41.018254,
+          "maxScanMs": 41.010850000000005,
+          "scans": 1,
+          "cacheMs": 1.969483
+        }
+      ]
+    },
+    {
+      "fixture": "es-3840-24-textured.png",
+      "profile": "AllText",
+      "width": 3840,
+      "height": 2160,
+      "expectedText": "Buenos días. ¿Cómo estás?",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 29.0,
+            "width": 304.0,
+            "x": 1768.0,
+            "y": 2037.0
+          },
+          "confidence": 0.9989152550697327,
+          "language": "es",
+          "script": "Latn",
+          "text": "Buenos días. ¿Cómo estás?"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 306.49195000000003,
+          "elapsedMs": 4082.6029220000005,
+          "maxScanMs": 319.26059000000004,
+          "scans": 16,
+          "cacheMs": 2.096589
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 193.269367,
+          "elapsedMs": 3941.261039,
+          "maxScanMs": 304.732414,
+          "scans": 16,
+          "cacheMs": 5.349127
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 194.884701,
+          "elapsedMs": 3892.554448,
+          "maxScanMs": 293.966066,
+          "scans": 16,
+          "cacheMs": 1.9437250000000001
+        }
+      ]
+    },
+    {
+      "fixture": "es-3840-24-textured.png",
+      "profile": "Focused",
+      "width": 3840,
+      "height": 2160,
+      "expectedText": "Buenos días. ¿Cómo estás?",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 29.0,
+            "width": 304.0,
+            "x": 1768.0,
+            "y": 2037.0
+          },
+          "confidence": 0.9989152550697327,
+          "language": "es",
+          "script": "Latn",
+          "text": "Buenos días. ¿Cómo estás?"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 286.949138,
+          "elapsedMs": 3994.704256,
+          "maxScanMs": 293.813893,
+          "scans": 16,
+          "cacheMs": 1.9813539999999998
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 194.179349,
+          "elapsedMs": 3926.624243,
+          "maxScanMs": 289.208187,
+          "scans": 16,
+          "cacheMs": 2.0167800000000002
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 200.470337,
+          "elapsedMs": 3915.729768,
+          "maxScanMs": 293.177002,
+          "scans": 16,
+          "cacheMs": 1.988438
+        }
+      ]
+    },
+    {
+      "fixture": "es-3840-24-top-left.png",
+      "profile": "AllText",
+      "width": 3840,
+      "height": 2160,
+      "expectedText": "Buenos días. ¿Cómo estás?",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 30.0,
+            "width": 304.0,
+            "x": 5.0,
+            "y": 10.0
+          },
+          "confidence": 0.9738520979881287,
+          "language": "es",
+          "script": "Latn",
+          "text": "Buenos días. ¿Cómo estás?"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 52.838916,
+          "elapsedMs": 52.839197,
+          "maxScanMs": 52.825702,
+          "scans": 1,
+          "cacheMs": 2.0801079999999996
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 48.308943,
+          "elapsedMs": 48.309063,
+          "maxScanMs": 48.297312000000005,
+          "scans": 1,
+          "cacheMs": 2.018073
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 42.496846,
+          "elapsedMs": 42.496936,
+          "maxScanMs": 42.486697,
+          "scans": 1,
+          "cacheMs": 1.9727379999999999
+        }
+      ]
+    },
+    {
+      "fixture": "es-3840-24-top-left.png",
+      "profile": "Focused",
+      "width": 3840,
+      "height": 2160,
+      "expectedText": "Buenos días. ¿Cómo estás?",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 30.0,
+            "width": 304.0,
+            "x": 5.0,
+            "y": 10.0
+          },
+          "confidence": 0.9738520979881287,
+          "language": "es",
+          "script": "Latn",
+          "text": "Buenos días. ¿Cómo estás?"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 44.88386199999999,
+          "elapsedMs": 44.884082,
+          "maxScanMs": 44.868854,
+          "scans": 1,
+          "cacheMs": 1.952371
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 51.74491,
+          "elapsedMs": 51.745511,
+          "maxScanMs": 51.730422999999995,
+          "scans": 1,
+          "cacheMs": 2.165096
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 48.578723,
+          "elapsedMs": 48.579234,
+          "maxScanMs": 48.561491,
+          "scans": 1,
+          "cacheMs": 2.046366
+        }
+      ]
+    },
+    {
+      "fixture": "es-3840-24-top-right.png",
+      "profile": "AllText",
+      "width": 3840,
+      "height": 2160,
+      "expectedText": "Buenos días. ¿Cómo estás?",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 30.0,
+            "width": 306.0,
+            "x": 3532.0,
+            "y": 10.0
+          },
+          "confidence": 0.9830793738365173,
+          "language": "es",
+          "script": "Latn",
+          "text": "Buenos días. ¿Cómo estás?"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 45.34957,
+          "elapsedMs": 45.34978,
+          "maxScanMs": 45.335705,
+          "scans": 1,
+          "cacheMs": 2.024665
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 56.076392000000006,
+          "elapsedMs": 56.076763,
+          "maxScanMs": 56.058609000000004,
+          "scans": 1,
+          "cacheMs": 3.527559
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 50.585476,
+          "elapsedMs": 50.585586,
+          "maxScanMs": 50.574075,
+          "scans": 1,
+          "cacheMs": 1.992565
+        }
+      ]
+    },
+    {
+      "fixture": "es-3840-24-top-right.png",
+      "profile": "Focused",
+      "width": 3840,
+      "height": 2160,
+      "expectedText": "Buenos días. ¿Cómo estás?",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 30.0,
+            "width": 306.0,
+            "x": 3532.0,
+            "y": 10.0
+          },
+          "confidence": 0.9830793738365173,
+          "language": "es",
+          "script": "Latn",
+          "text": "Buenos días. ¿Cómo estás?"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 48.359635999999995,
+          "elapsedMs": 48.359786,
+          "maxScanMs": 48.34024,
+          "scans": 1,
+          "cacheMs": 1.9875660000000002
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 48.963358,
+          "elapsedMs": 48.963588,
+          "maxScanMs": 48.945224,
+          "scans": 1,
+          "cacheMs": 2.8431569999999997
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 50.508030000000005,
+          "elapsedMs": 50.509091999999995,
+          "maxScanMs": 50.456424,
+          "scans": 1,
+          "cacheMs": 3.755033
+        }
+      ]
+    },
+    {
+      "fixture": "es-3840-24.png",
+      "profile": "AllText",
+      "width": 3840,
+      "height": 2160,
+      "expectedText": "Buenos días. ¿Cómo estás?",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 31.0,
+            "width": 305.0,
+            "x": 1768.0,
+            "y": 2035.0
+          },
+          "confidence": 0.9997130632400513,
+          "language": "es",
+          "script": "Latn",
+          "text": "Buenos días. ¿Cómo estás?"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 50.359366,
+          "elapsedMs": 50.359595999999996,
+          "maxScanMs": 50.346332000000004,
+          "scans": 1,
+          "cacheMs": 1.951239
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 50.482453,
+          "elapsedMs": 50.482803,
+          "maxScanMs": 50.470690999999995,
+          "scans": 1,
+          "cacheMs": 1.9643920000000001
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 54.004454,
+          "elapsedMs": 54.004584,
+          "maxScanMs": 53.99424500000001,
+          "scans": 1,
+          "cacheMs": 2.023513
+        }
+      ]
+    },
+    {
+      "fixture": "es-3840-24.png",
+      "profile": "Focused",
+      "width": 3840,
+      "height": 2160,
+      "expectedText": "Buenos días. ¿Cómo estás?",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 31.0,
+            "width": 305.0,
+            "x": 1768.0,
+            "y": 2035.0
+          },
+          "confidence": 0.9997130632400513,
+          "language": "es",
+          "script": "Latn",
+          "text": "Buenos días. ¿Cómo estás?"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 50.644119,
+          "elapsedMs": 50.64436,
+          "maxScanMs": 50.622648999999996,
+          "scans": 1,
+          "cacheMs": 5.149275
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 47.797726,
+          "elapsedMs": 47.797796,
+          "maxScanMs": 47.77934,
+          "scans": 1,
+          "cacheMs": 5.096426999999999
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 44.725297,
+          "elapsedMs": 44.725367,
+          "maxScanMs": 44.713706,
+          "scans": 1,
+          "cacheMs": 1.9704039999999998
+        }
+      ]
+    },
+    {
+      "fixture": "es-3840-48-region.png",
+      "profile": "AllText",
+      "width": 980,
+      "height": 180,
+      "expectedText": "Buenos días. ¿Cómo estás?",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 55.0,
+            "width": 606.0,
+            "x": 187.0,
+            "y": 64.0
+          },
+          "confidence": 0.9836643934249878,
+          "language": "es",
+          "script": "Latn",
+          "text": "Buenos días. ¿Cómo estás?"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 59.494823000000004,
+          "elapsedMs": 59.495013,
+          "maxScanMs": 59.47701,
+          "scans": 1,
+          "cacheMs": 0.13969
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 55.140659,
+          "elapsedMs": 55.140869,
+          "maxScanMs": 55.13058,
+          "scans": 1,
+          "cacheMs": 0.069319
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 58.481168,
+          "elapsedMs": 58.481289,
+          "maxScanMs": 58.470749000000005,
+          "scans": 1,
+          "cacheMs": 0.08741199999999999
+        }
+      ]
+    },
+    {
+      "fixture": "es-3840-48-region.png",
+      "profile": "Focused",
+      "width": 980,
+      "height": 180,
+      "expectedText": "Buenos días. ¿Cómo estás?",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 55.0,
+            "width": 606.0,
+            "x": 187.0,
+            "y": 64.0
+          },
+          "confidence": 0.9836643934249878,
+          "language": "es",
+          "script": "Latn",
+          "text": "Buenos días. ¿Cómo estás?"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 60.624212,
+          "elapsedMs": 60.624472,
+          "maxScanMs": 60.611999,
+          "scans": 1,
+          "cacheMs": 0.05922
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 61.132617,
+          "elapsedMs": 61.132768,
+          "maxScanMs": 61.120083,
+          "scans": 1,
+          "cacheMs": 0.058678999999999995
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 58.077035,
+          "elapsedMs": 58.077256,
+          "maxScanMs": 58.059603,
+          "scans": 1,
+          "cacheMs": 0.12301799999999999
+        }
+      ]
+    },
+    {
+      "fixture": "es-3840-48.png",
+      "profile": "AllText",
+      "width": 3840,
+      "height": 2160,
+      "expectedText": "Buenos días. ¿Cómo estás?",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 57.0,
+            "width": 603.0,
+            "x": 1618.0,
+            "y": 2023.0
+          },
+          "confidence": 0.9814284443855286,
+          "language": "es",
+          "script": "Latn",
+          "text": "Buenos días. ¿Cómo estás?"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 85.110212,
+          "elapsedMs": 85.110292,
+          "maxScanMs": 85.091396,
+          "scans": 1,
+          "cacheMs": 3.799986
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 63.890187000000005,
+          "elapsedMs": 63.890317,
+          "maxScanMs": 63.878935999999996,
+          "scans": 1,
+          "cacheMs": 2.105576
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 63.780182,
+          "elapsedMs": 63.78044200000001,
+          "maxScanMs": 63.755135,
+          "scans": 1,
+          "cacheMs": 1.894122
+        }
+      ]
+    },
+    {
+      "fixture": "es-3840-48.png",
+      "profile": "Focused",
+      "width": 3840,
+      "height": 2160,
+      "expectedText": "Buenos días. ¿Cómo estás?",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 57.0,
+            "width": 603.0,
+            "x": 1618.0,
+            "y": 2023.0
+          },
+          "confidence": 0.9814284443855286,
+          "language": "es",
+          "script": "Latn",
+          "text": "Buenos días. ¿Cómo estás?"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 87.661367,
+          "elapsedMs": 87.66143799999999,
+          "maxScanMs": 87.640489,
+          "scans": 1,
+          "cacheMs": 5.25988
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 73.414545,
+          "elapsedMs": 73.414615,
+          "maxScanMs": 73.40279299999999,
+          "scans": 1,
+          "cacheMs": 2.1459
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 62.430651,
+          "elapsedMs": 62.430721,
+          "maxScanMs": 62.414721,
+          "scans": 1,
+          "cacheMs": 5.1473819999999995
+        }
+      ]
+    },
+    {
+      "fixture": "zh-1920-24-region.png",
+      "profile": "AllText",
+      "width": 980,
+      "height": 180,
+      "expectedText": "你好世界。欢迎回来。",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 32.0,
+            "width": 232.0,
+            "x": 367.0,
+            "y": 74.0
+          },
+          "confidence": 0.9999581575393677,
+          "language": "zh",
+          "script": "Hani",
+          "text": "你好世界。欢迎回来。"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 62.084226,
+          "elapsedMs": 62.084306,
+          "maxScanMs": 62.071923,
+          "scans": 1,
+          "cacheMs": 0.054802000000000003
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 54.597064,
+          "elapsedMs": 54.597144,
+          "maxScanMs": 54.58960999999999,
+          "scans": 1,
+          "cacheMs": 0.052007
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 51.431618,
+          "elapsedMs": 51.431698,
+          "maxScanMs": 51.420106,
+          "scans": 1,
+          "cacheMs": 0.12138600000000001
+        }
+      ]
+    },
+    {
+      "fixture": "zh-1920-24-region.png",
+      "profile": "Focused",
+      "width": 980,
+      "height": 180,
+      "expectedText": "你好世界。欢迎回来。",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 32.0,
+            "width": 232.0,
+            "x": 367.0,
+            "y": 74.0
+          },
+          "confidence": 0.9999581575393677,
+          "language": "zh",
+          "script": "Hani",
+          "text": "你好世界。欢迎回来。"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 66.672051,
+          "elapsedMs": 66.672491,
+          "maxScanMs": 66.56783700000001,
+          "scans": 1,
+          "cacheMs": 0.098584
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 49.238678,
+          "elapsedMs": 49.239089,
+          "maxScanMs": 49.229811999999995,
+          "scans": 1,
+          "cacheMs": 0.041276
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 51.516096999999995,
+          "elapsedMs": 51.516557,
+          "maxScanMs": 51.507851,
+          "scans": 1,
+          "cacheMs": 0.041227
+        }
+      ]
+    },
+    {
+      "fixture": "zh-1920-24.png",
+      "profile": "AllText",
+      "width": 1920,
+      "height": 1080,
+      "expectedText": "你好世界。欢迎回来。",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 30.0,
+            "width": 231.0,
+            "x": 838.0,
+            "y": 956.0
+          },
+          "confidence": 0.9999748468399048,
+          "language": "zh",
+          "script": "Hani",
+          "text": "你好世界。欢迎回来。"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 30.66938,
+          "elapsedMs": 30.669500999999997,
+          "maxScanMs": 30.659902,
+          "scans": 1,
+          "cacheMs": 0.46980299999999997
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 36.728196,
+          "elapsedMs": 36.728266000000005,
+          "maxScanMs": 36.715092,
+          "scans": 1,
+          "cacheMs": 1.35503
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 31.175281,
+          "elapsedMs": 31.175361,
+          "maxScanMs": 31.167686,
+          "scans": 1,
+          "cacheMs": 0.476356
+        }
+      ]
+    },
+    {
+      "fixture": "zh-1920-24.png",
+      "profile": "Focused",
+      "width": 1920,
+      "height": 1080,
+      "expectedText": "你好世界。欢迎回来。",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 30.0,
+            "width": 231.0,
+            "x": 838.0,
+            "y": 956.0
+          },
+          "confidence": 0.9999748468399048,
+          "language": "zh",
+          "script": "Hani",
+          "text": "你好世界。欢迎回来。"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 35.977083,
+          "elapsedMs": 35.977233,
+          "maxScanMs": 35.966974,
+          "scans": 1,
+          "cacheMs": 0.46169899999999997
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 26.560013,
+          "elapsedMs": 26.560123,
+          "maxScanMs": 26.550977,
+          "scans": 1,
+          "cacheMs": 0.529804
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 29.73849,
+          "elapsedMs": 29.73878,
+          "maxScanMs": 29.729273,
+          "scans": 1,
+          "cacheMs": 0.538091
+        }
+      ]
+    },
+    {
+      "fixture": "zh-1920-48-region.png",
+      "profile": "AllText",
+      "width": 980,
+      "height": 180,
+      "expectedText": "你好世界。欢迎回来。",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 62.0,
+            "width": 459.0,
+            "x": 244.0,
+            "y": 59.0
+          },
+          "confidence": 0.999954104423523,
+          "language": "zh",
+          "script": "Hani",
+          "text": "你好世界。欢迎回来。"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 58.196937999999996,
+          "elapsedMs": 58.197189,
+          "maxScanMs": 58.183713,
+          "scans": 1,
+          "cacheMs": 0.060132
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 55.444810999999994,
+          "elapsedMs": 55.444941,
+          "maxScanMs": 55.437026,
+          "scans": 1,
+          "cacheMs": 0.052197
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 56.5472,
+          "elapsedMs": 56.547271,
+          "maxScanMs": 56.539386,
+          "scans": 1,
+          "cacheMs": 0.058809
+        }
+      ]
+    },
+    {
+      "fixture": "zh-1920-48-region.png",
+      "profile": "Focused",
+      "width": 980,
+      "height": 180,
+      "expectedText": "你好世界。欢迎回来。",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 62.0,
+            "width": 459.0,
+            "x": 244.0,
+            "y": 59.0
+          },
+          "confidence": 0.999954104423523,
+          "language": "zh",
+          "script": "Hani",
+          "text": "你好世界。欢迎回来。"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 55.540469,
+          "elapsedMs": 55.541140000000006,
+          "maxScanMs": 55.522425,
+          "scans": 1,
+          "cacheMs": 0.124371
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 52.282301000000004,
+          "elapsedMs": 52.282371,
+          "maxScanMs": 52.273345,
+          "scans": 1,
+          "cacheMs": 0.045585
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 54.245076000000005,
+          "elapsedMs": 54.245186000000004,
+          "maxScanMs": 54.23692,
+          "scans": 1,
+          "cacheMs": 0.042158
+        }
+      ]
+    },
+    {
+      "fixture": "zh-1920-48.png",
+      "profile": "AllText",
+      "width": 1920,
+      "height": 1080,
+      "expectedText": "你好世界。欢迎回来。",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 63.0,
+            "width": 459.0,
+            "x": 715.0,
+            "y": 939.0
+          },
+          "confidence": 0.9999673962593079,
+          "language": "zh",
+          "script": "Hani",
+          "text": "你好世界。欢迎回来。"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 47.374403,
+          "elapsedMs": 47.374473,
+          "maxScanMs": 47.364865,
+          "scans": 1,
+          "cacheMs": 0.501723
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 36.646133999999996,
+          "elapsedMs": 36.646335,
+          "maxScanMs": 36.63899,
+          "scans": 1,
+          "cacheMs": 0.48329900000000003
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 38.491866,
+          "elapsedMs": 38.492006,
+          "maxScanMs": 38.484221999999995,
+          "scans": 1,
+          "cacheMs": 0.481215
+        }
+      ]
+    },
+    {
+      "fixture": "zh-1920-48.png",
+      "profile": "Focused",
+      "width": 1920,
+      "height": 1080,
+      "expectedText": "你好世界。欢迎回来。",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 63.0,
+            "width": 459.0,
+            "x": 715.0,
+            "y": 939.0
+          },
+          "confidence": 0.9999673962593079,
+          "language": "zh",
+          "script": "Hani",
+          "text": "你好世界。欢迎回来。"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 39.415009,
+          "elapsedMs": 39.415119,
+          "maxScanMs": 39.404740000000004,
+          "scans": 1,
+          "cacheMs": 0.483379
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 36.12419,
+          "elapsedMs": 36.124271,
+          "maxScanMs": 36.108872,
+          "scans": 1,
+          "cacheMs": 1.184062
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 37.146943,
+          "elapsedMs": 37.147073000000006,
+          "maxScanMs": 37.138687,
+          "scans": 1,
+          "cacheMs": 0.497315
+        }
+      ]
+    },
+    {
+      "fixture": "zh-3840-24-bottom-left.png",
+      "profile": "AllText",
+      "width": 3840,
+      "height": 2160,
+      "expectedText": "你好世界。欢迎回来。",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 29.0,
+            "width": 234.0,
+            "x": 4.0,
+            "y": 2122.0
+          },
+          "confidence": 0.999971866607666,
+          "language": "zh",
+          "script": "Hani",
+          "text": "你好世界。欢迎回来。"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 60.535166000000004,
+          "elapsedMs": 60.535336,
+          "maxScanMs": 60.522303,
+          "scans": 1,
+          "cacheMs": 2.186907
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 59.145217,
+          "elapsedMs": 59.145447,
+          "maxScanMs": 59.130189,
+          "scans": 1,
+          "cacheMs": 5.149376
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 41.011421999999996,
+          "elapsedMs": 41.011621999999996,
+          "maxScanMs": 41.003246,
+          "scans": 1,
+          "cacheMs": 2.023863
+        }
+      ]
+    },
+    {
+      "fixture": "zh-3840-24-bottom-left.png",
+      "profile": "Focused",
+      "width": 3840,
+      "height": 2160,
+      "expectedText": "你好世界。欢迎回来。",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 29.0,
+            "width": 234.0,
+            "x": 4.0,
+            "y": 2122.0
+          },
+          "confidence": 0.999971866607666,
+          "language": "zh",
+          "script": "Hani",
+          "text": "你好世界。欢迎回来。"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 56.659929999999996,
+          "elapsedMs": 56.660361,
+          "maxScanMs": 56.646285,
+          "scans": 1,
+          "cacheMs": 1.861882
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 55.015864,
+          "elapsedMs": 55.015994,
+          "maxScanMs": 55.006526,
+          "scans": 1,
+          "cacheMs": 1.799455
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 34.479012000000004,
+          "elapsedMs": 34.479141999999996,
+          "maxScanMs": 34.470296,
+          "scans": 1,
+          "cacheMs": 1.839901
+        }
+      ]
+    },
+    {
+      "fixture": "zh-3840-24-bottom-right.png",
+      "profile": "AllText",
+      "width": 3840,
+      "height": 2160,
+      "expectedText": "你好世界。欢迎回来。",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 29.0,
+            "width": 234.0,
+            "x": 3589.0,
+            "y": 2122.0
+          },
+          "confidence": 0.9998779296875,
+          "language": "zh",
+          "script": "Hani",
+          "text": "你好世界。欢迎回来。"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 48.41631099999999,
+          "elapsedMs": 48.416391000000004,
+          "maxScanMs": 48.40522,
+          "scans": 1,
+          "cacheMs": 2.07027
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 61.410584,
+          "elapsedMs": 61.411435,
+          "maxScanMs": 61.397819999999996,
+          "scans": 1,
+          "cacheMs": 2.0129089999999996
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 53.640546,
+          "elapsedMs": 53.640665999999996,
+          "maxScanMs": 53.632830999999996,
+          "scans": 1,
+          "cacheMs": 1.830193
+        }
+      ]
+    },
+    {
+      "fixture": "zh-3840-24-bottom-right.png",
+      "profile": "Focused",
+      "width": 3840,
+      "height": 2160,
+      "expectedText": "你好世界。欢迎回来。",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 29.0,
+            "width": 234.0,
+            "x": 3589.0,
+            "y": 2122.0
+          },
+          "confidence": 0.9998779296875,
+          "language": "zh",
+          "script": "Hani",
+          "text": "你好世界。欢迎回来。"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 46.345774999999996,
+          "elapsedMs": 46.345985,
+          "maxScanMs": 46.332681,
+          "scans": 1,
+          "cacheMs": 3.153153
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 47.594910999999996,
+          "elapsedMs": 47.595040999999995,
+          "maxScanMs": 47.585854,
+          "scans": 1,
+          "cacheMs": 1.881599
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 54.773423,
+          "elapsedMs": 54.773643,
+          "maxScanMs": 54.763805,
+          "scans": 1,
+          "cacheMs": 1.765032
+        }
+      ]
+    },
+    {
+      "fixture": "zh-3840-24-region.png",
+      "profile": "AllText",
+      "width": 980,
+      "height": 180,
+      "expectedText": "你好世界。欢迎回来。",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 32.0,
+            "width": 232.0,
+            "x": 367.0,
+            "y": 74.0
+          },
+          "confidence": 0.9999581575393677,
+          "language": "zh",
+          "script": "Hani",
+          "text": "你好世界。欢迎回来。"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 58.250132,
+          "elapsedMs": 58.250212000000005,
+          "maxScanMs": 58.227982,
+          "scans": 1,
+          "cacheMs": 0.120685
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 60.431503,
+          "elapsedMs": 60.431582999999996,
+          "maxScanMs": 60.423759000000004,
+          "scans": 1,
+          "cacheMs": 0.052497999999999996
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 59.489181,
+          "elapsedMs": 59.489251,
+          "maxScanMs": 59.477549999999994,
+          "scans": 1,
+          "cacheMs": 0.120675
+        }
+      ]
+    },
+    {
+      "fixture": "zh-3840-24-region.png",
+      "profile": "Focused",
+      "width": 980,
+      "height": 180,
+      "expectedText": "你好世界。欢迎回来。",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 32.0,
+            "width": 232.0,
+            "x": 367.0,
+            "y": 74.0
+          },
+          "confidence": 0.9999581575393677,
+          "language": "zh",
+          "script": "Hani",
+          "text": "你好世界。欢迎回来。"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 54.561163,
+          "elapsedMs": 54.561293,
+          "maxScanMs": 54.547638,
+          "scans": 1,
+          "cacheMs": 0.042379
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 52.102022,
+          "elapsedMs": 52.102223,
+          "maxScanMs": 52.088877,
+          "scans": 1,
+          "cacheMs": 0.098453
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 52.62145700000001,
+          "elapsedMs": 52.621617,
+          "maxScanMs": 52.61234,
+          "scans": 1,
+          "cacheMs": 0.043832
+        }
+      ]
+    },
+    {
+      "fixture": "zh-3840-24-seam.png",
+      "profile": "AllText",
+      "width": 3840,
+      "height": 2160,
+      "expectedText": "你好世界。欢迎回来。",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 30.0,
+            "width": 232.0,
+            "x": 837.0,
+            "y": 530.0
+          },
+          "confidence": 0.9999613761901855,
+          "language": "zh",
+          "script": "Hani",
+          "text": "你好世界。欢迎回来。"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 91.60423800000001,
+          "elapsedMs": 91.60436800000001,
+          "maxScanMs": 91.591063,
+          "scans": 1,
+          "cacheMs": 2.572053
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 64.009401,
+          "elapsedMs": 64.009531,
+          "maxScanMs": 64.00128600000001,
+          "scans": 1,
+          "cacheMs": 4.93682
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 56.561215999999995,
+          "elapsedMs": 56.561446000000004,
+          "maxScanMs": 56.547702,
+          "scans": 1,
+          "cacheMs": 5.78071
+        }
+      ]
+    },
+    {
+      "fixture": "zh-3840-24-seam.png",
+      "profile": "Focused",
+      "width": 3840,
+      "height": 2160,
+      "expectedText": "你好世界。欢迎回来。",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 30.0,
+            "width": 232.0,
+            "x": 837.0,
+            "y": 530.0
+          },
+          "confidence": 0.9999613761901855,
+          "language": "zh",
+          "script": "Hani",
+          "text": "你好世界。欢迎回来。"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 86.303132,
+          "elapsedMs": 86.303272,
+          "maxScanMs": 86.291561,
+          "scans": 1,
+          "cacheMs": 1.831545
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 56.147387,
+          "elapsedMs": 56.147507,
+          "maxScanMs": 56.13849,
+          "scans": 1,
+          "cacheMs": 1.888671
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 47.98392,
+          "elapsedMs": 47.984069999999996,
+          "maxScanMs": 47.975405,
+          "scans": 1,
+          "cacheMs": 1.8466330000000002
+        }
+      ]
+    },
+    {
+      "fixture": "zh-3840-24-short-猫.png",
+      "profile": "AllText",
+      "width": 3840,
+      "height": 2160,
+      "expectedText": "猫",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 33.0,
+            "width": 32.0,
+            "x": 836.0,
+            "y": 529.0
+          },
+          "confidence": 0.9985719919204712,
+          "language": "zh",
+          "script": "Hani",
+          "text": "猫"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 73.03533,
+          "elapsedMs": 73.03552,
+          "maxScanMs": 73.021555,
+          "scans": 1,
+          "cacheMs": 4.126844
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 51.494355,
+          "elapsedMs": 51.494766,
+          "maxScanMs": 51.484716999999996,
+          "scans": 1,
+          "cacheMs": 3.395023
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 41.923697000000004,
+          "elapsedMs": 41.923768,
+          "maxScanMs": 41.917626,
+          "scans": 1,
+          "cacheMs": 1.977697
+        }
+      ]
+    },
+    {
+      "fixture": "zh-3840-24-short-猫.png",
+      "profile": "Focused",
+      "width": 3840,
+      "height": 2160,
+      "expectedText": "猫",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 33.0,
+            "width": 32.0,
+            "x": 836.0,
+            "y": 529.0
+          },
+          "confidence": 0.9985719919204712,
+          "language": "zh",
+          "script": "Hani",
+          "text": "猫"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 68.134172,
+          "elapsedMs": 68.134292,
+          "maxScanMs": 68.12486399999999,
+          "scans": 1,
+          "cacheMs": 3.1977759999999997
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 42.544275999999996,
+          "elapsedMs": 42.544406,
+          "maxScanMs": 42.537484,
+          "scans": 1,
+          "cacheMs": 1.761646
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 43.335247,
+          "elapsedMs": 43.335367,
+          "maxScanMs": 43.328624000000005,
+          "scans": 1,
+          "cacheMs": 1.91482
+        }
+      ]
+    },
+    {
+      "fixture": "zh-3840-24-textured.png",
+      "profile": "AllText",
+      "width": 3840,
+      "height": 2160,
+      "expectedText": "你好世界。欢迎回来。",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 35.0,
+            "width": 235.0,
+            "x": 1796.0,
+            "y": 2032.0
+          },
+          "confidence": 0.9999065399169922,
+          "language": "zh",
+          "script": "Hani",
+          "text": "你好世界。欢迎回来。"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 277.593733,
+          "elapsedMs": 3997.281126,
+          "maxScanMs": 307.247865,
+          "scans": 16,
+          "cacheMs": 2.095387
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 221.210672,
+          "elapsedMs": 3908.727508,
+          "maxScanMs": 293.963878,
+          "scans": 16,
+          "cacheMs": 1.9688700000000001
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 215.59611,
+          "elapsedMs": 3950.685756,
+          "maxScanMs": 293.347703,
+          "scans": 16,
+          "cacheMs": 2.138196
+        }
+      ]
+    },
+    {
+      "fixture": "zh-3840-24-textured.png",
+      "profile": "Focused",
+      "width": 3840,
+      "height": 2160,
+      "expectedText": "你好世界。欢迎回来。",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 35.0,
+            "width": 235.0,
+            "x": 1796.0,
+            "y": 2032.0
+          },
+          "confidence": 0.9999065399169922,
+          "language": "zh",
+          "script": "Hani",
+          "text": "你好世界。欢迎回来。"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 258.959618,
+          "elapsedMs": 3939.47064,
+          "maxScanMs": 300.944781,
+          "scans": 16,
+          "cacheMs": 1.80679
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 185.470992,
+          "elapsedMs": 3858.546543,
+          "maxScanMs": 290.100219,
+          "scans": 16,
+          "cacheMs": 1.809485
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 193.29342499999998,
+          "elapsedMs": 3861.1407,
+          "maxScanMs": 284.410714,
+          "scans": 16,
+          "cacheMs": 2.401025
+        }
+      ]
+    },
+    {
+      "fixture": "zh-3840-24-top-left.png",
+      "profile": "AllText",
+      "width": 3840,
+      "height": 2160,
+      "expectedText": "你好世界。欢迎回来。",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 33.0,
+            "width": 234.0,
+            "x": 4.0,
+            "y": 8.0
+          },
+          "confidence": 0.9999715089797974,
+          "language": "zh",
+          "script": "Hani",
+          "text": "你好世界。欢迎回来。"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 77.79453,
+          "elapsedMs": 77.79493099999999,
+          "maxScanMs": 77.778841,
+          "scans": 1,
+          "cacheMs": 4.134829
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 49.288582999999996,
+          "elapsedMs": 49.288713,
+          "maxScanMs": 49.280428,
+          "scans": 1,
+          "cacheMs": 2.02204
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 53.193254,
+          "elapsedMs": 53.193374,
+          "maxScanMs": 53.185168999999995,
+          "scans": 1,
+          "cacheMs": 2.154817
+        }
+      ]
+    },
+    {
+      "fixture": "zh-3840-24-top-left.png",
+      "profile": "Focused",
+      "width": 3840,
+      "height": 2160,
+      "expectedText": "你好世界。欢迎回来。",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 33.0,
+            "width": 234.0,
+            "x": 4.0,
+            "y": 8.0
+          },
+          "confidence": 0.9999715089797974,
+          "language": "zh",
+          "script": "Hani",
+          "text": "你好世界。欢迎回来。"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 40.602861,
+          "elapsedMs": 40.602992,
+          "maxScanMs": 40.586201,
+          "scans": 1,
+          "cacheMs": 1.8239109999999998
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 39.507985000000005,
+          "elapsedMs": 39.508106,
+          "maxScanMs": 39.499029,
+          "scans": 1,
+          "cacheMs": 1.7898779999999999
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 39.312861999999996,
+          "elapsedMs": 39.312993,
+          "maxScanMs": 39.303796000000006,
+          "scans": 1,
+          "cacheMs": 1.797312
+        }
+      ]
+    },
+    {
+      "fixture": "zh-3840-24-top-right.png",
+      "profile": "AllText",
+      "width": 3840,
+      "height": 2160,
+      "expectedText": "你好世界。欢迎回来。",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 33.0,
+            "width": 234.0,
+            "x": 3588.0,
+            "y": 8.0
+          },
+          "confidence": 0.9999715089797974,
+          "language": "zh",
+          "script": "Hani",
+          "text": "你好世界。欢迎回来。"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 71.980388,
+          "elapsedMs": 71.980689,
+          "maxScanMs": 71.960331,
+          "scans": 1,
+          "cacheMs": 2.600265
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 45.092185,
+          "elapsedMs": 45.092316000000004,
+          "maxScanMs": 45.0841,
+          "scans": 1,
+          "cacheMs": 2.040354
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 51.849754999999995,
+          "elapsedMs": 51.849875,
+          "maxScanMs": 51.841189,
+          "scans": 1,
+          "cacheMs": 2.027501
+        }
+      ]
+    },
+    {
+      "fixture": "zh-3840-24-top-right.png",
+      "profile": "Focused",
+      "width": 3840,
+      "height": 2160,
+      "expectedText": "你好世界。欢迎回来。",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 33.0,
+            "width": 234.0,
+            "x": 3588.0,
+            "y": 8.0
+          },
+          "confidence": 0.9999715089797974,
+          "language": "zh",
+          "script": "Hani",
+          "text": "你好世界。欢迎回来。"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 42.810666999999995,
+          "elapsedMs": 42.81095800000001,
+          "maxScanMs": 42.796531,
+          "scans": 1,
+          "cacheMs": 2.057025
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 40.272703,
+          "elapsedMs": 40.272984,
+          "maxScanMs": 40.261663000000006,
+          "scans": 1,
+          "cacheMs": 2.117397
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 40.027902,
+          "elapsedMs": 40.028183,
+          "maxScanMs": 40.018104,
+          "scans": 1,
+          "cacheMs": 2.1142909999999997
+        }
+      ]
+    },
+    {
+      "fixture": "zh-3840-24.png",
+      "profile": "AllText",
+      "width": 3840,
+      "height": 2160,
+      "expectedText": "你好世界。欢迎回来。",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 30.0,
+            "width": 232.0,
+            "x": 1798.0,
+            "y": 2036.0
+          },
+          "confidence": 0.9999745488166809,
+          "language": "zh",
+          "script": "Hani",
+          "text": "你好世界。欢迎回来。"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 75.123684,
+          "elapsedMs": 75.123914,
+          "maxScanMs": 75.107003,
+          "scans": 1,
+          "cacheMs": 4.52228
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 49.406090999999996,
+          "elapsedMs": 49.406161,
+          "maxScanMs": 49.393157,
+          "scans": 1,
+          "cacheMs": 3.9122649999999997
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 62.074698999999995,
+          "elapsedMs": 62.074819000000005,
+          "maxScanMs": 62.065903,
+          "scans": 1,
+          "cacheMs": 2.1174079999999997
+        }
+      ]
+    },
+    {
+      "fixture": "zh-3840-24.png",
+      "profile": "Focused",
+      "width": 3840,
+      "height": 2160,
+      "expectedText": "你好世界。欢迎回来。",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 30.0,
+            "width": 232.0,
+            "x": 1798.0,
+            "y": 2036.0
+          },
+          "confidence": 0.9999745488166809,
+          "language": "zh",
+          "script": "Hani",
+          "text": "你好世界。欢迎回来。"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 41.936955999999995,
+          "elapsedMs": 41.937117,
+          "maxScanMs": 41.92279,
+          "scans": 1,
+          "cacheMs": 1.988868
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 43.47689,
+          "elapsedMs": 43.47701,
+          "maxScanMs": 43.467613,
+          "scans": 1,
+          "cacheMs": 1.981334
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 43.452451,
+          "elapsedMs": 43.452591,
+          "maxScanMs": 43.442222,
+          "scans": 1,
+          "cacheMs": 1.96833
+        }
+      ]
+    },
+    {
+      "fixture": "zh-3840-48-region.png",
+      "profile": "AllText",
+      "width": 980,
+      "height": 180,
+      "expectedText": "你好世界。欢迎回来。",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 62.0,
+            "width": 459.0,
+            "x": 244.0,
+            "y": 59.0
+          },
+          "confidence": 0.999954104423523,
+          "language": "zh",
+          "script": "Hani",
+          "text": "你好世界。欢迎回来。"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 57.383836,
+          "elapsedMs": 57.383916,
+          "maxScanMs": 57.36861699999999,
+          "scans": 1,
+          "cacheMs": 0.05398
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 53.929711,
+          "elapsedMs": 53.929952,
+          "maxScanMs": 53.922127,
+          "scans": 1,
+          "cacheMs": 0.0537
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 57.088287,
+          "elapsedMs": 57.088367,
+          "maxScanMs": 57.080763,
+          "scans": 1,
+          "cacheMs": 0.054251
+        }
+      ]
+    },
+    {
+      "fixture": "zh-3840-48-region.png",
+      "profile": "Focused",
+      "width": 980,
+      "height": 180,
+      "expectedText": "你好世界。欢迎回来。",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 62.0,
+            "width": 459.0,
+            "x": 244.0,
+            "y": 59.0
+          },
+          "confidence": 0.999954104423523,
+          "language": "zh",
+          "script": "Hani",
+          "text": "你好世界。欢迎回来。"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 62.81734999999999,
+          "elapsedMs": 62.81752,
+          "maxScanMs": 62.802001999999995,
+          "scans": 1,
+          "cacheMs": 0.04842
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 55.822233,
+          "elapsedMs": 55.822433,
+          "maxScanMs": 55.813236,
+          "scans": 1,
+          "cacheMs": 0.043782
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 54.460801000000004,
+          "elapsedMs": 54.461072,
+          "maxScanMs": 54.446192999999994,
+          "scans": 1,
+          "cacheMs": 0.15546900000000002
+        }
+      ]
+    },
+    {
+      "fixture": "zh-3840-48.png",
+      "profile": "AllText",
+      "width": 3840,
+      "height": 2160,
+      "expectedText": "你好世界。欢迎回来。",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 60.0,
+            "width": 456.0,
+            "x": 1677.0,
+            "y": 2021.0
+          },
+          "confidence": 0.9999416470527649,
+          "language": "zh",
+          "script": "Hani",
+          "text": "你好世界。欢迎回来。"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 81.760655,
+          "elapsedMs": 81.760766,
+          "maxScanMs": 81.750647,
+          "scans": 1,
+          "cacheMs": 2.0499419999999997
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 62.348197,
+          "elapsedMs": 62.348408,
+          "maxScanMs": 62.334432,
+          "scans": 1,
+          "cacheMs": 5.419888
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 60.232351,
+          "elapsedMs": 60.232431000000005,
+          "maxScanMs": 60.224337000000006,
+          "scans": 1,
+          "cacheMs": 2.065661
+        }
+      ]
+    },
+    {
+      "fixture": "zh-3840-48.png",
+      "profile": "Focused",
+      "width": 3840,
+      "height": 2160,
+      "expectedText": "你好世界。欢迎回来。",
+      "finalRegions": [
+        {
+          "bounds": {
+            "height": 60.0,
+            "width": 456.0,
+            "x": 1677.0,
+            "y": 2021.0
+          },
+          "confidence": 0.9999416470527649,
+          "language": "zh",
+          "script": "Hani",
+          "text": "你好世界。欢迎回来。"
+        }
+      ],
+      "passes": [
+        {
+          "pass": 0,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 75.375572,
+          "elapsedMs": 75.375652,
+          "maxScanMs": 75.35848,
+          "scans": 1,
+          "cacheMs": 3.9404770000000005
+        },
+        {
+          "pass": 1,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 54.915667,
+          "elapsedMs": 54.915856999999995,
+          "maxScanMs": 54.90676,
+          "scans": 1,
+          "cacheMs": 2.242881
+        },
+        {
+          "pass": 2,
+          "exactMatch": true,
+          "geometryMatch": true,
+          "firstMatchMs": 53.620829,
+          "elapsedMs": 53.621019,
+          "maxScanMs": 53.612022,
+          "scans": 1,
+          "cacheMs": 2.1367629999999997
+        }
+      ]
+    }
+  ],
+  "nativeWindows": {
+    "os": "Windows 11 10.0.26200.0",
+    "profile": "Focused",
+    "timing": "capture start to first normalized text match; OCR model already loaded",
+    "scope": "synthetic WGC fixture, not translation or Tauri overlay timing",
+    "runs": [
+      {
+        "captureToOcrMs": 229.9159,
+        "cycle": 0,
+        "frames": 3,
+        "height": 1080,
+        "language": "zh",
+        "matched": true,
+        "mode": "window",
+        "stopMs": 16.8875,
+        "width": 1920
+      },
+      {
+        "captureToOcrMs": 197.2747,
+        "cycle": 0,
+        "frames": 3,
+        "height": 1080,
+        "language": "zh",
+        "matched": true,
+        "mode": "display",
+        "stopMs": 13.0938,
+        "width": 1920
+      },
+      {
+        "captureToOcrMs": 226.71079999999998,
+        "cycle": 0,
+        "frames": 3,
+        "height": 180,
+        "language": "zh",
+        "matched": true,
+        "mode": "region",
+        "stopMs": 17.121299999999998,
+        "width": 980
+      },
+      {
+        "captureToOcrMs": 192.7875,
+        "cycle": 1,
+        "frames": 3,
+        "height": 1080,
+        "language": "zh",
+        "matched": true,
+        "mode": "window",
+        "stopMs": 14.7728,
+        "width": 1920
+      },
+      {
+        "captureToOcrMs": 200.3887,
+        "cycle": 1,
+        "frames": 3,
+        "height": 1080,
+        "language": "zh",
+        "matched": true,
+        "mode": "display",
+        "stopMs": 14.8034,
+        "width": 1920
+      },
+      {
+        "captureToOcrMs": 219.55949999999999,
+        "cycle": 1,
+        "frames": 3,
+        "height": 180,
+        "language": "zh",
+        "matched": true,
+        "mode": "region",
+        "stopMs": 17.1907,
+        "width": 980
+      },
+      {
+        "captureToOcrMs": 205.9931,
+        "cycle": 2,
+        "frames": 3,
+        "height": 1080,
+        "language": "zh",
+        "matched": true,
+        "mode": "window",
+        "stopMs": 16.337899999999998,
+        "width": 1920
+      },
+      {
+        "captureToOcrMs": 215.6726,
+        "cycle": 2,
+        "frames": 3,
+        "height": 1080,
+        "language": "zh",
+        "matched": true,
+        "mode": "display",
+        "stopMs": 16.1695,
+        "width": 1920
+      },
+      {
+        "captureToOcrMs": 242.8293,
+        "cycle": 2,
+        "frames": 3,
+        "height": 180,
+        "language": "zh",
+        "matched": true,
+        "mode": "region",
+        "stopMs": 18.2062,
+        "width": 980
+      },
+      {
+        "captureToOcrMs": 217.095,
+        "cycle": 0,
+        "frames": 3,
+        "height": 1080,
+        "language": "es",
+        "matched": true,
+        "mode": "window",
+        "stopMs": 16.1525,
+        "width": 1920
+      },
+      {
+        "captureToOcrMs": 207.65890000000002,
+        "cycle": 0,
+        "frames": 3,
+        "height": 1080,
+        "language": "es",
+        "matched": true,
+        "mode": "display",
+        "stopMs": 16.6542,
+        "width": 1920
+      },
+      {
+        "captureToOcrMs": 212.6612,
+        "cycle": 0,
+        "frames": 3,
+        "height": 180,
+        "language": "es",
+        "matched": true,
+        "mode": "region",
+        "stopMs": 14.9841,
+        "width": 980
+      },
+      {
+        "captureToOcrMs": 201.7984,
+        "cycle": 1,
+        "frames": 3,
+        "height": 1080,
+        "language": "es",
+        "matched": true,
+        "mode": "window",
+        "stopMs": 15.1144,
+        "width": 1920
+      },
+      {
+        "captureToOcrMs": 209.6782,
+        "cycle": 1,
+        "frames": 3,
+        "height": 1080,
+        "language": "es",
+        "matched": true,
+        "mode": "display",
+        "stopMs": 16.135900000000003,
+        "width": 1920
+      },
+      {
+        "captureToOcrMs": 205.7047,
+        "cycle": 1,
+        "frames": 3,
+        "height": 180,
+        "language": "es",
+        "matched": true,
+        "mode": "region",
+        "stopMs": 17.781200000000002,
+        "width": 980
+      },
+      {
+        "captureToOcrMs": 223.7375,
+        "cycle": 2,
+        "frames": 3,
+        "height": 1080,
+        "language": "es",
+        "matched": true,
+        "mode": "window",
+        "stopMs": 13.613399999999999,
+        "width": 1920
+      },
+      {
+        "captureToOcrMs": 219.42329999999998,
+        "cycle": 2,
+        "frames": 3,
+        "height": 1080,
+        "language": "es",
+        "matched": true,
+        "mode": "display",
+        "stopMs": 15.5776,
+        "width": 1920
+      },
+      {
+        "captureToOcrMs": 219.3602,
+        "cycle": 2,
+        "frames": 3,
+        "height": 180,
+        "language": "es",
+        "matched": true,
+        "mode": "region",
+        "stopMs": 19.2989,
+        "width": 980
+      }
+    ]
+  }
+}

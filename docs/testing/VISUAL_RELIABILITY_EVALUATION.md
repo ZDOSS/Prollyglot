@@ -1,107 +1,141 @@
 # Visual reliability evaluation
 
-Version 0.1.13 fixes independent sources of missed or late labels: cold-load
-deadlines, retry starvation, reversed queue priority, isolated change-detection
-samples, short-text filtering, OCR reading order, global overlay echo matching,
-and late completion after disappearance. It also preserves the audio session
-clock through WASAPI recovery. These are covered by deterministic regressions.
+Version 0.1.14 addresses the small full-display text missed by 0.1.13. The
+adapter discovers contrast regions at native resolution, divides large busy
+areas into overlapping tiles, and schedules bounded passes on current frames.
+Unchanged recognition is reused only after pixel comparison, and changed text
+is invalidated before a deferred rescan. The model and CPU provider are unchanged.
 
-Small text on a whole display remains a detector limitation. Sharper recognition
-crops cannot recover a box the detector never found. The current model and CPU
-provider remain unchanged; a larger model is not a demonstrated remedy.
+The 0.1.13 fixes remain covered: cold-load deadlines, retry starvation, queue
+priority, change detection, short-text filtering, reading order, overlay echoes,
+late translations, and the audio session clock through WASAPI recovery.
 
 ## Repeatable local checks
 
-Run `bash scripts/check-local.sh` for the shared tests, lint, Windows cross-check,
-generated contracts, TypeScript tests, and frontend build. The Windows script in
-`scripts/` runs the corresponding native checks on the supported platform.
+Run `bash scripts/check-local.sh` for shared tests, lint, Windows cross-check,
+generated contracts, version consistency, TypeScript tests, and frontend build.
+`scripts/check-windows.ps1` also executes native Windows tests and a real MSVC
+build/link of the desktop application.
 
-With the Vite development server running, use an existing Playwright installation:
+With the Vite development server running, reuse an existing Playwright installation:
 
 ```sh
 node scripts/check-visual-browser.mjs http://localhost:1420 target/visual-evaluation
 ```
 
-If Playwright or Chromium is installed elsewhere, set
-`PROLLYGLOT_PLAYWRIGHT_MODULE` to its `index.mjs` and `PROLLYGLOT_CHROMIUM` to the
-browser executable. This checks controls at 1280, 420, and 400 pixels, accessible
-navigation, the OCR source choices, and label geometry at all four edges. It
-also explicitly writes synthetic Chinese/Spanish PNG fixtures at 1080p and 4K,
-with 24- and 48-pixel text, plus 980 × 180 crops of the same source pixels.
-Nothing is downloaded by this script.
+Set `PROLLYGLOT_PLAYWRIGHT_MODULE` to its `index.mjs` and `PROLLYGLOT_CHROMIUM` to
+the browser executable when they are installed elsewhere. The Browser plugin
+was unavailable in this environment, so verification used regular Playwright
+and the existing Chromium installation. No browser dependency was added.
 
-Point the local OCR evaluator at the verified, already installed model directory:
+This checks controls at 1280, 420, and 400 pixels, source-language choices,
+console errors, and overlay clamping at all edges down to 240 pixels. It writes
+only explicitly generated synthetic fixtures: 1080p/4K Chinese and Spanish at
+24/48 pixels, corresponding 980 × 180 crops, text eight pixels from display
+edges, tile seams, short words, and a fully textured 4K background. `manifest.json`
+records expected source text and geometry from the rendered DOM.
 
-```sh
-cargo run --locked -p prollyglot-visual-ocr-rapid --example evaluate -- MODEL_DIRECTORY zh target/visual-evaluation/zh-1920-24.png target/visual-evaluation/zh-1920-24-region.png
-cargo run --locked -p prollyglot-visual-ocr-rapid --example evaluate -- MODEL_DIRECTORY es target/visual-evaluation/es-3840-24.png target/visual-evaluation/es-3840-24-region.png
-```
-
-The evaluator uses the production All detected text OCR adapter. JSON lines
-include model-load time, three passes per PNG, detector/recognizer/preprocessing
-timings, and the actual recognized text. Pass 0 is first-use inference; passes 1
-and 2 are warm. This explicit fixture tool prints text, unlike the application's
-media-free timing diagnostics. It does not measure OS capture, translation, or
-overlay delivery. Keep those stages separate when interpreting results.
-
-The vendor crop regression is run separately:
+Point the local OCR evaluator at the already installed, verified model directory:
 
 ```sh
-cargo test --manifest-path vendor/rapidocr-core/Cargo.toml --no-default-features --lib prollyglot_source_crops
+cargo run --locked -p prollyglot-visual-ocr-rapid --example evaluate -- --focused MODEL_DIRECTORY zh target/visual-evaluation/zh-3840-24.png
+cargo run --locked -p prollyglot-visual-ocr-rapid --example evaluate -- MODEL_DIRECTORY es target/visual-evaluation/es-3840-24-textured.png
 ```
 
-## Native Windows acceptance
+Omit `--focused` for All detected text. Both use the production adapter. When
+fixture metadata is present, the evaluator fails on incorrect text or bounding
+box intersection-over-union below 0.3. Each PNG receives three actual inference
+runs, with the scan cache reset between runs. A separate unchanged-frame check
+verifies cache equality and that new overlay filters still apply; a blank frame
+must remove the previous text. These are model-backed assertions, not mock OCR.
 
-Open [the timed fixture](fixtures/visual-subtitles.html) in a browser. Select
-Chinese or Spanish, then **Play sequence**. Sentences remain for three seconds,
-followed by a one-second blank. **Hold first sentence** tests static text and
-cold model loading. The sequence includes “No”, “Sí”, “OK”, and a single Han
-character. The expected translations include “Good morning. How are you?” and
-“Hello world. Welcome back.”; exact wording is not the translation accuracy test.
+JSON lines distinguish first scan, first correct text, maximum individual scan,
+complete coverage, and cache reuse. Stage timings sum every scan in a run. The
+first model use is cold inference; later runs are warm. Coverage scans here run
+back-to-back on a static PNG: they exclude capture cadence, stabilization,
+translation, and overlay delivery. Complete coverage can therefore take longer
+in the live pipeline. The explicit fixture tool prints synthetic source text;
+the application's diagnostics continue to contain only counts and timings.
 
-Compare each source at the same resolution and font size:
+## Native Windows capture verification
 
-| Case | Record |
+Run the following in native Windows PowerShell with the OCR pack installed:
+
+```powershell
+.\scripts\check-visual-windows.ps1 -ModelDirectory 'PATH\TO\OCR\MODEL\DIRECTORY'
+```
+
+The script builds `capture_check`, opens its own synthetic fullscreen fixture on
+a secondary monitor when available, and closes that process after each language.
+It does not change display settings, install models, or save captured pixels.
+Escape closes the fixture; it also expires automatically after 90 seconds.
+
+For each language it exercises selected-window, selected-display, and selected-
+region WGC capture three times. Every session checks at least three frames with
+increasing sequence/timestamps, expected recognized text, and capture shutdown
+within two seconds. It uses the default Prominent text profile. The expected
+text match ignores punctuation/case; this is source detection, not translation
+accuracy. Timing starts before capture startup, after the OCR model is loaded.
+
+The 2026-09-08 Windows 11 build 26200 run passed all 18 sessions on a 1920 × 1080
+display, plus 980 × 180 region capture. First matching text arrived in
+193–243 ms (median 214 ms), and Stop took 13–20 ms. The fixture's small animated
+marker exercised frame delivery while its sentence remained static. This
+verifies real WGC capture, OCR, and repeated capture shutdown; it does not prove
+Tauri overlay delivery, moving-media accuracy, or a complete application soak.
+
+## Evidence and remaining acceptance
+
+All **192 inference passes** (32 fixtures × two profiles × three runs) passed
+exact source text and geometry checks on 2026-09-08. Separate cache, overlay
+filter, and disappearance assertions also passed. This includes the four
+previously failing 4K cases, short “No”, “Sí”, “OK”, and “猫”, actual display edges,
+and a textured background that forces all 16 detection tiles.
+
+With no build checks competing for CPU, warm runs measured:
+
+| Fixture group | First correct OCR result | Complete scan |
+| --- | --- | --- |
+| Sparse 1080p/4K full frames, corners, short words | 27–75 ms | Same pass |
+| 980 × 180 crops | 49–64 ms | Same pass |
+| Fully textured 4K, subtitle near lower center | 185–222 ms | 3.86–3.96 s |
+
+These are ranges across a small synthetic set, not latency guarantees. The
+largest individual warm scan was 305 ms; static full-frame cache checks took
+about 0.5–5.8 ms. The textured case demonstrates early useful output while
+coverage continues, and does not imply every text position receives that timing.
+
+The local check script passed shared Rust tests, 58 TypeScript tests, Clippy,
+formatting, generated contracts, Windows cross-checks, and the frontend build.
+The native Windows gate passed its Rust/desktop tests, the same frontend tests,
+workspace Clippy, and an actual MSVC desktop build/link. Four opt-in download/model
+tests remain excluded from those default suites; the OCR model itself was
+exercised by the explicit evaluations above.
+
+[The 0.1.14 results](results/visual-ocr-0.1.14.json) record the synthetic corpus
+and native capture runs. The earlier [0.1.13 baseline](results/visual-ocr-0.1.13.json)
+missed all four 4K full-frame cases while recognizing all eight crops and the
+four full-frame 1080p cases. Its serial warm OCR medians were 79–119 ms for crops,
+367–427 ms for successful 1080p frames, and 530–605 ms for unsuccessful 4K frames.
+Both runs used the manifest's size- and SHA-256-verified PP-OCRv6 artifacts on
+the same Ryzen 7 8745HS development host with four inference threads.
+
+Progressive detection improves the first useful result but does not make a dense
+4K scan instantaneous. Text outside the first areas can still be late, especially
+on constantly changing backgrounds. Native physical 4K capture, mixed-DPI monitor
+moves, and the following real-media checks remain acceptance work:
+
+| Check | What still needs observation |
 | --- | --- |
-| Whole display, selected window, selected region | Missed sentences / total; source width, height, and Windows display scaling |
-| Chinese → English, Spanish → English | OCR correctness separately from human-rated translation faithfulness |
-| Cold route, warm compact route, optional universal route | Time from source appearance to first readable translation; median and worst case over at least 20 sentences |
-| Text disappears during OCR or translation | Number of newly appearing late labels; target zero after absence is confirmed |
-| Static sign, short words, multi-line text, moving video | Missing text, reordered words, flicker, overlay feedback, and clipping |
-| Audio device/application recovery with Nemotron | Transcript timestamps remain increasing; short recovered audio does not finalize repeatedly at the four-second boundary |
+| Chinese → English and Spanish → English video/game text | Misses over at least 20 sentences; OCR correctness separately from human-rated translation faithfulness |
+| Cold translator and warm compact route | Source appearance to first readable translated label; warm labels should normally begin within two seconds |
+| Disappearance during OCR/translation | No newly appearing label after absence is confirmed; existing-label retention follows the documented policy |
+| Moving window, mixed DPI, fullscreen media | Overlay alignment, clipping, focus/click-through, feedback, and WGC/OBS parity if capture fails |
+| Audio and full application lifecycle | Device/application reconnect, Nemotron clock continuity, Start/Stop during loading, and comparable post-stop resources |
 
-Warm compact translation should normally become readable within two seconds.
-Record startup separately. Preserve source text for accuracy comparison, and
-compare WGC display capture with equivalent OBS Display Capture when capture
-itself fails. The existing Windows visual smoke test remains the capture/DPI
-and overlay acceptance guide.
-
-## Local evidence and remaining work
-
-The 2026-09-07 WSL CPU run (Ryzen 7 8745HS, four OCR inference threads) used
-the exact size- and SHA-256-verified PP-OCRv6
-manifest artifacts and Chromium-rendered synthetic fixtures. All eight cropped
-cases reproduced the expected Chinese or Spanish text exactly in all three
-passes. The four 1080p full-frame cases also recognized the expected text; all
-four 4K full-frame cases missed it entirely. These sparse, clean fixtures are
-a reason to retain varied media cases and avoid claiming full-display reliability
-from one successful screenshot. [Recorded per-fixture results](results/visual-ocr-0.1.13.json)
-include the warm timings and exact-text pass counts.
-
-In a serial run without the build checks competing for CPU, the per-fixture
-median of the two warm passes was 79–119 ms for crops, 367–427 ms for the
-successful 1080p full frames, and 530–605 ms for the unsuccessful 4K full frames.
-These are OCR-only observations from a small synthetic set, not statistical
-latency targets or before/after speedup claims.
-
-These small synthetic runs establish a scale-sensitive detector problem, not a
-Windows performance or accuracy certification. Model initialization and actual
-OCR inference were exercised; native WASAPI/WGC, translation model accuracy,
-multi-monitor DPI, and live overlay timing still require the Windows matrix.
-
-The next performance work should compare detection on regions at sufficient
-resolution, with current text regions prioritized and unchanged recognition
-reused. Benchmark its whole-display recall and total latency before enabling it
-by default. GPU execution or a different OCR model should follow that comparison
-if CPU inference still exceeds the latency target. Tiling every frame without
-a work budget could improve recall while recreating the delayed-label problem.
+Use [the timed Chinese/Spanish fixture](fixtures/visual-subtitles.html) for a
+controlled live sequence (three seconds visible, one second blank), then actual
+media. Follow the [visual smoke](WINDOWS_VISUAL_SMOKE_TEST.md) and
+[lifecycle soak](WINDOWS_LIFECYCLE_SOAK.md) for the remaining application-level
+checks. Automated capture and OCR passes do not close these acceptance items or
+establish Ubuntu readiness by themselves.
