@@ -37,11 +37,11 @@ Why this direction:
 | Milestone | Integrated outcome | Status |
 | --- | --- | --- |
 | S. Structural integrity program | Replace patched orchestration with supervised sessions, bounded translation and presentation work, generated contracts, maintainable desktop pages, unified local state, and portable capture boundaries | In progress; S1–S3 and S4 implementation/docs are integrated, native Windows lifecycle soak pending |
-| 1. Windows capture foundation | A real Windows desktop shell can enumerate and capture either a selected output device or selected application | Selected-device Windows smoke passed; application and lifecycle validation remain |
+| 1. Windows capture foundation | A real Windows desktop shell can enumerate and capture either a selected output device or selected application | Selected-device owner smoke and native synthetic device/application isolation/restart checks passed; real-application and physical-device acceptance remain |
 | 2. Live English captions | Captured audio becomes stable partial and final English captions locally | Device-to-caption and corrected UI/context re-smokes passed; accented/conversational model evidence and application/lifecycle validation remain |
 | 3. Minimal customizable Windows app | The complete daily-use interface, overlay customization, transcript view, and controls work together | Pending |
 | 4. Windows MVP release | A reliable installable Windows build is ready for outside testing | Pending |
-| 5. Ubuntu port | The Windows-proven core runs on one supported Ubuntu LTS release through PipeWire | Pending |
+| 5. Ubuntu port | The Windows-proven core runs on one supported Ubuntu LTS release through PipeWire | Experimental Ubuntu 26.04 output-to-caption and `.deb` slice integrated in 0.2.0; application capture and native GNOME/release acceptance pending |
 | 6. Multilingual captions and translation | Downloadable language support, local translation, and dual captions are production-ready | 29 forced spoken languages, four compact language models, compact-to-English and 29-language many-to-many routes integrated; Windows quality, latency, and automatic-language constraints remain pending |
 | 7. Visual text translation | A selected region, application window, or display becomes locally translated positioned text | Experimental WGC/OCR/positioned-overlay slice integrated; native Windows media, DPI, performance, and OBS/DXGI parity remain pending |
 
@@ -853,11 +853,36 @@ Harden the complete Windows application into an installable public beta.
 
 ## Milestone 5 — Ubuntu port
 
-Port the proven product rather than designing Windows and Linux simultaneously.
+Reuse the existing shared pipeline. On 2026-09-08 the owner authorized beginning
+this experimental port while Windows owner/release checks remain open. Windows
+remains the first production target; this parallel development does not make
+either platform release-ready.
+
+### Initial slice — 0.2.0
+
+- Selected Ubuntu 26.04 LTS amd64 with PipeWire/WirePlumber and a native `.deb`.
+- Implemented output enumeration, follow-default and pinned-output capture,
+  bounded Stop, waiting/recovery after removal and recreation, and continuous
+  capture timing. No microphone or unrelated-output fallback is allowed.
+- Reused local speech inference, transcript, configuration, models, and caption
+  presentation. The first overlay path uses X11/XWayland; hidden GTK surfaces
+  are realized before applying input controls to avoid a startup crash.
+- A private PipeWire graph verifies tone isolation, changing defaults during
+  concurrent enumeration, output disappearance/recreation, and bounded Stop.
+  Native WebKitGTK automation on Ubuntu/WSLg verifies real public-fixture speech
+  through the Fast model into both the transcript and caption overlay, plus
+  repeated Start/Stop and Appearance-window cleanup. These are development
+  checks, not physical-device or GNOME compositor acceptance.
+- Built the optimized `.deb`, verified private-library resolution and captions
+  from its extracted executable, then checked install, installed-app launch,
+  and removal on the development Ubuntu/WSL system. Fresh GNOME installation
+  and upgrade remain release gates.
+- See [Ubuntu validation](docs/testing/UBUNTU_SMOKE_TEST.md) for evidence,
+  reproducible commands, package checks, and the remaining work.
 
 ### Included outcome
 
-- One explicitly selected Ubuntu LTS version and a documented support matrix.
+- Ubuntu 26.04 LTS amd64 and a documented support matrix.
 - PipeWire enumeration and capture for a selected output monitor and selected application stream/group.
 - Reuse of the same normalized audio, ASR, transcript, configuration, and model-management core.
 - Ubuntu-specific application grouping and stream-recreation recovery.
@@ -988,4 +1013,6 @@ Work should continue until one of these gates is actually reached:
 - GitHub-hosted runner minutes are intentionally conserved. A lack of continuous hosted validation is not a blocker when equivalent local checks pass; manually dispatched jobs are used only where their environment or artifact is materially useful.
 - Windows signing and store publication require owner-controlled identity and credentials.
 - Model distribution stops if commercial use, redistribution, or derivative rights are unclear.
-- Exact Ubuntu LTS selection is deferred until Milestone 5 so the support window is current when porting begins.
+- Ubuntu 26.04 LTS amd64 is selected for Milestone 5. A fresh native GNOME
+  installation and physical audio/display hardware are required for full
+  acceptance; WSLg and an isolated synthetic PipeWire graph cannot establish it.

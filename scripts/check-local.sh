@@ -10,6 +10,7 @@ cargo test --locked \
   -p prollyglot-config \
   -p prollyglot-core \
   -p prollyglot-audio-pipeline \
+  -p prollyglot-audio-pipewire \
   -p prollyglot-audio-windows \
   -p prollyglot-asr \
   -p prollyglot-asr-sherpa \
@@ -25,6 +26,7 @@ cargo clippy --locked \
   -p prollyglot-config \
   -p prollyglot-core \
   -p prollyglot-audio-pipeline \
+  -p prollyglot-audio-pipewire \
   -p prollyglot-audio-windows \
   -p prollyglot-asr \
   -p prollyglot-asr-sherpa \
@@ -60,6 +62,10 @@ elif [[ -d "/mnt/c/Program Files (x86)/Windows Kits/10/bin" ]]; then
   fi
 else
   echo "Skipping the desktop Windows cross-check: install llvm-rc or x86_64-w64-mingw32-windres."
+fi
+if pkg-config --exists webkit2gtk-4.1 libpipewire-0.3; then
+  cargo test --locked -p prollyglot-desktop --lib
+  cargo clippy --locked -p prollyglot-desktop --all-targets -- -D warnings
 fi
 cargo run --locked -p prollyglot-application-runtime --bin export-runtime-bindings -- --check
 pnpm --dir apps/desktop test

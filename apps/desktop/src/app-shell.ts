@@ -20,6 +20,7 @@ export interface AppShellElements {
   modelSetupTitle: HTMLElement;
   sessionPreviewContent: HTMLElement;
   sourceSelect: HTMLSelectElement;
+  sourceMessage: HTMLElement;
   spokenLanguage: HTMLSelectElement;
   statusLabel: HTMLElement;
   statusText: HTMLElement;
@@ -177,7 +178,7 @@ export function mountAppShell(root: HTMLElement, version: string): AppShellEleme
                       </select>
                       ${icons.chevronDown}
                     </div>
-                    <span id="source-help" class="sr-only">Choose all audio from a playback device or one application.</span>
+                    <span id="source-help" class="sr-only">Choose the audio source you want to caption.</span>
                   </div>
 
                   <div class="field-group" id="device-field">
@@ -188,6 +189,7 @@ export function mountAppShell(root: HTMLElement, version: string): AppShellEleme
                     </div>
                   </div>
                 </div>
+                <p id="source-message" class="field-help" role="status" hidden></p>
 
                 <div class="field-grid">
                   <div class="field-group">
@@ -285,6 +287,7 @@ export function mountAppShell(root: HTMLElement, version: string): AppShellEleme
     modelSetupTitle: requireElement(root, "#model-setup-title"),
     sessionPreviewContent: requireElement(root, "#session-preview-content"),
     sourceSelect: requireElement(root, "#audio-source"),
+    sourceMessage: requireElement(root, "#source-message"),
     spokenLanguage: requireElement(root, "#spoken-language"),
     statusLabel: requireElement(root, ".status-label"),
     statusText: requireElement(root, "#status-text"),

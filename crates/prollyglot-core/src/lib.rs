@@ -226,7 +226,7 @@ pub trait CaptureSession: Send {
     fn stop(&mut self) -> Result<(), CaptureError>;
 }
 
-/// Narrow platform boundary implemented by WASAPI today and PipeWire later.
+/// Narrow platform boundary implemented by WASAPI and PipeWire.
 /// Desktop orchestration owns sessions through this contract and does not call
 /// an operating-system crate directly.
 pub trait AudioCaptureBackend: Send + Sync {

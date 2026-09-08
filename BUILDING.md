@@ -1,11 +1,39 @@
 # Building Prollyglot
 
 Windows 11 with the MSVC toolchain is the primary build and runtime target.
-Ubuntu/WSL can validate shared code, the frontend, and the complete Windows
-Tauri library target when a Windows SDK is mounted, but it cannot prove WASAPI,
-screen capture, overlay, or hardware behavior.
+Ubuntu 26.04 LTS amd64 is an experimental native build target. WSL can run its
+Linux checks and use Windows interop for native MSVC/WASAPI/WGC fixture tests;
+cross-compilation alone cannot prove capture or overlay behavior. WSLg checks
+also do not replace native Ubuntu GNOME and physical-device acceptance.
 
 There is no supported binary release yet.
+
+## Experimental Ubuntu prerequisites
+
+Use **Ubuntu 26.04 LTS amd64**, Rust 1.88 or newer with `rustfmt`/`clippy`,
+Node.js 22.12 or newer, and pnpm 11. The initial app uses PipeWire/WirePlumber
+output monitoring and X11/XWayland captions. Application capture and screen
+translation are Windows-only; native Wayland overlay acceptance is pending.
+Ubuntu 24.04 and other distributions are not supported package targets.
+
+Install native build and runtime dependencies:
+
+```bash
+sudo apt-get update
+sudo apt-get install build-essential pkg-config libclang-dev libssl-dev \
+  libpipewire-0.3-dev pipewire pipewire-bin wireplumber dbus-daemon \
+  libwebkit2gtk-4.1-dev libxdo-dev libayatana-appindicator3-dev \
+  librsvg2-dev patchelf
+pnpm --dir apps/desktop install --frozen-lockfile
+pnpm --dir apps/desktop tauri dev
+```
+
+Run from the repository root in the same desktop session as PipeWire and
+WirePlumber. Do not run the app with `sudo`. A normal Ubuntu desktop supplies
+these user services; WSLg's PulseAudio server alone is not a PipeWire session.
+Missing PipeWire connections appear below the playback-device controls.
+When `DISPLAY` is present the app selects GTK's X11 backend; an explicit
+`GDK_BACKEND` is honored. Native Wayland is not yet an accepted overlay path.
 
 ## Windows prerequisites
 
@@ -68,19 +96,37 @@ non-failure such as `Updating crates.io index` as `NativeCommandError`.
 On Ubuntu or WSL, run:
 
 ```bash
+rustup target add x86_64-pc-windows-msvc
 ./scripts/check-local.sh
 ```
 
-The script tests and lints every platform-neutral crate, checks the Windows
-audio/visual/ASR adapters with the MSVC cross target, verifies generated
-contracts, runs frontend tests, and builds the production frontend. Under WSL,
+The script tests and lints shared crates and the PipeWire adapter, checks the
+Windows audio/visual/ASR adapters with the MSVC cross target, verifies generated
+contracts, runs frontend tests, and builds the production frontend. With the
+Ubuntu native dependencies above, it also runs desktop Rust tests and Clippy.
+Under WSL,
 it also locates a mounted Windows SDK `rc.exe` and checks the complete desktop
 Windows library. If no compatible resource compiler is available, it says that
 the desktop cross-check was skipped; this is not native Windows acceptance.
 
-Do not substitute `cargo test --workspace` on an arbitrary Linux host for the
-documented script. Tauri's Linux shell dependencies may require GTK/WebKit and
-`pkg-config`, while the current product target and desktop adapters are Windows.
+Install the Ubuntu prerequisites and MSVC Rust target before using the script
+on Linux. These compile checks cannot link a native Windows application without
+the Windows build tools. Full Linux workspace tests are also
+available after installing the GTK/WebKit/PipeWire development packages.
+
+Run the native routing/recovery test separately:
+
+```bash
+python3 scripts/check-pipewire.py
+```
+
+This launches a private PipeWire graph, session bus, and WirePlumber policy with
+synthetic null outputs. It checks default changes, pinned-output isolation,
+output removal/recreation, continuous capture time, and bounded Stop without
+altering the user's desktop audio routing. No hardware monitor is loaded and no
+captured PCM is written to disk. The native test is ignored in ordinary Rust
+checks and refuses to run outside this isolated setup. See
+[Ubuntu validation](docs/testing/UBUNTU_SMOKE_TEST.md) for the desktop smoke.
 
 ## Focused commands
 
@@ -168,6 +214,32 @@ Remove-Item Env:VITE_PROLLYGLOT_TRANSLATION_TEST_DELAY_MS -ErrorAction SilentlyC
 ```
 
 ## Packaging
+
+### Ubuntu development package
+
+Build on Ubuntu 26.04 LTS amd64, matching the oldest Ubuntu release this package
+targets. Tauri automatically merges `tauri.linux.conf.json`:
+
+```bash
+pnpm --dir apps/desktop tauri build --bundles deb -- --locked
+dpkg-deb --info target/release/bundle/deb/Prollyglot_0.2.0_amd64.deb
+```
+
+The pre-bundle hook copies the linked sherpa-onnx and ONNX Runtime libraries into
+a private `/usr/lib/prollyglot` directory and gives them relative runtime search
+paths. The `.deb` declares native PipeWire and desktop dependencies and includes
+the project license and recorded runtime/model notices. It does not include or
+download speech/translation models. A complete release-wide notice inventory
+and fresh-machine installation acceptance remain release work.
+
+For local development, `--debug --bundles deb` produces the corresponding
+package under `target/debug/bundle/deb`. Debug packages are larger and are not
+representative performance artifacts. Install a deliberately chosen build with
+`sudo apt install ./target/release/bundle/deb/Prollyglot_0.2.0_amd64.deb`, and remove
+it with `sudo apt remove prollyglot`. Uninstalling does not remove the user's
+downloaded models or preferences.
+
+### Windows package
 
 On native Windows, after `check-windows.ps1` and the required smoke/soak gate:
 

@@ -35,6 +35,10 @@ tracing.workspace = true
 tracing-appender.workspace = true
 tracing-subscriber.workspace = true
 
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18.2"
+prollyglot-audio-pipewire = { path = "../../../crates/audio-pipewire" }
+
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { workspace = true, features = [
     "Win32_System_ProcessStatus",

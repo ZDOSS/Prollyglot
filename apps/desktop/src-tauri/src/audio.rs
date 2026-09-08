@@ -113,10 +113,21 @@ pub struct AudioRuntime {
 impl Default for AudioRuntime {
     fn default() -> Self {
         Self {
-            backend: Arc::new(prollyglot_audio_windows::WindowsAudioCaptureBackend::new()),
+            backend: platform_backend(),
             resources: Arc::new(Mutex::new(None)),
             status: Arc::new(Mutex::new(PublishedAudioStatus::default())),
         }
+    }
+}
+
+fn platform_backend() -> Arc<dyn AudioCaptureBackend> {
+    #[cfg(target_os = "linux")]
+    {
+        Arc::new(prollyglot_audio_pipewire::PipeWireAudioCaptureBackend::new())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        Arc::new(prollyglot_audio_windows::WindowsAudioCaptureBackend::new())
     }
 }
 
@@ -150,8 +161,15 @@ fn queue_latest_audio(
 }
 
 #[tauri::command]
-pub fn source_snapshot(state: State<'_, RuntimeState>) -> Result<SourceSnapshot, ApplicationError> {
-    let snapshot = state.audio.backend.source_snapshot().map_err(|error| {
+pub async fn source_snapshot(
+    state: State<'_, RuntimeState>,
+) -> Result<SourceSnapshot, ApplicationError> {
+    let backend = Arc::clone(&state.audio.backend);
+    let snapshot = tauri::async_runtime::spawn_blocking(move || backend.source_snapshot())
+        .await.map_err(|error| application_error(
+            ApplicationErrorCode::CaptureUnavailable, error.to_string(),
+            ErrorRecoverability::Retryable, RecoveryAction::Retry, None,
+        ))?.map_err(|error| {
         tracing::error!(%error, backend = %state.audio.backend.capabilities().backend, "could not enumerate audio sources");
         application_error(
             ApplicationErrorCode::CaptureUnavailable,

@@ -152,16 +152,22 @@ Potential later support:
 
 Audio capture should use native Windows audio facilities rather than virtual devices.
 
-The Windows version should reach MVP quality before release work shifts to Linux-specific capture, packaging, and overlay behavior.
+Windows remains the first production release target. On 2026-09-08 the owner
+authorized beginning experimental Ubuntu work alongside the remaining Windows
+acceptance checks; this does not waive either platform's release gates.
 
 ### Linux
 
-Secondary target after the Windows MVP is reliable:
+The initial experimental target is:
 
-- one current Ubuntu LTS release, selected when Linux work begins,
-- PipeWire
-- Wayland
-- X11 where practical
+- Ubuntu 26.04 LTS, amd64;
+- PipeWire with WirePlumber;
+- X11/XWayland for the first caption-overlay slice.
+
+Native Wayland overlay positioning, stacking, and fullscreen behavior require
+separate implementation and acceptance. When an X display is available, the
+initial app chooses GTK's X11 backend unless the user explicitly selects another
+backend. It does not yet promise native Wayland overlay support.
 
 The first official Linux package should be a native `.deb` for the supported Ubuntu release.
 
@@ -177,6 +183,12 @@ Prollyglot should not initially spend substantial engineering effort supporting:
 - extremely old distributions.
 
 Linux support should be real, but deliberately scoped.
+
+Version 0.2.0 implements default-output and pinned-output capture through the
+shared local transcription and caption pipeline, plus development `.deb`
+packaging. Linux application capture and screen translation are not implemented.
+Native Ubuntu/WSLg fixtures establish an initial working slice; they do not
+replace fresh GNOME installation, hardware, compositor, or release acceptance.
 
 ---
 
@@ -388,7 +400,15 @@ The rest of Prollyglot should not need to know that WASAPI exists.
 
 Linux should use PipeWire.
 
-The backend should support:
+The 0.2.0 adapter captures only output monitors. It resolves a pinned output by
+a stable opaque identity derived from its node name, targets the current object
+serial, and never falls back to another output or an input device. Default-output
+capture follows effective session-manager metadata. Device recreation preserves
+the session clock and marks the first resumed frame discontinuous. PCM enters
+the same bounded normalization, resampling, speech, and transcript pipeline used
+on Windows; raw audio is not persisted.
+
+The eventual Linux backend should support:
 
 - output-monitor capture,
 - application/stream selection,
@@ -2223,20 +2243,24 @@ After the Windows POCs succeed:
 - system tray,
 - global hotkey.
 
-### Deferred until the Windows MVP is reliable
+### Experimental Linux work authorized alongside Windows acceptance
 
-- Ubuntu/PipeWire implementation,
-- Ubuntu `.deb` packaging,
-- Wayland- and X11-specific overlay validation,
-- Linux application-stream grouping and lifecycle handling.
+- Ubuntu 26.04/PipeWire output capture and development `.deb` packaging are
+  implemented in 0.2.0;
+- native GNOME/XWayland and Wayland-specific overlay acceptance remains pending;
+- Linux application-stream grouping and lifecycle handling remains pending.
 
 ---
 
 # 57. Linux follow-up and Version 0.2
 
-The first post-MVP platform milestone should bring the shared pipeline to one supported Ubuntu LTS release using PipeWire and a native `.deb` package.
+Version 0.2.0 begins the experimental Ubuntu 26.04 LTS port using PipeWire and a
+native `.deb`, as authorized by the owner. It is a development milestone, not a
+supported Windows or Ubuntu release. Full Ubuntu acceptance still requires both
+source modes, ordinary device lifecycle recovery, a fresh install/uninstall, and
+desktop-specific overlay validation.
 
-Once that baseline is reliable, Version 0.2 feature work may include:
+Once that baseline is reliable, subsequent feature work may include:
 
 - language profiles,
 - production approval and allowed-language constraints for automatic detection,

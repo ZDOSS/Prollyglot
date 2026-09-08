@@ -23,6 +23,7 @@ try {
             -p prollyglot-config `
             -p prollyglot-core `
             -p prollyglot-audio-pipeline `
+            -p prollyglot-audio-pipewire `
             -p prollyglot-audio-windows `
             -p prollyglot-asr `
             -p prollyglot-asr-sherpa `

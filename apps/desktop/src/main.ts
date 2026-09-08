@@ -115,6 +115,7 @@ const {
   modelSetupTitle,
   sessionPreviewContent,
   sourceSelect,
+  sourceMessage,
   spokenLanguage,
   statusLabel,
   statusText,
@@ -815,14 +816,16 @@ type SourceRefreshResult =
   | { ok: false; message: string };
 
 async function refreshSources(): Promise<SourceRefreshResult> {
-  setCaptureNotice(undefined);
   try {
     const nextSnapshot = await sourceSnapshot();
     populateSources(nextSnapshot);
+    sourceMessage.textContent = "";
+    sourceMessage.hidden = true;
     return { ok: true, snapshot: nextSnapshot };
   } catch (error) {
     const message = errorMessage(error);
-    setCaptureNotice(message, "error");
+    sourceMessage.textContent = message;
+    sourceMessage.hidden = false;
     return { ok: false, message };
   }
 }
@@ -1208,11 +1211,11 @@ function acceptsVisualSessionEvent(
 
 void Promise.all([
   refreshSources(),
-  visualCapabilities().then((capabilities) => {
+  visualCapabilities().then(async (capabilities) => {
     appStore.dispatch({ type: "visual/capabilities", capabilities });
     workspaceNavigation.refresh("visual");
-  }),
-  refreshVisualSources().catch((error) => {
+    if (capabilities.windowsGraphicsCapture) await refreshVisualSources();
+  }).catch((error) => {
     const capabilities = {
       ...appState().visualCapabilities,
       message: error instanceof Error ? error.message : String(error)

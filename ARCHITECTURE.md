@@ -11,13 +11,14 @@ windows and native worker threads. Audio, screen frames, transcripts, OCR text,
 and translations stay local. The only normal network operation is an explicit
 model download.
 
-Windows 11 is the first supported target. The shared audio boundary is ready for
-a later PipeWire adapter, but this repository does not yet claim a supported
-Ubuntu build.
+Windows 11 is the first production target. An experimental Ubuntu 26.04 LTS
+amd64 adapter now uses the same audio boundary. Neither platform has passed all
+supported-release gates.
 
 ```text
-Windows capture adapter                         Main WebView
-  WASAPI / process loopback                       UI + controllers
+Platform audio adapter                          Main WebView
+  Windows: WASAPI / process loopback              UI + controllers
+  Ubuntu: PipeWire output monitor
             │                                             │
             ▼                                             ▼
        normalized PCM ──► audio pipeline ──► ASR ──► transcript
@@ -124,13 +125,32 @@ PIDs, process roots, package identity, executable paths, `IMMDevice` objects,
 and other platform handles remain inside the adapter. More than one live match
 for an application identity is ambiguous and is never selected silently.
 
-A later PipeWire implementation must satisfy the same interface and preserve
-stable application identity across transient node recreation. It should not add
-PipeWire node IDs or Linux implementation details to public desktop contracts.
+`crates/audio-pipewire` implements default-output and pinned-output monitoring on
+Ubuntu. It binds only `Audio/Sink` nodes and session-manager default metadata,
+uses opaque node-name identities across recreation, and targets the current
+object serial. Session-manager fallback is disabled: a missing pinned output
+enters recovery rather than switching sources. One cancellable worker owns each
+PipeWire loop and stream; capture callbacks publish through bounded channels
+without running on PipeWire's real-time thread. Reconnection retains the session
+clock and marks a discontinuity. Effective-default metadata is also refreshed
+periodically on the same loop to cover a missed subscription update observed
+during concurrent source enumeration.
+
+The desktop selects its adapter by platform and queries sources off the UI event
+thread. The Ubuntu adapter advertises no application capture yet. Linux stream
+grouping must later preserve stable application identity without adding node IDs
+to public desktop contracts.
 
 After capture, shared code downmixes PCM, resamples to the selected model rate,
 buffers bounded frames, applies speech-window/VAD policy, and drives the
 backend-neutral `SpeechEngine`/`SpeechStream` contracts.
+
+On Ubuntu, hidden GTK windows are realized before click-through settings are
+applied. The initial caption overlay uses X11/XWayland when available and honors
+an explicitly selected GTK backend. Native Wayland overlay behavior and Linux
+visual capture remain separate work. The Ubuntu `.deb` carries speech/ONNX
+libraries in `/usr/lib/prollyglot`; relative runtime search paths keep the package
+independent of the build checkout.
 
 ## Visual path
 

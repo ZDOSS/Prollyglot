@@ -278,6 +278,16 @@ pub fn run() {
         .manage(RuntimeState::default())
         .setup(|app| {
             initialize_logging(app)?;
+            #[cfg(target_os = "linux")]
+            {
+                use gtk::prelude::WidgetExt;
+                // GTK does not create a GdkWindow for an initially hidden
+                // overlay. Tao's input-shape operation requires that surface.
+                // Realize without showing it before applying click-through.
+                for window in app.webview_windows().values() {
+                    window.gtk_window()?.realize();
+                }
+            }
             let runtime = app.state::<RuntimeState>();
             let configuration = runtime.configuration.initialize(app.handle())?;
             apply_configuration_snapshot(app.handle(), &configuration);

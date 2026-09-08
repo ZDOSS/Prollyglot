@@ -5,6 +5,32 @@ Versioning while it is in the `0.x` pre-release line.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-08
+
+### Added
+
+- An experimental Ubuntu 26.04 LTS amd64 audio backend using native PipeWire
+  output monitoring, with default-output following, pinned-output capture,
+  bounded cancellation, and recovery after output recreation.
+- Private-graph capture checks for source isolation, default changes, device
+  removal/recreation, continuous timing, and Stop without changing desktop audio.
+- Ubuntu desktop build and native Debian packaging with the shared speech/ONNX
+  runtimes. Application audio selection and screen translation remain Windows
+  features while their Linux implementations are pending.
+
+### Changed
+
+- Select the audio adapter by platform while reusing transcription, local
+  translation, transcript storage, and session supervision.
+- Enumerate audio sources off the desktop event thread.
+
+### Fixed
+
+- Realize hidden GTK overlay windows before applying click-through settings,
+  preventing an Ubuntu startup crash.
+- Keep audio-source connection failures visible after startup and skip screen
+  source enumeration on platforms without screen-capture support.
+
 ## [0.1.15] - 2026-09-08
 
 ### Fixed
