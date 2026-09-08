@@ -119,3 +119,28 @@ audio, or frame content appeared in diagnostics.
 
 Send me that command's output and describe anything that felt wrong. If nothing
 felt wrong and it says PASS, that is the entire report.
+
+## Automated native audio check (0.1.15)
+
+For capture-adapter changes, run this explicitly from native Windows PowerShell:
+
+```powershell
+cargo run --locked -p prollyglot-audio-windows --example capture_check -- --run
+```
+
+It plays two quiet synthetic tones for roughly ten seconds. Default and pinned
+playback-device capture must contain both; application capture must contain only
+the selected fixture. The fixture closes/reopens that application, checks the
+recovery event and continuous clock, then verifies bounded Stop. It changes no
+Windows audio settings and saves no captured PCM.
+
+On 2026-09-08 this check exposed a heap-corruption crash in application activation:
+`PROPVARIANT` destruction tried to free an Arc-owned buffer with the COM allocator.
+The borrowed variant now suppresses that destructor while the callback retains
+the buffer until activation completes. After the correction all four signal
+checks passed at 48 kHz. The unrelated tone was under 0.01% of the selected tone
+in application capture, including after restart. Stop took 9.6–20.9 ms.
+
+This verifies capture isolation and restart, not speech/translation quality,
+physical device hot-plug, sleep/wake, or sustained desktop resource use. The
+ordinary application soak above still applies before release acceptance.

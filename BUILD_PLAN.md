@@ -733,6 +733,13 @@ and lifecycle acceptance are tracked in
 This retires the reproduced detector failure without treating synthetic OCR
 or capture checks as completion of the Windows application soak.
 
+Pre-release `0.1.15` fixes a native application-capture heap-corruption crash
+found by synthetic two-application audio verification. Default and pinned-device
+mixing, application isolation, exit/restart recovery, monotonic capture time, and
+bounded Stop now have a repeatable native check. Visual tracking also refreshes
+on capture resize and ignores whitespace-only OCR changes without retranslation.
+The remaining real-media and desktop lifecycle checks still gate release quality.
+
 Routine development now uses [`docs/testing/WINDOWS_SMOKE_TEST.md`](docs/testing/WINDOWS_SMOKE_TEST.md). Interrupted-download recovery, formal latency measurement, screenshots, OBS parity, and sustained-resource evidence are intentionally deferred to milestone hardening or release boundaries rather than imposed on every pre-release build.
 
 ## Milestone 1 — Windows capture foundation
@@ -977,7 +984,7 @@ by that API, while PP-OCR provides one shared Windows/Linux direction.
 
 Work should continue until one of these gates is actually reached:
 
-- A real Windows 11 machine is required to accept Milestone 1 and later Windows milestones. The current development environment is WSL2, so it can build and test shared code but cannot validate WASAPI loopback or native overlay stacking.
+- A real Windows 11 machine is required to accept Milestone 1 and later Windows milestones. The WSL2 development environment can also invoke native Windows builds and synthetic WASAPI/WGC checks through the host. Real-media usefulness, physical device changes, and native overlay stacking still require direct desktop acceptance.
 - GitHub-hosted runner minutes are intentionally conserved. A lack of continuous hosted validation is not a blocker when equivalent local checks pass; manually dispatched jobs are used only where their environment or artifact is materially useful.
 - Windows signing and store publication require owner-controlled identity and credentials.
 - Model distribution stops if commercial use, redistribution, or derivative rights are unclear.

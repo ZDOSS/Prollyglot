@@ -5,6 +5,24 @@ Versioning while it is in the `0.x` pre-release line.
 
 ## [Unreleased]
 
+## [0.1.15] - 2026-09-08
+
+### Fixed
+
+- Prevent a native heap-corruption crash when starting Windows application audio
+  capture: the asynchronous activation variant now borrows its Rust-owned buffer
+  without letting Windows free it.
+- Refresh visual detection after a capture resize even when the sampled pixels
+  match, and avoid retranslation caused only by OCR whitespace changes.
+- Keep overlapping new text observations distinct within the same frame.
+
+### Added
+
+- An explicit native Windows audio fixture check for default/selected-device
+  mixing, application isolation, exit/restart recovery, monotonic capture time,
+  and bounded Stop. Only synthetic signal measurements are printed; captured
+  audio stays in memory.
+
 ## [0.1.14] - 2026-09-08
 
 ### Fixed

@@ -11,6 +11,10 @@ crossbeam-channel.workspace = true
 prollyglot-core = { path = "../prollyglot-core" }
 sha2.workspace = true
 
+[dev-dependencies]
+serde_json.workspace = true
+tempfile = "3.27.0"
+
 [target.'cfg(target_os = "windows")'.dependencies]
 prollyglot-audio-pipeline = { path = "../audio-pipeline" }
 windows = { workspace = true, features = [

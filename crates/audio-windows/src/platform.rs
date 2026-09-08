@@ -1035,7 +1035,10 @@ unsafe fn activate_process_audio_client(process_id: u32) -> Result<IAudioClient,
         _activation_params: Arc::clone(&activation_params),
     }
     .into();
-    let activation_variant = PROPVARIANT {
+    // This variant borrows Arc-owned memory; windows-rs normally calls
+    // PropVariantClear on Drop, which would CoTaskMemFree the Rust allocation.
+    // Only the Arc owners (including the asynchronous callback) may free it.
+    let activation_variant = ManuallyDrop::new(PROPVARIANT {
         Anonymous: PROPVARIANT_0 {
             Anonymous: ManuallyDrop::new(PROPVARIANT_0_0 {
                 vt: VT_BLOB,
@@ -1050,13 +1053,13 @@ unsafe fn activate_process_audio_client(process_id: u32) -> Result<IAudioClient,
                 },
             }),
         },
-    };
+    });
 
     let activation_operation = unsafe {
         ActivateAudioInterfaceAsync(
             VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK,
             &IAudioClient::IID,
-            Some(&activation_variant),
+            Some(&*activation_variant),
             &completion_handler,
         )
     }
@@ -1074,7 +1077,6 @@ unsafe fn activate_process_audio_client(process_id: u32) -> Result<IAudioClient,
     };
     drop(activation_operation);
     drop(completion_handler);
-    drop(activation_variant);
     drop(activation_params);
     result
 }

@@ -1300,7 +1300,7 @@ dense desktop cannot create an unbounded translation or overlay surface. An
 unchanged confirmation pass is still allowed, followed by bounded one-second
 refreshes. Translation is reused when the recognized text revision is unchanged.
 The recognizer crops the original pixels after mapping detector boxes back to
-capture space; at most 24 prominent or 48 all-text boxes reach recognition.
+capture space; at most 24 prominent or 48 all-text boxes per scan area reach recognition.
 Large sources first group areas with local pixel contrast at native resolution.
 This preserves small text that disappeared when a whole 4K display was reduced
 to the detector's input size. Areas larger than 1280 × 864 pixels use overlapping

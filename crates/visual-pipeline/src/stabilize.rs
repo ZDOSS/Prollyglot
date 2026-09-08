@@ -120,6 +120,7 @@ impl TextStabilizer {
                     let promoted = promote_candidate(&mut track);
                     translation_requests.push(promoted);
                 }
+                matched_tracks.insert(self.tracks.len());
                 self.tracks.push(track);
             }
         }
@@ -180,10 +181,15 @@ fn update_track(
         return None;
     }
 
-    let changed = track
-        .visible
-        .as_ref()
-        .is_none_or(|visible| visible.text.to_lowercase() != track.candidate_normalized);
+    let changed = track.visible.as_ref().is_none_or(|visible| {
+        visible
+            .text
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .to_lowercase()
+            != track.candidate_normalized
+    });
     if changed {
         Some(promote_candidate(track))
     } else {
@@ -240,6 +246,29 @@ mod tests {
         let second = stabilizer.update(2, vec![observation("こんにちは", 12.0)]);
         assert_eq!(second.visible.len(), 1);
         assert_eq!(second.translation_requests.len(), 1);
+    }
+
+    #[test]
+    fn whitespace_changes_do_not_repeat_translation_of_the_same_words() {
+        let mut stabilizer = TextStabilizer::new(TextStabilizerConfig::default());
+        stabilizer.update(1, vec![observation("Buenos  días", 10.0)]);
+        let first = stabilizer.update(2, vec![observation("Buenos  días", 10.0)]);
+        assert_eq!(first.translation_requests.len(), 1);
+        for seq in 3..7 {
+            let next = stabilizer.update(seq, vec![observation("Buenos\ndías", 10.0)]);
+            assert!(next.translation_requests.is_empty());
+            assert_eq!(next.visible[0].text_revision, 1);
+        }
+    }
+
+    #[test]
+    fn overlapping_new_observations_cannot_replace_one_another_in_the_same_frame() {
+        let mut stabilizer = TextStabilizer::new(TextStabilizerConfig::default());
+        let observations = || vec![observation("uno", 10.0), observation("dos", 50.0)];
+        assert!(stabilizer.update(1, observations()).visible.is_empty());
+        let next = stabilizer.update(2, observations());
+        assert_eq!(next.visible.len(), 2);
+        assert_eq!(next.translation_requests.len(), 2);
     }
 
     #[test]

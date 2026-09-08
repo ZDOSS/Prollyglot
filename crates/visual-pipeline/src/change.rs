@@ -85,6 +85,7 @@ pub struct FrameGate {
     last_checked_at_micros: Option<u64>,
     last_analyzed_at_micros: u64,
     accepted_fingerprint: Vec<u8>,
+    accepted_dimensions: Option<(u32, u32)>,
     awaiting_confirmation: bool,
 }
 
@@ -95,6 +96,7 @@ impl FrameGate {
             last_checked_at_micros: None,
             last_analyzed_at_micros: 0,
             accepted_fingerprint: Vec::new(),
+            accepted_dimensions: None,
             awaiting_confirmation: false,
         }
     }
@@ -115,7 +117,11 @@ impl FrameGate {
         }
         self.last_checked_at_micros = Some(frame.captured_at_micros);
         let next = fingerprint(frame, self.config.sample_columns, self.config.sample_rows);
-        if self.accepted_fingerprint.len() != next.len() || self.accepted_fingerprint.is_empty() {
+        if self.accepted_dimensions != Some((frame.width, frame.height))
+            || self.accepted_fingerprint.len() != next.len()
+            || self.accepted_fingerprint.is_empty()
+        {
+            self.accepted_dimensions = Some((frame.width, frame.height));
             self.accepted_fingerprint = next;
             self.awaiting_confirmation = true;
             self.last_analyzed_at_micros = frame.captured_at_micros;
@@ -151,6 +157,9 @@ impl FrameGate {
     }
 
     pub fn is_meaningfully_different(&self, frame: &VisualFrame) -> bool {
+        if self.accepted_dimensions != Some((frame.width, frame.height)) {
+            return true;
+        }
         let next = fingerprint(frame, self.config.sample_columns, self.config.sample_rows);
         if self.accepted_fingerprint.is_empty() || self.accepted_fingerprint.len() != next.len() {
             return true;
@@ -170,6 +179,9 @@ impl FrameGate {
     /// classify cursor movement, counters, and video controls as a new scene
     /// and repeatedly clear otherwise useful translations.
     pub fn is_substantially_different(&self, frame: &VisualFrame) -> bool {
+        if self.accepted_dimensions != Some((frame.width, frame.height)) {
+            return true;
+        }
         let next = fingerprint(frame, self.config.sample_columns, self.config.sample_rows);
         if self.accepted_fingerprint.is_empty() || self.accepted_fingerprint.len() != next.len() {
             return true;
@@ -304,6 +316,27 @@ mod tests {
                 height: 24.0
             }
         ));
+    }
+
+    #[test]
+    fn resize_invalidates_equal_fingerprints_without_waiting_for_periodic_refresh() {
+        let mut gate = FrameGate::new(FrameGateConfig::default());
+        let first = solid(1, 0, 40);
+        gate.evaluate(&first);
+        gate.evaluate(&solid(2, 250_000, 40));
+        let resized = VisualFrame::new(
+            3,
+            500_000,
+            8,
+            4,
+            32,
+            PixelFormat::Bgra8,
+            [40, 40, 40, 255].repeat(32),
+        )
+        .unwrap();
+        assert!(gate.is_meaningfully_different(&resized));
+        assert!(gate.is_substantially_different(&resized));
+        assert_eq!(gate.evaluate(&resized), FrameGateDecision::FirstFrame);
     }
 
     #[test]
