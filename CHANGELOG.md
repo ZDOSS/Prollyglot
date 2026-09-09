@@ -5,6 +5,18 @@ Versioning while it is in the `0.x` pre-release line.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-09-08
+
+- Parent the Ubuntu sharing picker to the main window on native Wayland using
+  a session-owned GDK export. Bound and cancel export waits, fall back to an
+  unparented picker when unavailable, and release exports after Stop or failed
+  startup.
+- Add isolated, software-rendered native Wayland reader and cancellation checks,
+  including missing/stalled exporters and handle cleanup before app exit. Keep
+  GNOME dialog stacking, anchoring, and real-media acceptance open.
+- Update Ubuntu build and package descriptions for drawn regions and conditional
+  anchors. Headless test tooling stays outside the shipped application.
+
 ## [0.5.0] - 2026-09-08
 
 - Add Ubuntu monitor-region selection using a transient native preview, mouse

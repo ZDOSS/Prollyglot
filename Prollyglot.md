@@ -1288,6 +1288,13 @@ subscribes before fetching current presentation so a slow webview cannot miss
 its first result. Region selection uses a separate native still-image preview
 after the monitor picker; Stop cancels both. Native Wayland anchoring remains
 a follow-up.
+Version 0.5.1 supplies the main window as the sharing picker's parent on native
+Wayland using GDK's exported handle. Export waits at most one second and remains
+cancellable. Missing or unresponsive exporter support falls back to the portal's
+unparented picker. Each session releases its export after sharing ends, including
+startup errors and cancellation; no exported identifiers are persisted. Private
+headless Wayland fixtures verify the reader and handle lifecycle, not GNOME
+dialog stacking, monitor placement, fullscreen behavior, or real-media quality.
 CPU-readable BGRx, BGRA,
 RGBx, and RGBA are implemented; DMA-BUF import and negative-stride buffers are
 explicitly unsupported in this backend slice. Captured pixels stay transient.

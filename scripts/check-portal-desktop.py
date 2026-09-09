@@ -24,14 +24,16 @@ assert private.name.startswith("prollyglot-pipewire-")
 assert os.environ["XDG_RUNTIME_DIR"] == str(private)
 assert os.environ["PIPEWIRE_RUNTIME_DIR"] == str(private)
 assert os.environ["DBUS_SESSION_BUS_ADDRESS"].split(",guid=")[0] == f"unix:path={private}/bus"
-assert not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY")
-language, mode = sys.argv[1:]
+assert not any(os.environ.get(name) for name in ("DISPLAY", "WAYLAND_DISPLAY", "WAYLAND_SOCKET"))
+language, mode, backend = sys.argv[1:]
+assert backend in ("x11", "wayland")
+wayland = backend == "wayland"
 scale = 2 if mode.endswith("2x") else 1
 root = Path(os.environ["PROLLYGLOT_DESKTOP_FIXTURE_STATE"])
 root.mkdir(parents=True)
 assert root.parent == private
 env = os.environ.copy()
-env.update(GDK_BACKEND="x11", GDK_SCALE=str(scale), NO_AT_BRIDGE="1", XDG_DATA_HOME=str(root / "data"),
+env.update(GDK_BACKEND=backend, GDK_SCALE=str(scale), NO_AT_BRIDGE="1", XDG_DATA_HOME=str(root / "data"),
            XDG_CONFIG_HOME=str(root / "config"), XDG_CACHE_HOME=str(root / "cache"),
            XDG_STATE_HOME=str(root / "state"))
 # Copy, not a symlink: model verification stamps and cleanup must never write
@@ -87,20 +89,42 @@ def wait(predicate, seconds=15):
 
 
 try:
-    log = open(root / "xvfb.log", "w+")
-    logs.append(log)
-    # Use a high private display, never :0. WSLg owns a read-only filesystem
-    # socket directory; Linux's abstract transport needs no changes there.
-    display_number = 100 + secrets.randbelow(900)
-    while Path(f"/tmp/.X11-unix/X{display_number}").exists():
+    if wayland:
+        # Explicit headless/Pixman backends cannot connect to a desktop,
+        # acquire a DRM device, or create a nested WSLg window.
+        env.update(WAYLAND_DISPLAY=f"prollyglot-{secrets.token_hex(8)}",
+                   XDG_SESSION_TYPE="wayland", LIBGL_ALWAYS_SOFTWARE="1",
+                   WEBKIT_DISABLE_DMABUF_RENDERER="1")
+        log = open(root / "weston.log", "w+")
+        logs.append(log)
+        modules = []
+        if mode != "parentUnavailable":
+            module = Path(__file__).resolve().parent.parent / "target/wayland-fixture/exporter.so"
+            assert module.is_file(), "Run scripts/build-wayland-fixture.py first"
+            env["PROLLYGLOT_WAYLAND_EXPORT_MODE"] = "stall" if mode in ("parentTimeout", "cancelParent") else "normal"
+            modules = [f"--modules={module}"]
+        display = subprocess.Popen(["weston", "--backend=headless", "--renderer=pixman",
+                                    "--shell=kiosk-shell.so", "--no-config", "--idle-time=0",
+                                    "--width=1280", "--height=900", f"--socket={env['WAYLAND_DISPLAY']}", *modules],
+                                   env=env, stdout=log, stderr=log, start_new_session=True)
+        processes.append(display)
+        wait(lambda: (private / env["WAYLAND_DISPLAY"]).is_socket())
+        assert display.poll() is None
+    else:
+        log = open(root / "xvfb.log", "w+")
+        logs.append(log)
+        # Use a high private display, never :0. WSLg owns a read-only filesystem
+        # socket directory; Linux's abstract transport needs no changes there.
         display_number = 100 + secrets.randbelow(900)
-    display = subprocess.Popen(["Xvfb", f":{display_number}", "-displayfd", "1", "-screen", "0", f"{1280 * scale}x{900 * scale}x24", "-nolisten", "tcp", "-nolisten", "unix"],
-                               env=env, stdout=subprocess.PIPE, stderr=log, text=True, start_new_session=True)
-    processes.append(display)
-    display_id = display.stdout.readline().strip()
-    assert display_id == str(display_number) and display.poll() is None
-    env["DISPLAY"] = f":{display_id}"
-    x11 = PrivateX11(display, env["DISPLAY"])
+        while Path(f"/tmp/.X11-unix/X{display_number}").exists():
+            display_number = 100 + secrets.randbelow(900)
+        display = subprocess.Popen(["Xvfb", f":{display_number}", "-displayfd", "1", "-screen", "0", f"{1280 * scale}x{900 * scale}x24", "-nolisten", "tcp", "-nolisten", "unix"],
+                                   env=env, stdout=subprocess.PIPE, stderr=log, text=True, start_new_session=True)
+        processes.append(display)
+        display_id = display.stdout.readline().strip()
+        assert display_id == str(display_number) and display.poll() is None
+        env["DISPLAY"] = f":{display_id}"
+        x11 = PrivateX11(display, env["DISPLAY"])
     log = open(root / "driver.log", "w+")
     logs.append(log)
     driver = subprocess.Popen(["tauri-driver", "--port", str(port), "--native-port", str(native_port)], env=env, stdout=log, stderr=log, start_new_session=True)
@@ -126,7 +150,10 @@ try:
     args = {"selection": {"kind": kind}, "sourceLanguage": language, "targetLanguage": "en", "detectionMode": "focused"}
     js("window.fixtureStart=undefined;window.__TAURI_INTERNALS__.invoke('start_visual_translation',arguments[0]).then(()=>window.fixtureStart={ok:true},error=>window.fixtureStart={error});", args)
     if kind == "portalRegion":
-        selector = wait(lambda: x11.find("Choose screen region — Prollyglot"))
+        if wayland:
+            wait(lambda: "region preview" in (invoke("visual_status").get("message") or ""))
+        else:
+            selector = wait(lambda: x11.find("Choose screen region — Prollyglot"))
         assert js("return window.fixtureText.length") == 0, "OCR must wait for an explicit region"
         assert "region preview" in invoke("visual_status")["message"]
         if mode == "dismissRegion":
@@ -144,8 +171,11 @@ try:
             x11.tap("u")
             x11.key("Alt_L", False)
             wait(lambda: not x11.find("Choose screen region — Prollyglot"))
-    if mode in ("cancel", "cancelRegion"):
-        wait(lambda: ("preview" if mode == "cancelRegion" else "picker") in (invoke("visual_status").get("message") or ""))
+    if mode in ("cancel", "cancelRegion", "cancelParent"):
+        if mode == "cancelParent":
+            wait(lambda: "export" in (root / "exports.log").read_text())
+        else:
+            wait(lambda: ("preview" if mode == "cancelRegion" else "picker") in (invoke("visual_status").get("message") or ""))
         started = time.monotonic()
         invoke("stop_visual_translation")
         wait(lambda: invoke("visual_status")["state"] == "stopped", 3)
@@ -157,6 +187,8 @@ try:
     else:
         result = wait(lambda: js("return window.fixtureStart"))
         assert result == {"ok": True}, result
+        if wayland and mode not in ("parentUnavailable", "parentTimeout"):
+            assert (root / "exports.log").read_text().splitlines() == ["export"], "Picker parent must remain exported while sharing"
         update = wait(lambda: js("return window.fixtureText.find(update=>update.visible.length)"))
         original = " ".join(region["text"] for region in update["visible"])
         assert ("你好" in original) if language == "zh" else ("Buenos" in original), original
@@ -217,8 +249,16 @@ try:
                 assert x11.geometry(overlay_window) == (0, 0, 1280, 900)
             invoke("stop_visual_translation")
             wait(lambda: invoke("visual_status")["state"] == "stopped", 3)
-    print(f"Private native {language}/{mode}: passed", flush=True)
-    assert not x11.find("Choose screen region — Prollyglot")
+    if wayland and mode != "parentUnavailable":
+        def exports_released():
+            events = (root / "exports.log").read_text().splitlines()
+            return events.count("export") > 0 and events.count("export") == events.count("release")
+        # Check before terminating the app/compositor: Stop must release the
+        # handle; process teardown cannot hide a per-session export leak.
+        wait(exports_released, 2)
+    print(f"Private native {backend} {language}/{mode}: passed", flush=True)
+    if x11:
+        assert not x11.find("Choose screen region — Prollyglot")
 except BaseException:
     if x11: print("Private X window titles:", getattr(x11, "titles", []), flush=True)
     for log in logs:

@@ -9,6 +9,16 @@ use support::{Behavior, MockPortal, source::VideoSource};
 #[test]
 #[ignore = "requires the private desktop runner, Xvfb, tauri-driver, OCR models and synthetic images"]
 fn native_desktop_ocr_reader_and_picker_cancellation() {
+    run_cases(false);
+}
+
+#[test]
+#[ignore = "requires the private desktop runner, headless Weston, tauri-driver, OCR models and images"]
+fn native_wayland_reader_and_picker_cancellation() {
+    run_cases(true);
+}
+
+fn run_cases(wayland: bool) {
     let root = support::private_session();
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let fixtures = PathBuf::from(std::env::var_os("PROLLYGLOT_VISUAL_FIXTURE_DIR").unwrap());
@@ -23,7 +33,16 @@ fn native_desktop_ocr_reader_and_picker_cancellation() {
         ("es", "dismissRegion", Behavior::Normal),
         ("zh", "cancel", Behavior::Stall("Start")),
         ("es", "dismiss", Behavior::Cancel),
+        ("es", "parentUnavailable", Behavior::Normal),
+        ("zh", "parentTimeout", Behavior::Normal),
+        ("zh", "cancelParent", Behavior::Normal),
     ] {
+        if wayland && (mode.starts_with("anchor") || mode == "dismissRegion") {
+            continue;
+        }
+        if !wayland && (mode.starts_with("parent") || mode == "cancelParent") {
+            continue;
+        }
         let decoded = image::open(fixtures.join(format!("{language}-1920-24-region.png")))
             .unwrap()
             .into_rgba8();
@@ -54,20 +73,45 @@ fn native_desktop_ocr_reader_and_picker_cancellation() {
             .arg(repo.join("scripts/check-portal-desktop.py"))
             .arg(language)
             .arg(mode)
-            .env("PROLLYGLOT_DESKTOP_FIXTURE_STATE", root.join(mode))
+            .arg(if wayland { "wayland" } else { "x11" })
+            .env(
+                "PROLLYGLOT_DESKTOP_FIXTURE_STATE",
+                root.join(format!(
+                    "{}-{mode}",
+                    if wayland { "wayland" } else { "x11" }
+                )),
+            )
             .status()
             .unwrap();
         assert!(
             result.success(),
             "native desktop case {language}/{mode} failed"
         );
-        assert!(portal.observed.sessions_closed.load(Ordering::Acquire) >= 1);
-        if behavior == Behavior::Normal {
+        if mode == "cancelParent" {
+            assert!(portal.observed.methods.lock().unwrap().is_empty());
+        } else {
+            assert!(portal.observed.sessions_closed.load(Ordering::Acquire) >= 1);
+        }
+        if behavior == Behavior::Normal && mode != "cancelParent" {
             let parent = portal.observed.parent_window.lock().unwrap();
-            assert!(
-                parent.starts_with("x11:") && parent.as_str() != "x11:0",
-                "main window was not supplied as picker parent"
-            );
+            if wayland {
+                if matches!(mode, "parentUnavailable" | "parentTimeout") {
+                    assert!(
+                        parent.is_empty(),
+                        "Unavailable exports must fall back without inventing a handle"
+                    );
+                } else {
+                    assert!(
+                        parent.starts_with("wayland:prollyglot-fixture-"),
+                        "GDK's exported handle did not reach the picker"
+                    );
+                }
+            } else {
+                assert!(
+                    parent.starts_with("x11:") && parent.as_str() != "x11:0",
+                    "main window was not supplied as picker parent"
+                );
+            }
         }
     }
 }

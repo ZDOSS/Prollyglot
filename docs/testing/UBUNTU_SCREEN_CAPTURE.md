@@ -3,7 +3,8 @@
 Version 0.5.0 supports portal window/monitor capture and monitor-region drawing
 in a native still preview. Matching X11/XWayland monitor geometry can anchor
 translations; missing or unverified placement falls back to the movable reader.
-Native Wayland anchoring, fresh GNOME, and real-media acceptance remain open.
+Version 0.5.1 adds native Wayland picker parenting and private Wayland reader
+checks. Native Wayland anchoring, fresh GNOME, and real-media acceptance remain open.
 
 ## Run without using the desktop
 
@@ -13,7 +14,7 @@ bash scripts/check-screen-capture.sh
 
 The runner compiles first, then creates a private DBus socket, PipeWire server,
 and WirePlumber policy session under a temporary directory. It removes inherited
-`DISPLAY`, `WAYLAND_DISPLAY`, `XAUTHORITY`, and `PULSE_SERVER`. Tests register a
+`DISPLAY`, `WAYLAND_DISPLAY`, `WAYLAND_SOCKET`, `XAUTHORITY`, and `PULSE_SERVER`. Tests register a
 fake ScreenCast portal only on that private bus and generate synthetic native
 video in memory. No windows, media players, real portal picker, microphone,
 playback devices, recording, or desktop automation are involved. Processes and
@@ -142,9 +143,13 @@ wrapping/scrolling, native placement changes without new translation content,
 and stale presentation rejection. Chromium is always
 headless; `PROLLYGLOT_CHROMIUM` can select a local browser executable.
 
-The native fixture additionally needs `Xvfb`, `tauri-driver`, `WebKitWebDriver`,
-`libX11`/`libXtst`,
-an installed OCR pack, and the synthetic images above:
+The native fixture additionally needs `Xvfb`, Weston 14 with `libweston-14-dev`,
+`wayland-protocols`, `wayland-scanner`, `tauri-driver`, `WebKitWebDriver`,
+`libX11`/`libXtst`, an installed OCR pack, and the synthetic images above. These
+are development-test dependencies; Weston and its test module are not bundled
+or required by the application. On the supported Ubuntu release, the Wayland
+fixture prerequisites can be installed with
+`sudo apt install weston libweston-14-dev wayland-protocols libwayland-bin`.
 
 ```bash
 PROLLYGLOT_VISUAL_OCR_MODEL_DIR=/path/to/installed/ppocrv6-pack \
@@ -154,7 +159,10 @@ bash scripts/check-portal-desktop.sh
 
 Compilation and frontend bundling happen before private services start. The
 fixture registers a fake portal on its private bus, produces synthetic video,
-and launches the actual GTK app on a high-numbered Xvfb display. It removes
+and launches the actual GTK app on a high-numbered Xvfb display or a private
+Weston Wayland socket. Weston explicitly uses the headless backend, Pixman
+software rendering, and its kiosk shell; it neither nests in the owner's
+desktop nor acquires display/input hardware. The runner removes
 inherited display/playback variables, uses Linux's abstract X socket instead
 of changing WSLg's socket directory, and keeps app data/model copies private.
 Native processes and their child process groups are cleaned up afterward.
@@ -171,6 +179,38 @@ Translation text is injected as a fixed
 fixture through the normal native presentation contract; this test does not
 measure a translation model's quality, runtime, or real-media usefulness.
 
+Wayland cases cover the reader, Stop/close/restart, and cancellation of both
+picker and native region preview. A small, test-only `xdg_foreign_v2` exporter
+module supplies deterministic handles to the fake portal to check the real GDK
+callback path and release on Stop, dismissal, timeout, and cancelled startup.
+The runner checks every export is released **before app exit**. It also runs
+without the exporter to verify unparented fallback. This module does not import
+surfaces or implement dialog stacking; those remain real compositor checks.
+
+The implementation follows GTK 3.24's
+[export/unexport lifetime contract](https://github.com/GNOME/gtk/blob/3.24.52/gdk/wayland/gdkwindow-wayland.c)
+and Weston's documented [headless backend](https://wayland.pages.freedesktop.org/weston/toc/running-weston.html).
+
+## Wayland session validation (0.5.1)
+
+On 2026-09-08, on the Ubuntu 26.04/WSL2 development host:
+
+- All 17 native scenarios passed against the **extracted final `.deb`**:
+  nine X11 cases and eight Wayland cases,
+  including exported-handle delivery, session lifetime, missing exporter,
+  timeout fallback, and cancellation before any portal request is opened.
+- The tests use GTK 3.24.52, WebKitGTK 2.52.6, and private software-rendered
+  Weston 14.0.2. Real local OCR reads the synthetic Chinese/Spanish fixtures;
+  translation presentation remains deterministic fixture text.
+- 169 Rust tests and 58 frontend tests passed, with 12 opt-in Rust tests ignored
+  in the ordinary suite. Formatting, Clippy, generated bindings, version checks,
+  frontend production bundling, and Windows desktop MSVC cross-compilation passed.
+  All four private capture-backend tests passed, including six actual OCR cases.
+- Built `target/release/bundle/deb/Prollyglot_0.5.1_amd64.deb`; all extracted
+  native libraries resolve. The package contains no Weston test tooling.
+- No owner desktop, real permission picker, physical audio/video device, or
+  recording was used. Native Wayland region acceptance by drag/keyboard,
+  GNOME dialog stacking, and fresh desktop installation remain owner checks.
 
 ## Region and anchor validation (0.5.0)
 

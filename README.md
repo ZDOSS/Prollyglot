@@ -9,9 +9,9 @@
 Prollyglot is a free and open-source desktop utility that captures audio from a selected playback device or application and turns it into live subtitles locally. It is designed for games, calls, browsers, media players, and other software that has missing, limited, or inaccessible captions.
 
 > [!IMPORTANT]
-> Prollyglot is in active pre-release development. There is not yet a supported binary release. Windows 11 is the primary target; real-media, hardware, and release acceptance remain in progress. Version 0.5.0 includes an experimental Ubuntu 26.04 LTS port with PipeWire audio capture, portal screen translation with drawn regions and conditional X11/XWayland anchors, and native `.deb` packaging.
+> Prollyglot is in active pre-release development. There is not yet a supported binary release. Windows 11 is the primary target; real-media, hardware, and release acceptance remain in progress. Version 0.5.1 includes an experimental Ubuntu 26.04 LTS port with PipeWire audio capture, portal screen translation with drawn regions and conditional X11/XWayland anchors, and native `.deb` packaging.
 >
-> Current pre-release: **0.5.0**. See the [changelog](CHANGELOG.md) and
+> Current pre-release: **0.5.1**. See the [changelog](CHANGELOG.md) and
 > [versioning policy](docs/VERSIONING.md).
 
 ## Why Prollyglot exists
@@ -109,7 +109,7 @@ selected top-level window, display, or drawn live display region through
 latest-frame queue, change gate, and PP-OCRv6 Small; and places a local
 translation near the original text already visible on screen.
 
-Ubuntu 0.5.0 shares the OCR and local translator. Each Start opens the desktop
+Ubuntu 0.5.1 shares the OCR and local translator. Each Start opens the desktop
 sharing picker. **Selected region** shares a monitor, then opens a still preview:
 drag around the text or enter pixel coordinates and choose **Use region**.
 Only the cropped area reaches OCR. Stop, Cancel, or Esc dismisses selection.
@@ -172,7 +172,7 @@ a public English sample. See
 [Ubuntu validation and remaining work](docs/testing/UBUNTU_SMOKE_TEST.md) and
 [build/package instructions](BUILDING.md). This evidence comes from Ubuntu under
 WSLg, not a fresh native GNOME desktop or a multilingual accuracy benchmark.
-The 0.5.0 screen-translation package passes isolated Xvfb/PipeWire checks
+The 0.5.1 screen-translation package passes isolated Xvfb/PipeWire checks
 for Chinese/Spanish OCR, drawn regions, anchors at 1×/2× GTK scaling, reader
 fallback, focus/input behavior, cancellation, and restart; those
 use synthetic video and fixed translation output, not real-media acceptance.

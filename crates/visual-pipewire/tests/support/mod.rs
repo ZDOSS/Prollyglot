@@ -51,6 +51,7 @@ pub fn private_session() -> PathBuf {
     );
     assert!(std::env::var_os("DISPLAY").is_none());
     assert!(std::env::var_os("WAYLAND_DISPLAY").is_none());
+    assert!(std::env::var_os("WAYLAND_SOCKET").is_none());
     root
 }
 

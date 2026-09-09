@@ -12,8 +12,10 @@ There is no supported binary release yet.
 
 Use **Ubuntu 26.04 LTS amd64**, Rust 1.88 or newer with `rustfmt`/`clippy`,
 Node.js 22.12 or newer, and pnpm 11. The initial app uses PipeWire/WirePlumber
-output/application monitoring and X11/XWayland captions. Screen translation
-remains Windows-only; native Wayland overlay acceptance is pending.
+output/application monitoring and X11/XWayland captions. Experimental screen
+translation supports portal window/monitor capture and drawn monitor regions,
+with verified X11/XWayland anchors or a movable reader. Native Wayland uses the
+reader; compositor and fullscreen overlay acceptance remains pending.
 Ubuntu 24.04 and other distributions are not supported package targets.
 
 Install native build and runtime dependencies:
@@ -37,6 +39,8 @@ When `DISPLAY` is present the app selects GTK's X11 backend; an explicit
 Screen translation additionally needs `xdg-desktop-portal` and the desktop's
 ScreenCast backend (`xdg-desktop-portal-gnome` on Ubuntu GNOME). Its movable
 translation reader does not depend on global Wayland window coordinates.
+The picker uses the main window's exported Wayland handle where the compositor
+supports it, with a cancellable unparented fallback otherwise.
 Headless build machines can use the isolated fixtures described in
 [Ubuntu screen-capture checks](docs/testing/UBUNTU_SCREEN_CAPTURE.md).
 
@@ -234,7 +238,7 @@ targets. Tauri automatically merges `tauri.linux.conf.json`:
 
 ```bash
 pnpm --dir apps/desktop tauri build --bundles deb -- --locked
-dpkg-deb --info target/release/bundle/deb/Prollyglot_0.4.0_amd64.deb
+dpkg-deb --info target/release/bundle/deb/Prollyglot_0.5.1_amd64.deb
 ```
 
 The pre-bundle hook copies the linked sherpa-onnx and ONNX Runtime libraries into
@@ -247,7 +251,7 @@ and fresh-machine installation acceptance remain release work.
 For local development, `--debug --bundles deb` produces the corresponding
 package under `target/debug/bundle/deb`. Debug packages are larger and are not
 representative performance artifacts. Install a deliberately chosen build with
-`sudo apt install ./target/release/bundle/deb/Prollyglot_0.4.0_amd64.deb`, and remove
+`sudo apt install ./target/release/bundle/deb/Prollyglot_0.5.1_amd64.deb`, and remove
 it with `sudo apt remove prollyglot`. Uninstalling does not remove the user's
 downloaded models or preferences.
 

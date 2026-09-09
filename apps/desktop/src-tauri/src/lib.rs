@@ -1,6 +1,8 @@
 mod audio;
 mod configuration;
 mod models;
+#[cfg(target_os = "linux")]
+mod portal_parent;
 mod presentation;
 mod resources;
 mod runtime;

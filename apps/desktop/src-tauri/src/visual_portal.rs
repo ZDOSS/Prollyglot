@@ -20,6 +20,7 @@ use std::{
 
 pub struct PortalCapture {
     session: CaptureSession,
+    parent: crate::portal_parent::PortalParent,
     stop: Arc<AtomicBool>,
     worker: Option<JoinHandle<()>>,
 }
@@ -28,6 +29,7 @@ impl PortalCapture {
     pub fn stop(&mut self) -> Result<(), String> {
         self.stop.store(true, Ordering::Release);
         let capture = self.session.stop().map_err(|e| e.to_string());
+        self.parent.release();
         let worker = self.worker.take().map_or(Ok(()), |worker| {
             worker
                 .join()
@@ -52,7 +54,6 @@ type Started = (
 pub fn start_capture(
     app: tauri::AppHandle,
     selection: VisualCaptureSelection,
-    parent_window: String,
     cancellation: CancellationToken,
 ) -> Result<Started, StartError> {
     let region = matches!(selection, VisualCaptureSelection::PortalRegion);
@@ -61,9 +62,13 @@ pub fn start_capture(
     } else {
         PortalSource::Monitor
     };
+    let parent = crate::portal_parent::PortalParent::export(&app, &cancellation)?;
+    if cancellation.is_cancelled() {
+        return Err(StartError::Cancelled);
+    }
     let session = prollyglot_visual_pipewire::start_capture(CaptureOptions {
         source,
-        parent_window,
+        parent_window: parent.identifier().to_owned(),
     })
     .map_err(|e| StartError::Failed(e.to_string()))?;
     // CaptureSession's Drop closes and joins even when the picker or preview
@@ -128,6 +133,7 @@ pub fn start_capture(
     Ok((
         PortalCapture {
             session,
+            parent,
             stop,
             worker: Some(worker),
         },

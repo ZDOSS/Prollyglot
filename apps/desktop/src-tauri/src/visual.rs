@@ -264,24 +264,11 @@ pub struct VisualRuntime {
     resources: Arc<Mutex<Option<ActiveVisualResources>>>,
     overlay_echoes: Arc<Mutex<OverlayEchoHistory>>,
     overlay_output: Arc<Mutex<VisualPresentationFrame>>,
-    portal_parent: Mutex<String>,
 }
 
 pub fn initialize(app: &AppHandle, runtime: &VisualRuntime) {
     #[cfg(target_os = "linux")]
     {
-        use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-        // Initialization runs on the UI thread. Native Wayland may use the
-        // portal's documented unparented form; never invent an exported handle.
-        if let Some(main) = app.get_webview_window("main")
-            && let Ok(handle) = main.window_handle()
-        {
-            *runtime.portal_parent.lock() = match handle.as_raw() {
-                RawWindowHandle::Xlib(handle) => format!("x11:{:x}", handle.window),
-                RawWindowHandle::Xcb(handle) => format!("x11:{:x}", handle.window.get()),
-                _ => String::new(),
-            };
-        }
         if let Some(reader) = app.get_webview_window("visual-overlay") {
             // The window starts non-focusable in tauri.conf.json so Tao does
             // not install its delayed first-draw focus restoration. The reader
@@ -933,15 +920,9 @@ pub async fn start_visual_translation(
 
     let capture_selection = selection.clone();
     let capture_cancellation = started.cancellation.clone();
-    let parent_window = state.visual.portal_parent.lock().clone();
     let capture_app = app.clone();
     let capture = match tauri::async_runtime::spawn_blocking(move || {
-        visual_capture::start_capture(
-            capture_app,
-            capture_selection,
-            parent_window,
-            capture_cancellation,
-        )
+        visual_capture::start_capture(capture_app, capture_selection, capture_cancellation)
     })
     .await
     {

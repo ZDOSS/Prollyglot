@@ -119,7 +119,6 @@ pub fn validate_selection(selection: &VisualCaptureSelection) -> Result<(), Stri
 pub fn start_capture(
     app: tauri::AppHandle,
     selection: VisualCaptureSelection,
-    parent_window: String,
     cancellation: CancellationToken,
 ) -> Result<StartedVisualCapture, StartError> {
     validate_selection(&selection).map_err(StartError::Failed)?;
@@ -129,7 +128,7 @@ pub fn start_capture(
     #[cfg(target_os = "linux")]
     {
         let (session, source, frames, events) =
-            crate::visual_portal::start_capture(app, selection, parent_window, cancellation)?;
+            crate::visual_portal::start_capture(app, selection, cancellation)?;
         Ok(StartedVisualCapture {
             session,
             source,
@@ -140,7 +139,7 @@ pub fn start_capture(
 
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = (app, parent_window);
+        let _ = app;
         use prollyglot_visual_windows::VisualCaptureSelection as Selection;
         let selection = match selection {
             VisualCaptureSelection::ApplicationWindow { source_id } => {

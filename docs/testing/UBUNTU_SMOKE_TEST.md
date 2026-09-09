@@ -253,6 +253,10 @@ text outside the crop is ignored. Cancel or Stop during another selection.
 On X11/XWayland, matching monitor geometry allows labels near the source;
 otherwise the reader is expected. Move/reconfigure a display and confirm that
 labels fall back to the reader or a changed capture asks for a new region.
+For the native Wayland check, launch with `GDK_BACKEND=wayland prollyglot-desktop`
+and repeat the picker, reader, and region steps. The picker should be associated
+with the main window where the compositor supports exported parents; native
+Wayland output still uses the reader. Stop must also work during a waiting picker.
 A brief report of
 missed text, lag, feedback, or an unavailable picker is enough; no recording,
 screenshot, or timing sheet is needed. These acceptance items remain open.

@@ -23,7 +23,7 @@ def main():
                    XDG_CONFIG_HOME=str(root / "config"), XDG_STATE_HOME=str(root / "state"),
                    XDG_CACHE_HOME=str(root / "cache"))
         # Fixtures must never inherit WSLg/desktop window or playback access.
-        for name in ("DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY", "PULSE_SERVER"):
+        for name in ("DISPLAY", "WAYLAND_DISPLAY", "WAYLAND_SOCKET", "XAUTHORITY", "PULSE_SERVER"):
             env.pop(name, None)
         processes, logs = [], []
         try:

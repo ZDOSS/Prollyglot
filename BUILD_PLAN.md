@@ -934,6 +934,12 @@ either platform release-ready.
   require matching logical monitor metadata and verified actual placement;
   unavailable or changed placement falls back to the reader. Capture format
   changes invalidate a drawn region. Raw images stay in GTK/native memory.
+- Version 0.5.1 parents the picker on native Wayland using a session-owned GDK
+  export, with bounded cancellable startup and unparented fallback. Private
+  software-rendered Weston checks extend the X11 suite to native Wayland reader
+  output, close/restart, region-preview cancellation, export cleanup, absent
+  exporters, and stalled/cancelled exports. A test-only protocol module exercises
+  callbacks; it does not establish real GNOME dialog placement or stacking.
 - Still pending: native Wayland anchoring/stacking, GPU-only
   buffer support, and owner-run GNOME/Wayland real-media acceptance. The reader
   uses bounded text/background-pixel feedback filtering; keeping Prollyglot off
