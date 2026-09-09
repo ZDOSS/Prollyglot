@@ -1,6 +1,6 @@
 # Experimental Ubuntu validation
 
-The current Ubuntu slice is **0.5.0**, targeting **Ubuntu 26.04 LTS amd64** with
+The current Ubuntu slice is **0.6.0**, targeting **Ubuntu 26.04 LTS amd64** with
 PipeWire and WirePlumber. Windows remains the first production target. Neither
 a successful compile nor the checks below imply a supported binary release.
 
@@ -11,9 +11,9 @@ a successful compile nor the checks below imply a supported binary release.
 | Everything I hear | Follow the effective default output or pin one output monitor | Physical USB/Bluetooth/HDMI changes, service restart, suspend/resume, long sessions |
 | Local captions | Shared speech/model pipeline, transcript, and caption overlay | Broader speech and Chinese/Spanish translation accuracy, latency, and resources |
 | Overlay | Initial GTK X11/XWayland path, appearance controls, click-through setup | Native GNOME stacking, click-through, fullscreen, scaling, and multiple monitors |
-| Native Wayland | Explicit GTK backend choice is honored | Positioning and overlay behavior are not yet supported/accepted |
+| Native Wayland | Explicit GTK backend choice, parented sharing picker where supported, movable screen-translation reader | Anchors remain unimplemented; stock GNOME lacks layer-shell. Dialog/fullscreen stacking needs acceptance |
 | Application audio | Grouped playback streams, synchronized mixing, stream/process restart recovery, ambiguity handling | Real browser/Electron/PulseAudio-bridge/sandbox identities, permissions, hardware clocks, and long sessions |
-| Screen translation | Portal window/monitor/region selection, native preview, verified X11/XWayland anchors or reader, cancellable Start/Stop | Actual GNOME portal/compositor and real-media acceptance; native Wayland anchors/fullscreen stacking, GPU-only buffers |
+| Screen translation | Portal window/monitor/region selection, native preview, verified X11/XWayland anchors or reader, cancellable Start/Stop, experimental RGB DMA-BUF import | Actual GNOME portal/compositor and real-media acceptance; GPU import/fallback hardware verification, fullscreen stacking |
 | Debian package | Native build, private inference libraries, declared dependencies | Fresh GNOME install/upgrade/remove and complete release-wide license inventory |
 
 Ubuntu 24.04 and other distributions are outside the initial supported-package

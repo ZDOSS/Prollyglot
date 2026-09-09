@@ -23,7 +23,7 @@ use spa::{
 };
 
 use crate::{
-    CaptureError, CaptureEvent, FrameGeometry,
+    CaptureError, CaptureEvent, FrameGeometry, dmabuf,
     portal::{Target, failed},
 };
 
@@ -37,6 +37,8 @@ struct Format {
     width: u32,
     height: u32,
     rgba: bool,
+    video: VideoFormat,
+    modifier: Option<u64>,
 }
 
 impl Format {
@@ -64,6 +66,8 @@ impl Format {
             width,
             height,
             rgba,
+            video: format,
+            modifier: None,
         })
     }
 }
@@ -219,84 +223,120 @@ fn object(type_: u32, id: u32, properties: Vec<Property>) -> Result<Vec<u8>, Cap
     .map_err(failed)
 }
 
-fn format_pod() -> Result<Vec<u8>, CaptureError> {
+fn format_pod(gpu: Option<(VideoFormat, &[u64])>) -> Result<Vec<u8>, CaptureError> {
     use spa::sys::*;
-    object(
-        SPA_TYPE_OBJECT_Format,
-        SPA_PARAM_EnumFormat,
-        vec![
-            property(SPA_FORMAT_mediaType, Value::Id(Id(SPA_MEDIA_TYPE_video))),
-            property(
-                SPA_FORMAT_mediaSubtype,
-                Value::Id(Id(SPA_MEDIA_SUBTYPE_raw)),
-            ),
-            property(
-                SPA_FORMAT_VIDEO_format,
-                Value::Choice(ChoiceValue::Id(Choice(
-                    ChoiceFlags::empty(),
-                    ChoiceEnum::Enum {
-                        default: Id(SPA_VIDEO_FORMAT_BGRx),
-                        alternatives: vec![
-                            Id(SPA_VIDEO_FORMAT_BGRx),
-                            Id(SPA_VIDEO_FORMAT_BGRA),
-                            Id(SPA_VIDEO_FORMAT_RGBx),
-                            Id(SPA_VIDEO_FORMAT_RGBA),
-                        ],
+    let mut properties = vec![
+        property(SPA_FORMAT_mediaType, Value::Id(Id(SPA_MEDIA_TYPE_video))),
+        property(
+            SPA_FORMAT_mediaSubtype,
+            Value::Id(Id(SPA_MEDIA_SUBTYPE_raw)),
+        ),
+        property(
+            SPA_FORMAT_VIDEO_format,
+            Value::Choice(ChoiceValue::Id(Choice(
+                ChoiceFlags::empty(),
+                ChoiceEnum::Enum {
+                    default: Id(SPA_VIDEO_FORMAT_BGRx),
+                    alternatives: vec![
+                        Id(SPA_VIDEO_FORMAT_BGRx),
+                        Id(SPA_VIDEO_FORMAT_BGRA),
+                        Id(SPA_VIDEO_FORMAT_RGBx),
+                        Id(SPA_VIDEO_FORMAT_RGBA),
+                    ],
+                },
+            ))),
+        ),
+        property(
+            SPA_FORMAT_VIDEO_size,
+            Value::Choice(ChoiceValue::Rectangle(Choice(
+                ChoiceFlags::empty(),
+                ChoiceEnum::Range {
+                    default: Rectangle {
+                        width: 1920,
+                        height: 1080,
                     },
-                ))),
-            ),
-            property(
-                SPA_FORMAT_VIDEO_size,
-                Value::Choice(ChoiceValue::Rectangle(Choice(
-                    ChoiceFlags::empty(),
-                    ChoiceEnum::Range {
-                        default: Rectangle {
-                            width: 1920,
-                            height: 1080,
-                        },
-                        min: Rectangle {
-                            width: 1,
-                            height: 1,
-                        },
-                        max: Rectangle {
-                            width: MAX_DIMENSION,
-                            height: MAX_DIMENSION,
-                        },
+                    min: Rectangle {
+                        width: 1,
+                        height: 1,
                     },
-                ))),
-            ),
-            // Variable-rate screen sources can emit only changed frames. Do not
-            // require a fixed camera-style rate or manufacture duplicate images.
-            property(
-                SPA_FORMAT_VIDEO_framerate,
-                Value::Choice(ChoiceValue::Fraction(Choice(
-                    ChoiceFlags::empty(),
-                    ChoiceEnum::Range {
-                        default: Fraction { num: 0, denom: 1 },
-                        min: Fraction { num: 0, denom: 1 },
-                        max: Fraction { num: 240, denom: 1 },
+                    max: Rectangle {
+                        width: MAX_DIMENSION,
+                        height: MAX_DIMENSION,
                     },
-                ))),
-            ),
-            property(
-                SPA_FORMAT_VIDEO_maxFramerate,
-                Value::Choice(ChoiceValue::Fraction(Choice(
-                    ChoiceFlags::empty(),
-                    ChoiceEnum::Range {
-                        default: Fraction {
-                            num: DEFAULT_LIVE_CAPTURE_FPS,
-                            denom: 1,
-                        },
-                        min: Fraction { num: 1, denom: 1 },
-                        max: Fraction { num: 240, denom: 1 },
+                },
+            ))),
+        ),
+        // Variable-rate screen sources can emit only changed frames. Do not
+        // require a fixed camera-style rate or manufacture duplicate images.
+        property(
+            SPA_FORMAT_VIDEO_framerate,
+            Value::Choice(ChoiceValue::Fraction(Choice(
+                ChoiceFlags::empty(),
+                ChoiceEnum::Range {
+                    default: Fraction { num: 0, denom: 1 },
+                    min: Fraction { num: 0, denom: 1 },
+                    max: Fraction { num: 240, denom: 1 },
+                },
+            ))),
+        ),
+        property(
+            SPA_FORMAT_VIDEO_maxFramerate,
+            Value::Choice(ChoiceValue::Fraction(Choice(
+                ChoiceFlags::empty(),
+                ChoiceEnum::Range {
+                    default: Fraction {
+                        num: DEFAULT_LIVE_CAPTURE_FPS,
+                        denom: 1,
                     },
-                ))),
-            ),
-        ],
-    )
+                    min: Fraction { num: 1, denom: 1 },
+                    max: Fraction { num: 240, denom: 1 },
+                },
+            ))),
+        ),
+    ];
+    if let Some((video, modifiers)) = gpu {
+        let Some(first) = modifiers.first() else {
+            return Err(failed("No GPU modifiers to advertise."));
+        };
+        properties[2].value = Value::Id(Id(video.as_raw()));
+        properties.push(Property {
+            key: SPA_FORMAT_VIDEO_modifier,
+            flags: PropertyFlags::MANDATORY | PropertyFlags::DONT_FIXATE,
+            value: Value::Choice(ChoiceValue::Long(Choice(
+                ChoiceFlags::empty(),
+                ChoiceEnum::Enum {
+                    default: *first as i64,
+                    alternatives: modifiers.iter().map(|modifier| *modifier as i64).collect(),
+                },
+            ))),
+        });
+    }
+    object(SPA_TYPE_OBJECT_Format, SPA_PARAM_EnumFormat, properties)
 }
 
-fn buffer_params(stream: &pw::stream::Stream) -> Result<(), CaptureError> {
+fn format_pods(formats: &[dmabuf::Format]) -> Result<Vec<Vec<u8>>, CaptureError> {
+    // Preserve the known CPU path as first preference. GPU-only producers can
+    // choose a separately advertised format/modifier pair; never fake linearity.
+    let mut pods = vec![format_pod(None)?];
+    for video in [
+        VideoFormat::BGRx,
+        VideoFormat::BGRA,
+        VideoFormat::RGBx,
+        VideoFormat::RGBA,
+    ] {
+        let modifiers = formats
+            .iter()
+            .filter(|format| format.video == video)
+            .map(|format| format.modifier)
+            .collect::<Vec<_>>();
+        if !modifiers.is_empty() {
+            pods.push(format_pod(Some((video, &modifiers)))?);
+        }
+    }
+    Ok(pods)
+}
+
+fn buffer_params(stream: &pw::stream::Stream, gpu: bool) -> Result<(), CaptureError> {
     use spa::sys::*;
     let mut pods = vec![object(
         SPA_TYPE_OBJECT_ParamBuffers,
@@ -306,7 +346,11 @@ fn buffer_params(stream: &pw::stream::Stream) -> Result<(), CaptureError> {
             Value::Choice(ChoiceValue::Int(Choice(
                 ChoiceFlags::empty(),
                 ChoiceEnum::Flags {
-                    default: (1 << SPA_DATA_MemPtr) | (1 << SPA_DATA_MemFd),
+                    default: if gpu {
+                        1 << SPA_DATA_DmaBuf
+                    } else {
+                        (1 << SPA_DATA_MemPtr) | (1 << SPA_DATA_MemFd)
+                    },
                     flags: vec![],
                 },
             ))),
@@ -342,12 +386,31 @@ struct StreamData {
     frames: LatestFrameSender,
     events: Sender<CaptureEvent>,
     failure: Rc<RefCell<Option<CaptureError>>>,
-    delivered: Rc<Cell<bool>>,
+    awaiting_frame: Rc<Cell<Option<Instant>>>,
+    gpu: Option<dmabuf::Importer>,
+    gpu_formats: Vec<dmabuf::Format>,
+    fallback_reason: Option<String>,
+    stop: Arc<AtomicBool>,
     sequence: u64,
     started: Instant,
 }
 
 impl StreamData {
+    fn fallback(
+        &mut self,
+        stream: &pw::stream::Stream,
+        error: CaptureError,
+    ) -> Result<(), CaptureError> {
+        self.fallback_reason = Some(error.to_string());
+        self.gpu_formats.clear();
+        self.format = None;
+        self.awaiting_frame.set(Some(Instant::now()));
+        let bytes = format_pod(None)?;
+        let pod = Pod::from_bytes(&bytes).ok_or_else(|| failed("Invalid CPU fallback format."))?;
+        // This renegotiates the existing selected node/portal session. It does
+        // not reconnect, choose another source, or reopen the desktop picker.
+        stream.update_params(&mut [pod]).map_err(failed)
+    }
     fn process(&mut self, stream: &pw::stream::Stream) -> Result<(), CaptureError> {
         let Some(format) = self.format else {
             return Ok(());
@@ -392,16 +455,18 @@ impl StreamData {
             .map_or(0, |meta| meta.transform().as_raw());
         let geometry = geometry(format, crop, transform)?;
         let data = buffer.datas_mut();
-        if data.len() != 1 {
-            return Err(failed("The screen buffer is not a packed RGB plane."));
+        if data.is_empty() || data.iter().any(|plane| plane.as_raw().chunk.is_null()) {
+            return Err(failed("The screen buffer has no valid image planes."));
         }
-        let mapped = &mut data[0];
-        let chunk = mapped.chunk();
-        if chunk.as_raw().flags & spa::sys::SPA_CHUNK_FLAG_CORRUPTED as i32 != 0 {
+        if data.iter().any(|plane| {
+            plane.chunk().as_raw().flags & spa::sys::SPA_CHUNK_FLAG_CORRUPTED as i32 != 0
+        }) {
             return Ok(());
         }
+        let gpu_buffer = data[0].type_() == spa::buffer::DataType::DmaBuf;
+        let chunk = data[0].chunk();
         let empty = chunk.as_raw().flags & spa::sys::SPA_CHUNK_FLAG_EMPTY as i32 != 0;
-        if chunk.size() == 0 && !empty {
+        if chunk.size() == 0 && !empty && !gpu_buffer {
             return Ok(());
         }
         let chunk = Chunk {
@@ -409,16 +474,6 @@ impl StreamData {
             size: chunk.size() as usize,
             stride: chunk.stride(),
         };
-        if !empty
-            && !matches!(
-                mapped.type_(),
-                spa::buffer::DataType::MemPtr | spa::buffer::DataType::MemFd
-            )
-        {
-            return Err(failed(
-                "The desktop supplied GPU-only screen buffers; CPU-readable capture is required.",
-            ));
-        }
         self.sequence = self.sequence.saturating_add(1);
         let captured = self.started.elapsed().as_micros() as u64;
         let frame = if empty {
@@ -438,8 +493,61 @@ impl StreamData {
                 pixels,
             )
             .map_err(failed)?
+        } else if gpu_buffer {
+            let gpu_format = dmabuf::Format {
+                video: format.video,
+                modifier: format.modifier.ok_or_else(|| {
+                    failed("The desktop sent a GPU buffer without negotiating its modifier.")
+                })?,
+            };
+            let importer = self
+                .gpu
+                .as_ref()
+                .filter(|_| self.gpu_formats.contains(&gpu_format))
+                .ok_or_else(|| {
+                    failed("The desktop sent a GPU format this system cannot import.")
+                })?;
+            let planes = dmabuf::planes(data)?;
+            let pixels =
+                match importer.read(gpu_format, format.width, format.height, &planes, &self.stop) {
+                    Ok(pixels) => pixels,
+                    Err(CaptureError::Cancelled) => return Err(CaptureError::Cancelled),
+                    Err(error) => {
+                        // Return the buffer before renegotiating its pool.
+                        drop(buffer);
+                        self.fallback(stream, error)?;
+                        return Ok(());
+                    }
+                };
+            // EGL decodes channel layout/modifiers; GLES readback is RGBA.
+            // Existing crop/orientation logic is shared with mapped CPU frames.
+            copy_frame(
+                &pixels,
+                Chunk {
+                    offset: 0,
+                    size: pixels.len(),
+                    stride: (format.width * 4) as i32,
+                },
+                Format {
+                    rgba: true,
+                    ..format
+                },
+                geometry,
+                self.sequence,
+                captured,
+            )?
         } else {
-            let bytes = mapped
+            if data.len() != 1
+                || !matches!(
+                    data[0].type_(),
+                    spa::buffer::DataType::MemPtr | spa::buffer::DataType::MemFd
+                )
+            {
+                return Err(failed(
+                    "The desktop supplied an unsupported screen buffer type.",
+                ));
+            }
+            let bytes = data[0]
                 .data()
                 .ok_or_else(|| failed("The desktop screen buffer could not be mapped."))?;
             copy_frame(bytes, chunk, format, geometry, self.sequence, captured)?
@@ -451,7 +559,7 @@ impl StreamData {
             self.last_geometry = Some(geometry);
         }
         let _ = self.frames.send(frame);
-        self.delivered.set(true);
+        self.awaiting_frame.set(None);
         Ok(())
     }
 }
@@ -528,8 +636,14 @@ pub(crate) fn run(
     }
     let stream =
         pw::stream::StreamRc::new(core, "Prollyglot selected screen", props).map_err(failed)?;
-    let delivered = Rc::new(Cell::new(false));
+    let gpu = dmabuf::Importer::open().ok();
+    if stop.load(Ordering::Acquire) {
+        return Err(CaptureError::Cancelled);
+    }
+    let gpu_formats = gpu.as_ref().map_or_else(Vec::new, |gpu| gpu.formats());
+    let bytes = format_pods(&gpu_formats)?;
     let started = Instant::now();
+    let awaiting_frame = Rc::new(Cell::new(Some(started)));
     let _listener = stream
         .add_local_listener_with_user_data(StreamData {
             format: None,
@@ -537,13 +651,19 @@ pub(crate) fn run(
             frames,
             events,
             failure: failure.clone(),
-            delivered: delivered.clone(),
+            awaiting_frame: awaiting_frame.clone(),
+            gpu,
+            gpu_formats,
+            fallback_reason: None,
+            stop: Arc::clone(&stop),
             sequence: 0,
             started,
         })
         .state_changed(|_, data, old, state| match state {
             pw::stream::StreamState::Error(message) => {
-                *data.failure.borrow_mut() = Some(failed(message))
+                *data.failure.borrow_mut() = Some(failed(if let Some(reason) = &data.fallback_reason {
+                    format!("GPU screen import failed ({reason}); CPU-readable capture was also unavailable: {message}")
+                } else { message }))
             }
             pw::stream::StreamState::Unconnected if old != pw::stream::StreamState::Unconnected => {
                 *data.failure.borrow_mut() = Some(CaptureError::Closed)
@@ -555,22 +675,27 @@ pub(crate) fn run(
                 return;
             }
             data.format = None;
+            if data.awaiting_frame.get().is_none() { data.awaiting_frame.set(Some(Instant::now())); }
             let Some(param) = param else { return };
             let result = (|| {
                 let mut raw = VideoInfoRaw::new();
                 raw.parse(param).map_err(failed)?;
-                if raw
-                    .flags()
-                    .contains(spa::param::video::VideoFlags::MODIFIER)
-                    || raw.interlace_mode() != spa::param::video::VideoInterlaceMode::Progressive
+                if raw.interlace_mode() != spa::param::video::VideoInterlaceMode::Progressive
                     || raw.views() > 1
                 {
                     return Err(failed(
-                        "Screen capture requires progressive, linear CPU-readable pixels.",
+                        "Screen capture requires progressive, single-view pixels.",
                     ));
                 }
-                let format = Format::new(raw.size().width, raw.size().height, raw.format())?;
-                buffer_params(stream)?;
+                let mut format = Format::new(raw.size().width, raw.size().height, raw.format())?;
+                if raw.flags().contains(spa::param::video::VideoFlags::MODIFIER) {
+                    let selected = dmabuf::Format { video: raw.format(), modifier: raw.modifier() };
+                    if !data.gpu_formats.contains(&selected) || raw.flags().contains(spa::param::video::VideoFlags::MODIFIER_FIXATION_REQUIRED) {
+                        return Err(failed("The desktop did not select an advertised GPU format/modifier."));
+                    }
+                    format.modifier = Some(raw.modifier());
+                }
+                buffer_params(stream, format.modifier.is_some())?;
                 data.format = Some(format);
                 Ok(())
             })();
@@ -585,8 +710,10 @@ pub(crate) fn run(
         })
         .register()
         .map_err(failed)?;
-    let bytes = format_pod()?;
-    let pod = Pod::from_bytes(&bytes).ok_or_else(|| failed("Invalid screen format."))?;
+    let mut pods = bytes
+        .iter()
+        .map(|bytes| Pod::from_bytes(bytes).ok_or_else(|| failed("Invalid screen format.")))
+        .collect::<Result<Vec<_>, _>>()?;
     // Pre-v6 portals supply only node ID. Never reconnect or fall back after
     // destruction: a newly allocated node could belong to a different source.
     stream
@@ -598,7 +725,7 @@ pub(crate) fn run(
                 Some(target.node_id)
             },
             pw::stream::StreamFlags::AUTOCONNECT | pw::stream::StreamFlags::MAP_BUFFERS,
-            &mut [pod],
+            &mut pods,
         )
         .map_err(failed)?;
     // No RT_PROCESS: copying, allocation and publication stay off the graph's
@@ -608,9 +735,12 @@ pub(crate) fn run(
         if let Some(error) = failure.borrow_mut().take() {
             return Err(error);
         }
-        if !delivered.get() && started.elapsed() >= START_TIMEOUT {
+        if awaiting_frame
+            .get()
+            .is_some_and(|since| since.elapsed() >= START_TIMEOUT)
+        {
             return Err(failed(
-                "The selected screen source did not provide a readable frame.",
+                "The selected screen source did not provide a readable frame after format negotiation. Try sharing another window or monitor.",
             ));
         }
     }
@@ -620,6 +750,85 @@ pub(crate) fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cpu_fallback_and_gpu_modifier_offers_are_separate_spa_formats() {
+        let formats = [
+            dmabuf::Format {
+                video: VideoFormat::BGRA,
+                modifier: 0,
+            },
+            dmabuf::Format {
+                video: VideoFormat::BGRA,
+                modifier: 0x0300_0000_0000_0001,
+            },
+            dmabuf::Format {
+                video: VideoFormat::RGBA,
+                modifier: dmabuf::IMPLICIT_MODIFIER,
+            },
+        ];
+        let pods = format_pods(&formats).unwrap();
+        assert_eq!(pods.len(), 3);
+        for (index, bytes) in pods.iter().enumerate() {
+            let mut info = VideoInfoRaw::new();
+            info.parse(Pod::from_bytes(bytes).unwrap()).unwrap();
+            assert_eq!(
+                info.flags()
+                    .contains(spa::param::video::VideoFlags::MODIFIER),
+                index != 0
+            );
+            if index != 0 {
+                assert!(
+                    info.flags()
+                        .contains(spa::param::video::VideoFlags::MODIFIER_FIXATION_REQUIRED)
+                );
+            }
+            if index != 0 {
+                let (_, value) =
+                    spa::pod::deserialize::PodDeserializer::deserialize_from::<Value>(bytes)
+                        .unwrap();
+                let Value::Object(mut selected) = value else {
+                    panic!("format object required")
+                };
+                let modifier = selected
+                    .properties
+                    .iter_mut()
+                    .find(|p| p.key == spa::sys::SPA_FORMAT_VIDEO_modifier)
+                    .unwrap();
+                let Value::Choice(ChoiceValue::Long(Choice(
+                    _,
+                    ChoiceEnum::Enum {
+                        default,
+                        alternatives,
+                    },
+                ))) = &modifier.value
+                else {
+                    panic!("modifier choices required")
+                };
+                assert!(alternatives.contains(default));
+                let fixed = *default;
+                modifier.value = Value::Long(fixed);
+                modifier.flags.remove(PropertyFlags::DONT_FIXATE);
+                let fixed_bytes = object(
+                    selected.type_,
+                    spa::sys::SPA_PARAM_Format,
+                    selected.properties,
+                )
+                .unwrap();
+                info.parse(Pod::from_bytes(&fixed_bytes).unwrap()).unwrap();
+                assert!(
+                    !info
+                        .flags()
+                        .contains(spa::param::video::VideoFlags::MODIFIER_FIXATION_REQUIRED)
+                );
+                assert_eq!(info.modifier(), fixed as u64);
+                if index == 2 {
+                    assert_eq!(info.modifier(), dmabuf::IMPLICIT_MODIFIER);
+                }
+            }
+        }
+        assert_eq!(format_pods(&[]).unwrap(), vec![format_pod(None).unwrap()]);
+    }
 
     #[test]
     fn normalizes_all_channel_orders_without_using_x_or_alpha_as_opacity() {

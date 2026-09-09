@@ -35,7 +35,11 @@ assert root.parent == private
 env = os.environ.copy()
 env.update(GDK_BACKEND=backend, GDK_SCALE=str(scale), NO_AT_BRIDGE="1", XDG_DATA_HOME=str(root / "data"),
            XDG_CONFIG_HOME=str(root / "config"), XDG_CACHE_HOME=str(root / "cache"),
-           XDG_STATE_HOME=str(root / "state"))
+           XDG_STATE_HOME=str(root / "state"), LIBGL_ALWAYS_SOFTWARE="1",
+           WEBKIT_DISABLE_DMABUF_RENDERER="1")
+# Both private compositors are software-only. WebKit's presentation renderer
+# must not try a DRI3/DMA-BUF path on Xvfb; capture-buffer import is tested
+# separately by check-gpu-capture.sh and the explicitly supplied render node.
 # Copy, not a symlink: model verification stamps and cleanup must never write
 # into the developer's installed model directory.
 model = root / "data/com.prollyglot.desktop/models/visual/ppocrv6-small-multilingual/v3.9.0"
@@ -93,8 +97,7 @@ try:
         # Explicit headless/Pixman backends cannot connect to a desktop,
         # acquire a DRM device, or create a nested WSLg window.
         env.update(WAYLAND_DISPLAY=f"prollyglot-{secrets.token_hex(8)}",
-                   XDG_SESSION_TYPE="wayland", LIBGL_ALWAYS_SOFTWARE="1",
-                   WEBKIT_DISABLE_DMABUF_RENDERER="1")
+                   XDG_SESSION_TYPE="wayland")
         log = open(root / "weston.log", "w+")
         logs.append(log)
         modules = []
@@ -143,6 +146,8 @@ try:
     main_handle = request("GET", "window")
     caps = invoke("visual_capabilities")
     assert caps["portalScreenCast"] and not caps["windowsGraphicsCapture"]
+    if wayland:
+        assert "movable reader" in caps["message"] and "unavailable" in caps["message"]
     assert invoke("visual_source_snapshot") == {"windows": [], "displays": []}
     wait(lambda: invoke("visual_model_status")["models"][0]["phase"] == "ready")
     js("window.fixtureText=[];window.__TAURI_INTERNALS__.invoke('plugin:event|listen',{event:'visual-text-update',target:{kind:'Any'},handler:window.__TAURI_INTERNALS__.transformCallback(event=>window.fixtureText.push(event.payload))});")
@@ -260,6 +265,7 @@ try:
     if x11:
         assert not x11.find("Choose screen region — Prollyglot")
 except BaseException:
+    print("Private fixture process status:", [(p.args[0], p.poll()) for p in processes], flush=True)
     if x11: print("Private X window titles:", getattr(x11, "titles", []), flush=True)
     for log in logs:
         log.flush()

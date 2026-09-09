@@ -7,6 +7,8 @@
 //! in-process channel; this crate has no recording or serialization API.
 
 #[cfg(target_os = "linux")]
+mod dmabuf;
+#[cfg(target_os = "linux")]
 mod portal;
 #[cfg(target_os = "linux")]
 mod video;

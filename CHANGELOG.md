@@ -5,6 +5,22 @@ Versioning while it is in the `0.x` pre-release line.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-09
+
+- Add experimental Ubuntu DMA-BUF capture through offscreen EGL/GLES for
+  negotiated packed RGB formats and supported modifiers. Keep CPU buffers as
+  the first preference and retry shared memory on the same selected stream if
+  GPU import or readback fails. Preserve crop/rotation and producer FD ownership.
+- Add isolated software graphics checks and an opt-in real GPU-buffer fixture;
+  declare EGL/GLES package dependencies and include binding license notices.
+  Real GPU import and compositor interoperability still need hardware evidence.
+- Select software WebKit rendering for both private X11 and Wayland fixtures;
+  keep GPU hardware checks separate from desktop fixture acceptance.
+- State the native Wayland reader limitation in the screen-translation controls.
+  Stock GNOME lacks the layer-shell protocol needed by the proposed anchoring
+  approach; native Wayland anchors are not implemented. Real-media, OBS,
+  physical mixed-DPI, and fresh GNOME acceptance remain open.
+
 ## [0.5.1] - 2026-09-08
 
 - Parent the Ubuntu sharing picker to the main window on native Wayland using

@@ -218,7 +218,7 @@ export class VisualPanel {
     hero.append(stats);
     if (state.capabilities.portalScreenCast) {
       const help = create("p");
-      help.textContent = "Monitor and region translations appear near the source when desktop positioning is available; otherwise they use a movable reader. Stop ends sharing.";
+      help.textContent = `${state.capabilities.message ?? "Translations use a movable reader when desktop positioning is unavailable."} Stop ends sharing.`;
       hero.append(help);
     }
 
@@ -395,7 +395,7 @@ export class VisualPanel {
       "Translate to",
       targetLanguage,
       state.capabilities.portalScreenCast
-        ? "Monitor and region translations appear near the original when desktop positioning is available, with a movable reader as fallback."
+        ? state.capabilities.message ?? "Translations use a movable reader when desktop positioning is unavailable."
         : "The original remains visible while its local translation appears nearby."
     ));
     outputColumn.append(languages);

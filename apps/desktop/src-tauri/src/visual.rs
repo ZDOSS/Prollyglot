@@ -257,6 +257,7 @@ type SharedVisualStatus = Arc<Mutex<PublishedVisualStatus>>;
 
 #[derive(Default)]
 pub struct VisualRuntime {
+    native_wayland: AtomicBool,
     catalog: Arc<Mutex<VisualModelCatalogStatus>>,
     installing: Arc<AtomicBool>,
     inspecting: Arc<AtomicBool>,
@@ -269,6 +270,15 @@ pub struct VisualRuntime {
 pub fn initialize(app: &AppHandle, runtime: &VisualRuntime) {
     #[cfg(target_os = "linux")]
     {
+        use gtk::prelude::*;
+        if let Some(main) = app.get_webview_window("main")
+            && let Ok(window) = main.gtk_window()
+        {
+            runtime.native_wayland.store(
+                window.display().type_().name() == "GdkWaylandDisplay",
+                Ordering::Release,
+            );
+        }
         if let Some(reader) = app.get_webview_window("visual-overlay") {
             // The window starts non-focusable in tauri.conf.json so Tao does
             // not install its delayed first-draw focus restoration. The reader
@@ -340,7 +350,7 @@ pub fn is_active(state: &RuntimeState) -> bool {
 }
 
 #[tauri::command]
-pub fn visual_capabilities() -> VisualCaptureCapabilities {
+pub fn visual_capabilities(state: State<'_, RuntimeState>) -> VisualCaptureCapabilities {
     let capabilities = prollyglot_visual_windows::capabilities();
     VisualCaptureCapabilities {
         windows_graphics_capture: capabilities.windows_graphics_capture,
@@ -348,7 +358,11 @@ pub fn visual_capabilities() -> VisualCaptureCapabilities {
         system_picker: capabilities.system_picker,
         desktop_duplication_experiment: capabilities.desktop_duplication_experiment,
         message: if cfg!(target_os = "linux") {
-            Some("Choose a window, monitor, or region at Start. Monitor and region labels use verified desktop positions, with a movable reader as fallback.".into())
+            Some(if state.visual.native_wayland.load(Ordering::Acquire) {
+                "Translations use a movable reader on this desktop. Anchored labels are unavailable in this native Wayland session."
+            } else {
+                "Monitor and region translations appear near the source when desktop positioning is available; otherwise they use a movable reader."
+            }.into())
         } else {
             capabilities.message
         },

@@ -16,6 +16,12 @@ system library search paths. Speech models are separate optional downloads.
   <https://gitlab.freedesktop.org/pipewire/pipewire-rs>.
 - **GTK / WebKitGTK**: native desktop libraries come from Ubuntu packages rather
   than being copied into the application.
+- **glow 0.16.0** and **khronos-egl 6.0.0**: Rust graphics bindings used for
+  offscreen DMA-BUF readback, under their MIT license options. Matching MIT
+  notices are included here. Sources: <https://github.com/grovesNL/glow> and
+  <https://github.com/timothee-haudebourg/khronos-egl>.
+  EGL/GLES and the graphics driver remain system libraries; Prollyglot does not
+  bundle or modify a GPU driver.
 
 The packaged copies of the two inference libraries have only their runtime
 search path changed to `$ORIGIN`, so they find each other beside the executable

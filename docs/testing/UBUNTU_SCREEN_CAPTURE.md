@@ -4,7 +4,14 @@ Version 0.5.0 supports portal window/monitor capture and monitor-region drawing
 in a native still preview. Matching X11/XWayland monitor geometry can anchor
 translations; missing or unverified placement falls back to the movable reader.
 Version 0.5.1 adds native Wayland picker parenting and private Wayland reader
-checks. Native Wayland anchoring, fresh GNOME, and real-media acceptance remain open.
+checks. Version 0.6.0 adds experimental RGB DMA-BUF import and explicitly
+describes reader output in native Wayland controls. Native Wayland anchoring,
+real GPU hardware, fresh GNOME, and real-media acceptance remain open.
+
+Stock GNOME does not support layer-shell, so integrating that library would not
+provide native GNOME anchors. Prollyglot keeps the movable reader; native anchors
+need an appropriate compositor protocol or a separate desktop integration
+decision. See [GTK Layer Shell's supported desktops](https://github.com/wmww/gtk-layer-shell#supported-desktops).
 
 ## Run without using the desktop
 
@@ -87,8 +94,10 @@ accuracy/latency remain owner-run acceptance. These tests are not substitutes.
   Metadata is bounded separately; terminal state is retained if its consumer
   stalls. Empty neutral buffers clear old pixel evidence; corrupted buffers are
   discarded. Crop/rotation are applied before OCR, with raw pixel geometry
-  exposed separately. CPU-mappable packed RGB is required; DMA-BUF import,
-  negative strides, interlaced and multi-view video remain unsupported.
+  exposed separately. CPU-mappable packed RGB remains preferred. Experimental
+  DMA-BUF import supports negotiated BGRx/BGRA/RGBx/RGBA with readable modifiers;
+  the limits and separate hardware gate are described below. Negative strides,
+  interlaced and multi-view video remain unsupported.
 - `StreamInfo` describes optional compositor **logical** coordinates. A monitor's
   logical size can differ from captured pixel dimensions; a window has no
   portable global position. `FrameGeometry` describes the raw, cropped and
@@ -126,6 +135,56 @@ accuracy/latency remain owner-run acceptance. These tests are not substitutes.
   masks on words or background alone. Color conversion and matching scene
   backgrounds can still defeat this heuristic; prefer sharing only the media
   window or keeping Prollyglot outside a shared monitor.
+
+## GPU-buffer scope and isolated checks (0.6.0)
+
+The backend probes offscreen EGL device displays without connecting to X11 or
+Wayland. It advertises shared-memory formats first, followed by separate RGB
+format/modifier choices from the driver. Modifiers flagged external-only are
+excluded because the current readback uses a 2D texture attached to a framebuffer.
+Legacy EGL importers without modifier queries can offer implicit modifiers.
+This follows [PipeWire's DMA-BUF negotiation guidance](https://docs.pipewire.org/devel/page_dma_buf.html).
+
+Imports accept one to four planes, including modifier-specific auxiliary planes,
+without requiring a CPU mapping or a nonzero chunk size. Plane descriptors,
+offsets, dimensions and allocation sizes are checked before readback. Producer
+FDs stay owned by PipeWire, and `EGL_IMAGE_PRESERVED_KHR` requests preservation
+of source pixels. Explicit linear and implicit modifiers remain distinct.
+See the [EGL import extension](https://registry.khronos.org/EGL/extensions/EXT/EGL_EXT_image_dma_buf_import.txt),
+[modifier extension](https://registry.khronos.org/EGL/extensions/EXT/EGL_EXT_image_dma_buf_import_modifiers.txt),
+and [image preservation contract](https://registry.khronos.org/EGL/extensions/KHR/EGL_KHR_image_base.txt).
+
+GLES reads RGBA into a pixel buffer, polls its fence for at most 250 ms per
+compatible device, then applies the existing crop/rotation and opaque BGRA
+normalization. Stop cancels fence polling. In-process graphics driver calls can
+still block; this is not driver crash/hang isolation. Import/readback failure
+requests shared memory on the **same selected stream**, disables further GPU
+offers for that session, and requires a readable frame within five seconds.
+If the producer cannot supply one, capture ends with an error. It never chooses
+another source or reopens the picker automatically.
+
+This is packed 8-bit RGB support, not YUV/HDR conversion or support for
+external-only textures or explicit-sync timelines. Actual modifier import,
+cross-GPU sharing, implicit synchronization, and failed-import CPU renegotiation
+still need hardware/compositor evidence.
+
+```bash
+bash scripts/check-gpu-capture.sh
+
+# Optional, on a GPU host; choose that host's actual render node:
+PROLLYGLOT_DMABUF_RENDER_NODE=/dev/dri/renderD128 \
+bash scripts/check-gpu-capture.sh
+```
+
+The first command uses a private software EGL pbuffer, verifies channel/row
+order over repeated readbacks, cancellation recovery, and caller FD ownership
+after an invalid import. The second also allocates a synthetic linear RGB GBM
+buffer on the explicitly supplied render node and imports it twice through the
+production importer. It requires `libgbm1`. Neither test opens a desktop window,
+captures a source, changes display modes, or records media. The software test
+does not exercise a valid DMA-BUF import; the hardware fixture does not prove
+real portal negotiation or compositor compatibility. Both are opt-in tests and
+remain ignored by ordinary Cargo test runs.
 
 ## Desktop integration fixtures
 
@@ -166,6 +225,8 @@ desktop nor acquires display/input hardware. The runner removes
 inherited display/playback variables, uses Linux's abstract X socket instead
 of changing WSLg's socket directory, and keeps app data/model copies private.
 Native processes and their child process groups are cleaned up afterward.
+Both fixtures explicitly use software WebKit rendering; Xvfb supplies no DRI3
+device, and GPU capture imports have their own separate check.
 No owner desktop, real sharing picker, hardware routing, or recording is used.
 
 The native cases cover Chinese/window and Spanish/monitor OCR, presentation IPC
@@ -190,6 +251,41 @@ surfaces or implement dialog stacking; those remain real compositor checks.
 The implementation follows GTK 3.24's
 [export/unexport lifetime contract](https://github.com/GNOME/gtk/blob/3.24.52/gdk/wayland/gdkwindow-wayland.c)
 and Weston's documented [headless backend](https://wayland.pages.freedesktop.org/weston/toc/running-weston.html).
+
+## GPU integration validation (0.6.0)
+
+On 2026-09-09, on the Ubuntu 26.04/WSL2 development host:
+
+- The full local gate passed 174 Rust tests and 58 frontend tests, formatting,
+  Clippy, generated bindings, version synchronization, frontend production
+  bundling, and Windows desktop MSVC cross-compilation. Fourteen opt-in tests
+  remain ignored in the ordinary suite, including the two new graphics tests.
+- The opt-in software EGL test passed repeated exact-pixel readbacks,
+  cancellation recovery, and invalid-import FD ownership checks. Ordinary Rust
+  tests also cover modifier negotiation/fixation, FOURCC mapping, auxiliary
+  planes, implicit versus linear modifiers, and invalid descriptor geometry.
+- All four private portal/backend tests passed, including actual local OCR of
+  the six synthetic Chinese/Spanish fixtures. This host has no `/dev/dri` or
+  `/dev/dma_heap`, so these exercise the CPU capture path with GPU import
+  unavailable. The real DMA-BUF fixture was not run; hardware import, GPU
+  fallback negotiation, and driver-specific synchronization remain unverified.
+- Built `target/release/bundle/deb/Prollyglot_0.6.0_amd64.deb` (33,548,640 bytes).
+  Extracted native dependencies resolved, EGL/GLES dependencies and graphics
+  license notices were present, and the test-only Weston module was absent.
+- All 17 native scenarios passed against the packaged executable: nine X11 and
+  eight Wayland cases, including region anchors/fallback, Stop/restart, exported
+  picker-parent lifecycle, and the explicit native Wayland reader message.
+  The first X11 run lost WebDriver during region selection and logged an
+  unavailable DRI3 device. With software WebKit rendering explicitly selected
+  for Xvfb as well as Weston, the full suite passed. This does not establish
+  hardware WebKit rendering or GPU capture interoperability.
+  Final packaging normalized only a license file's line endings; the executable
+  and every other packaged file matched the tested extraction byte for byte.
+
+These checks do not close native Wayland anchoring, owner-run Chinese/Spanish
+real-media latency/accuracy, OBS comparisons, physical mixed-DPI behavior, or
+fresh GNOME installation/compositor acceptance. The short owner check remains
+in [Ubuntu validation](UBUNTU_SMOKE_TEST.md#owner-screen-translation-check).
 
 ## Wayland session validation (0.5.1)
 

@@ -25,7 +25,7 @@ sudo apt-get update
 sudo apt-get install build-essential pkg-config libclang-dev libssl-dev \
   libpipewire-0.3-dev pipewire pipewire-bin wireplumber dbus-daemon \
   libwebkit2gtk-4.1-dev libxdo-dev libayatana-appindicator3-dev \
-  librsvg2-dev patchelf
+  librsvg2-dev libegl1 libgles2 patchelf
 pnpm --dir apps/desktop install --frozen-lockfile
 pnpm --dir apps/desktop tauri dev
 ```
@@ -41,6 +41,9 @@ ScreenCast backend (`xdg-desktop-portal-gnome` on Ubuntu GNOME). Its movable
 translation reader does not depend on global Wayland window coordinates.
 The picker uses the main window's exported Wayland handle where the compositor
 supports it, with a cancellable unparented fallback otherwise.
+Experimental GPU-buffer import uses the system EGL/GLES driver through an
+offscreen device context. Shared memory remains preferred; unsupported GPU
+formats fall back to shared memory on the same selected stream when available.
 Headless build machines can use the isolated fixtures described in
 [Ubuntu screen-capture checks](docs/testing/UBUNTU_SCREEN_CAPTURE.md).
 
@@ -144,6 +147,12 @@ video on the same isolated services, with no desktop picker or windows. Optional
 installed-model OCR checks and the current integration boundary are documented
 in [Ubuntu screen capture](docs/testing/UBUNTU_SCREEN_CAPTURE.md).
 
+Run `bash scripts/check-gpu-capture.sh` for isolated software graphics readback.
+On a GPU host, explicitly supply `PROLLYGLOT_DMABUF_RENDER_NODE=/dev/dri/renderD128`
+(using that host's render node) to also test a synthetic exported DMA-BUF.
+These checks create no desktop windows and do not establish GNOME capture or
+real-media acceptance. The hardware fixture additionally needs `libgbm1`.
+
 ## Focused commands
 
 Use focused commands while iterating, then run the appropriate full script
@@ -238,7 +247,7 @@ targets. Tauri automatically merges `tauri.linux.conf.json`:
 
 ```bash
 pnpm --dir apps/desktop tauri build --bundles deb -- --locked
-dpkg-deb --info target/release/bundle/deb/Prollyglot_0.5.1_amd64.deb
+dpkg-deb --info target/release/bundle/deb/Prollyglot_0.6.0_amd64.deb
 ```
 
 The pre-bundle hook copies the linked sherpa-onnx and ONNX Runtime libraries into
@@ -251,7 +260,7 @@ and fresh-machine installation acceptance remain release work.
 For local development, `--debug --bundles deb` produces the corresponding
 package under `target/debug/bundle/deb`. Debug packages are larger and are not
 representative performance artifacts. Install a deliberately chosen build with
-`sudo apt install ./target/release/bundle/deb/Prollyglot_0.5.1_amd64.deb`, and remove
+`sudo apt install ./target/release/bundle/deb/Prollyglot_0.6.0_amd64.deb`, and remove
 it with `sudo apt remove prollyglot`. Uninstalling does not remove the user's
 downloaded models or preferences.
 

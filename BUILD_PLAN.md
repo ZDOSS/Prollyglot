@@ -41,7 +41,7 @@ Why this direction:
 | 2. Live English captions | Captured audio becomes stable partial and final English captions locally | Device-to-caption and corrected UI/context re-smokes passed; accented/conversational model evidence and application/lifecycle validation remain |
 | 3. Minimal customizable Windows app | The complete daily-use interface, overlay customization, transcript view, and controls work together | Pending |
 | 4. Windows MVP release | A reliable installable Windows build is ready for outside testing | Pending |
-| 5. Ubuntu port | The Windows-proven core runs on one supported Ubuntu LTS release through PipeWire | Experimental Ubuntu 26.04 output/application capture, portal screen translation with drawn regions, conditional X11/XWayland anchors and a reader fallback, and `.deb` integrated through 0.5.0; native GNOME, real-application/hardware, and release acceptance pending |
+| 5. Ubuntu port | The Windows-proven core runs on one supported Ubuntu LTS release through PipeWire | Experimental Ubuntu 26.04 output/application capture, portal screen translation with regions, conditional X11/XWayland anchors, native Wayland reader, experimental DMA-BUF import, and `.deb` integrated through 0.6.0; native GNOME, real-application/hardware, and release acceptance pending |
 | 6. Multilingual captions and translation | Downloadable language support, local translation, and dual captions are production-ready | 29 forced spoken languages, four compact language models, compact-to-English and 29-language many-to-many routes integrated; Windows quality, latency, and automatic-language constraints remain pending |
 | 7. Visual text translation | A selected region, application window, or display becomes locally translated positioned text | Experimental WGC/OCR/positioned-overlay slice integrated; native Windows media, DPI, performance, and OBS/DXGI parity remain pending |
 
@@ -918,7 +918,7 @@ either platform release-ready.
   phase, non-persistent permission, serial-based targeting, and source revocation.
 - Converts CPU-readable video to the shared transient OCR frame type, with
   bounded latest-frame delivery, padding/crop/rotation handling, checked buffer
-  sizes, format renegotiation, and explicit unsupported GPU-buffer errors.
+  sizes and format renegotiation.
 - Private DBus/PipeWire fixtures verify early portal responses, stalled method
   replies and picker responses, cancellation/rejection, service disappearance,
   source identity, logical/pixel geometry separation, source removal, resize,
@@ -940,8 +940,15 @@ either platform release-ready.
   output, close/restart, region-preview cancellation, export cleanup, absent
   exporters, and stalled/cancelled exports. A test-only protocol module exercises
   callbacks; it does not establish real GNOME dialog placement or stacking.
-- Still pending: native Wayland anchoring/stacking, GPU-only
-  buffer support, and owner-run GNOME/Wayland real-media acceptance. The reader
+- Version 0.6.0 adds experimental DMA-BUF import through offscreen EGL/GLES,
+  advertised RGB/modifier pairs, auxiliary planes, cancellable fence polling,
+  and same-source CPU renegotiation after import/readback failure. Software
+  readback and CPU portal checks are separate from the opt-in real GPU fixture.
+- Stock GNOME lacks layer-shell, so native Wayland anchors need a compositor
+  protocol or a separate desktop integration decision. The UI states that this
+  session uses a reader; adding a layer-shell dependency alone cannot solve it.
+- Still pending: native Wayland anchoring/stacking, real GPU-buffer and fallback
+  hardware verification, and owner-run GNOME/Wayland real-media acceptance. The reader
   uses bounded text/background-pixel feedback filtering; keeping Prollyglot off
   the shared monitor or sharing only the media window remains preferable.
 

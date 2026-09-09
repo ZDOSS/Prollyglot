@@ -168,6 +168,12 @@ Native Wayland overlay positioning, stacking, and fullscreen behavior require
 separate implementation and acceptance. When an X display is available, the
 initial app chooses GTK's X11 backend unless the user explicitly selects another
 backend. It does not yet promise native Wayland overlay support.
+Stock GNOME does not support the layer-shell protocol used for positioned
+desktop overlays, so adding GTK layer-shell alone cannot implement this target.
+The native Wayland screen-translation controls explicitly describe reader output.
+Native anchors need an appropriate compositor protocol or a separate desktop
+integration decision; this slice does not add a GNOME extension or expand the
+supported desktop scope. See [GTK Layer Shell's supported desktops](https://github.com/wmww/gtk-layer-shell#supported-desktops).
 
 The first official Linux package should be a native `.deb` for the supported Ubuntu release.
 
@@ -1287,7 +1293,7 @@ Start through cleanup, and dismissing it is a normal stopped state. The reader
 subscribes before fetching current presentation so a slow webview cannot miss
 its first result. Region selection uses a separate native still-image preview
 after the monitor picker; Stop cancels both. Native Wayland anchoring remains
-a follow-up.
+unimplemented under the platform constraint above.
 Version 0.5.1 supplies the main window as the sharing picker's parent on native
 Wayland using GDK's exported handle. Export waits at most one second and remains
 cancellable. Missing or unresponsive exporter support falls back to the portal's
@@ -1295,9 +1301,19 @@ unparented picker. Each session releases its export after sharing ends, includin
 startup errors and cancellation; no exported identifiers are persisted. Private
 headless Wayland fixtures verify the reader and handle lifecycle, not GNOME
 dialog stacking, monitor placement, fullscreen behavior, or real-media quality.
-CPU-readable BGRx, BGRA,
-RGBx, and RGBA are implemented; DMA-BUF import and negative-stride buffers are
-explicitly unsupported in this backend slice. Captured pixels stay transient.
+Version 0.6.0 keeps CPU-readable BGRx, BGRA, RGBx, and RGBA as the first choice
+and adds experimental GPU-only DMA-BUF import for those formats. Offscreen
+EGL/GLES device contexts advertise importable, non-external-only modifiers;
+up to four planes support modifier-specific auxiliary storage. Producer FDs
+are borrowed, source pixels are preserved, and readback feeds the same
+crop/rotation path. Failed imports/readbacks request CPU buffers on the existing
+selected stream, with a five-second readable-frame deadline after renegotiation.
+GPU fence polling is cancellable and bounded to 250 ms per device; the in-process
+driver calls themselves are not isolated from a driver hang. Captured pixels
+stay transient and never enter IPC or recordings. YUV/HDR, external-only
+textures, explicit-sync timelines, negative strides, interlaced and multi-view
+video remain unsupported. Software graphics and CPU portal fixtures do not
+establish real GPU/compositor compatibility; hardware acceptance remains open.
 
 This is compatibility engineering, not a protected-content bypass. Microsoft
 documents that Desktop Duplication protects access to protected video and that
