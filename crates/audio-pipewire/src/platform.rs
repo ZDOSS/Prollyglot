@@ -1,6 +1,8 @@
 use std::{
+    any::Any,
     cell::{Cell, RefCell},
     collections::HashMap,
+    os::unix::fs::MetadataExt,
     rc::Rc,
     sync::{
         Arc,
@@ -19,7 +21,9 @@ use prollyglot_core::{
 };
 
 use crate::{
-    graph::{Graph, Sink},
+    application::ApplicationMonitor,
+    graph::{ApplicationNode, Client, Graph, Port, Sink},
+    identity::resolve_process,
     publish::{Publisher, read_chunk},
 };
 
@@ -66,13 +70,14 @@ impl MetadataBinding {
     }
 }
 
-struct Connection {
+pub(crate) struct Connection {
     _registry_listener: pw::registry::Listener,
+    _objects: Rc<RefCell<HashMap<u32, Box<dyn Any>>>>,
     _metadata: Rc<RefCell<HashMap<u32, MetadataBinding>>>,
     _core_listener: pw::core::Listener,
-    graph: Rc<RefCell<Graph>>,
+    pub(crate) graph: Rc<RefCell<Graph>>,
     _registry: pw::registry::RegistryRc,
-    core: pw::core::CoreRc,
+    pub(crate) core: pw::core::CoreRc,
     main_loop: pw::main_loop::MainLoopRc,
     failure: Rc<RefCell<Option<String>>>,
 }
@@ -102,10 +107,15 @@ impl Connection {
             .map_err(|e| error("Read PipeWire registry", e))?;
         let graph = Rc::new(RefCell::new(Graph::default()));
         let metadata = Rc::new(RefCell::new(HashMap::new()));
+        // Each tuple stores its listener before its proxy so it unregisters
+        // first. The opaque boxes only retain native object lifetimes.
+        let objects: Rc<RefCell<HashMap<u32, Box<dyn Any>>>> = Rc::default();
         let failure = Rc::new(RefCell::new(None));
         let error_slot = failure.clone();
+        let server_graph = graph.clone();
         let core_listener = core
             .add_listener_local()
+            .info(move |info| server_graph.borrow_mut().server_cookie = Some(info.cookie()))
             .error(move |id, _, result, message| {
                 if id == pw::core::PW_ID_CORE {
                     *error_slot.borrow_mut() =
@@ -118,6 +128,8 @@ impl Connection {
         let added_metadata = metadata.clone();
         let removed_metadata = metadata.clone();
         let weak_registry = registry.downgrade();
+        let added_objects = objects.clone();
+        let removed_objects = objects.clone();
         let registry_listener = registry
             .add_listener_local()
             .global(move |global| {
@@ -141,6 +153,102 @@ impl Connection {
                             },
                         );
                     }
+                } else if global.type_ == ObjectType::Node
+                    && props.get("media.class") == Some("Stream/Output/Audio")
+                {
+                    let Some(registry) = weak_registry.upgrade() else {
+                        return;
+                    };
+                    let Ok(node) = registry.bind::<pw::node::Node, _>(global) else {
+                        return;
+                    };
+                    let id = global.id;
+                    let graph = added_graph.clone();
+                    let listener = node
+                        .add_listener_local()
+                        .info(move |info| {
+                            if let Some(props) = info.props()
+                                && let Some(client) =
+                                    props.get("client.id").and_then(|v| v.parse().ok())
+                            {
+                                graph.borrow_mut().applications.insert(
+                                    id,
+                                    ApplicationNode {
+                                        client,
+                                        application_id: property(props, "application.id"),
+                                        name: property(props, "application.name"),
+                                    },
+                                );
+                            }
+                        })
+                        .register();
+                    added_objects
+                        .borrow_mut()
+                        .insert(id, Box::new((listener, node)));
+                } else if global.type_ == ObjectType::Client {
+                    let Some(registry) = weak_registry.upgrade() else {
+                        return;
+                    };
+                    let Ok(client) = registry.bind::<pw::client::Client, _>(global) else {
+                        return;
+                    };
+                    let id = global.id;
+                    let Some(serial) = property(props, "object.serial") else {
+                        return;
+                    };
+                    let graph = added_graph.clone();
+                    let listener = client
+                        .add_listener_local()
+                        .info(move |info| {
+                            if let Some(props) = info.props() {
+                                let uid = props
+                                    .get("pipewire.sec.uid")
+                                    .and_then(|v| v.parse().ok())
+                                    .or_else(|| {
+                                        std::fs::metadata("/proc/self").ok().map(|m| m.uid())
+                                    });
+                                // PulseAudio proxy clients may have a different
+                                // authenticated peer PID; use their application PID
+                                // only when readable and owned by the same user.
+                                let pid = props
+                                    .get("application.process.id")
+                                    .or_else(|| props.get("pipewire.sec.pid"))
+                                    .and_then(|v| v.parse().ok());
+                                graph.borrow_mut().clients.insert(
+                                    id,
+                                    Client {
+                                        serial: serial.clone(),
+                                        application_id: property(props, "pipewire.sec.app-id")
+                                            .or_else(|| property(props, "application.id")),
+                                        name: property(props, "application.name"),
+                                        process: pid
+                                            .zip(uid)
+                                            .and_then(|(pid, uid)| resolve_process(pid, uid)),
+                                    },
+                                );
+                            }
+                        })
+                        .register();
+                    added_objects
+                        .borrow_mut()
+                        .insert(id, Box::new((listener, client)));
+                } else if global.type_ == ObjectType::Port {
+                    if let (Some(node), Some(serial), Some(name)) = (
+                        props.get("node.id").and_then(|v| v.parse().ok()),
+                        props.get("object.serial"),
+                        props.get("port.name"),
+                    ) {
+                        added_graph.borrow_mut().ports.insert(
+                            global.id,
+                            Port {
+                                node,
+                                serial: serial.into(),
+                                name: name.into(),
+                                output: props.get("port.direction") == Some("out"),
+                                audio: props.get("format.dsp") == Some("32 bit float mono audio"),
+                            },
+                        );
+                    }
                 } else if global.type_ == ObjectType::Metadata
                     && props.get("metadata.name") == Some("default")
                 {
@@ -156,6 +264,10 @@ impl Connection {
             })
             .global_remove(move |id| {
                 removed_graph.borrow_mut().sinks.remove(&id);
+                removed_graph.borrow_mut().clients.remove(&id);
+                removed_graph.borrow_mut().applications.remove(&id);
+                removed_graph.borrow_mut().ports.remove(&id);
+                removed_objects.borrow_mut().remove(&id);
                 if removed_metadata.borrow_mut().remove(&id).is_some() {
                     removed_graph.borrow_mut().default_sink = None;
                 }
@@ -163,6 +275,7 @@ impl Connection {
             .register();
         let connection = Self {
             _registry_listener: registry_listener,
+            _objects: objects,
             _metadata: metadata,
             _core_listener: core_listener,
             graph,
@@ -178,7 +291,7 @@ impl Connection {
         Ok(connection)
     }
 
-    fn sync(&self, stop: &AtomicBool) -> Result<(), CaptureError> {
+    pub(crate) fn sync(&self, stop: &AtomicBool) -> Result<(), CaptureError> {
         let sequence = self
             .core
             .sync(0)
@@ -245,6 +358,13 @@ impl Connection {
     }
 }
 
+fn property(props: &spa::utils::dict::DictRef, key: &str) -> Option<String> {
+    props
+        .get(key)
+        .filter(|value| !value.trim().is_empty())
+        .map(str::to_owned)
+}
+
 pub(crate) fn source_snapshot() -> Result<SourceSnapshot, CaptureError> {
     let connection = Connection::new(&AtomicBool::new(false))?;
     let snapshot = connection.graph.borrow().snapshot();
@@ -255,11 +375,16 @@ pub(crate) fn resolve_selection(
     selection: &CaptureSelection,
 ) -> Result<ResolvedCaptureSelection, CaptureError> {
     let connection = Connection::new(&AtomicBool::new(false))?;
-    let sink = connection.graph.borrow().select(selection)?;
+    let display_name = match selection {
+        CaptureSelection::Application { source_id } => {
+            connection.graph.borrow().application(source_id)?.0
+        }
+        _ => connection.graph.borrow().select(selection)?.description,
+    };
     Ok(ResolvedCaptureSelection {
         selection: selection.clone(),
         source_id: selection.source_id(),
-        display_name: sink.description,
+        display_name,
     })
 }
 
@@ -475,6 +600,16 @@ fn run(
     let mut last_recovery = None;
     while !stop.load(Ordering::Acquire) && !publisher.borrow().disconnected {
         let result = Connection::new(&stop).and_then(|connection| {
+            if let CaptureSelection::Application { source_id } = &selection {
+                return run_application(
+                    &connection,
+                    source_id,
+                    &publisher,
+                    &stop,
+                    &mut ready,
+                    &mut last_recovery,
+                );
+            }
             let mut active: Option<ActiveStream> = None;
             let mut default_checked = Instant::now();
             while !stop.load(Ordering::Acquire) && !publisher.borrow().disconnected {
@@ -549,7 +684,11 @@ fn run(
             report_recovery(
                 &publisher,
                 &e.to_string(),
-                CaptureRecoveryKind::PlaybackDeviceUnavailable,
+                if matches!(selection, CaptureSelection::Application { .. }) {
+                    CaptureRecoveryKind::ApplicationUnavailable
+                } else {
+                    CaptureRecoveryKind::PlaybackDeviceUnavailable
+                },
                 &mut last_recovery,
             );
         }
@@ -561,6 +700,73 @@ fn run(
     publisher
         .borrow_mut()
         .send(CaptureEvent::State(CaptureState::Stopped));
+}
+
+fn run_application(
+    connection: &Connection,
+    source_id: &prollyglot_core::SourceId,
+    publisher: &Rc<RefCell<Publisher>>,
+    stop: &AtomicBool,
+    ready: &mut Option<Sender<Result<(), CaptureError>>>,
+    last_recovery: &mut Option<String>,
+) -> Result<(), CaptureError> {
+    let mut active: Option<ApplicationMonitor> = None;
+    let mut pending_since = None;
+    while !stop.load(Ordering::Acquire) && !publisher.borrow().disconnected {
+        let selected = connection.graph.borrow().application(source_id);
+        match selected {
+            Ok((_, targets)) if !targets.is_empty() => {
+                if active.is_none() {
+                    active = Some(ApplicationMonitor::new(connection, publisher.clone())?);
+                    publisher.borrow_mut().reopened();
+                }
+                if let Some(monitor) = &mut active {
+                    monitor.update(connection, &targets, stop)?;
+                }
+            }
+            selected => {
+                drop(active.take());
+                pending_since = None;
+                let error = selected.err().unwrap_or_else(|| {
+                    CaptureError::SourceUnavailable(
+                        "The selected application is not playing capturable audio.".into(),
+                    )
+                });
+                if ready.is_some() {
+                    return Err(error);
+                }
+                let kind = if matches!(error, CaptureError::AmbiguousSource(_)) {
+                    CaptureRecoveryKind::ApplicationAmbiguous
+                } else {
+                    CaptureRecoveryKind::ApplicationUnavailable
+                };
+                report_recovery(publisher, &error.to_string(), kind, last_recovery);
+            }
+        }
+        connection.iterate()?;
+        if let Some(monitor) = &active {
+            let failure = monitor.failure.borrow_mut().take();
+            if let Some(message) = failure {
+                return Err(CaptureError::Worker(message));
+            }
+            if monitor.ready() {
+                pending_since = None;
+                if let Some(ready) = ready.take() {
+                    let _ = ready.send(Ok(()));
+                }
+                *last_recovery = None;
+            } else if pending_since.get_or_insert_with(Instant::now).elapsed() > CONNECT_TIMEOUT {
+                // A playback stream added to a running application gets its
+                // own connection deadline, regardless of the session's age.
+                return Err(error(
+                    "Connect application audio",
+                    "the playback streams did not become ready",
+                ));
+            }
+            publisher.borrow_mut().tick();
+        }
+    }
+    Ok(())
 }
 
 fn report_recovery(
@@ -575,7 +781,7 @@ fn report_recovery(
             .send(CaptureEvent::Recovery(CaptureRecovery {
                 kind,
                 message: format!(
-                    "{reason} Prollyglot will retry the selected output automatically."
+                    "{reason} Prollyglot will retry the selected source automatically."
                 ),
                 retry_after_millis: 500,
             }))

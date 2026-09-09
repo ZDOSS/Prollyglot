@@ -2,7 +2,9 @@ use std::time::{Duration, Instant};
 
 use crossbeam_channel::{Sender, TrySendError};
 use prollyglot_audio_pipeline::{SignalActivity, normalize_interleaved};
-use prollyglot_core::{CaptureError, CaptureEvent, CaptureState, NativeAudioFormat, SourceId};
+use prollyglot_core::{
+    AudioFrame, CaptureError, CaptureEvent, CaptureState, NativeAudioFormat, SourceId,
+};
 
 pub(crate) struct Publisher {
     events: Sender<CaptureEvent>,
@@ -39,6 +41,10 @@ impl Publisher {
         // stream its own silence grace period without resetting capture time.
         self.activity.observe(self.started.elapsed(), 1.0);
         self.state = Some(CaptureState::Capturing);
+    }
+
+    pub fn mark_discontinuity(&mut self) {
+        self.discontinuity = true;
     }
 
     pub fn tick(&mut self) {
@@ -84,6 +90,34 @@ impl Publisher {
             false,
             self.discontinuity,
         )?;
+        self.publish(frame, elapsed);
+        Ok(())
+    }
+
+    pub fn mono(&mut self, mut samples: Vec<f32>, sample_rate: u32) {
+        let mut peak = 0.0_f32;
+        for sample in &mut samples {
+            *sample = if sample.is_finite() {
+                sample.clamp(-1.0, 1.0)
+            } else {
+                0.0
+            };
+            peak = peak.max(sample.abs());
+        }
+        let elapsed = self.started.elapsed();
+        let frame = AudioFrame {
+            sequence: self.sequence,
+            source_id: self.source.clone(),
+            captured_at_micros: elapsed.as_micros().min(u128::from(u64::MAX)) as u64,
+            sample_rate,
+            samples,
+            peak,
+            discontinuity: self.discontinuity,
+        };
+        self.publish(frame, elapsed);
+    }
+
+    fn publish(&mut self, frame: AudioFrame, elapsed: Duration) {
         self.sequence = self.sequence.wrapping_add(1);
         if let Some(state) = self.activity.observe(elapsed, frame.peak) {
             self.state = Some(state);
@@ -95,7 +129,6 @@ impl Publisher {
             self.dropped = self.dropped.saturating_add(1);
             self.discontinuity = true;
         }
-        Ok(())
     }
 }
 

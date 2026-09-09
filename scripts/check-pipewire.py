@@ -41,7 +41,7 @@ def main():
                 if processes[-1].poll() is not None:
                     raise RuntimeError(f"private {name} exited during startup")
             test_command = sys.argv[1:] or ["cargo", "test", "--locked", "-p", "prollyglot-audio-pipewire",
-                                           "--test", "pipewire", "--", "--ignored", "--nocapture"]
+                                           "--test", "pipewire", "--", "--ignored", "--nocapture", "--test-threads=1"]
             subprocess.run(test_command, cwd=ROOT, env=env, check=True, timeout=180)
         except BaseException:
             for log in logs:

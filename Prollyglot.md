@@ -184,9 +184,9 @@ Prollyglot should not initially spend substantial engineering effort supporting:
 
 Linux support should be real, but deliberately scoped.
 
-Version 0.2.0 implements default-output and pinned-output capture through the
-shared local transcription and caption pipeline, plus development `.deb`
-packaging. Linux application capture and screen translation are not implemented.
+Version 0.3.0 implements default-output, pinned-output, and application capture
+through the shared local transcription and caption pipeline, plus development
+`.deb` packaging. Linux screen translation is not implemented.
 Native Ubuntu/WSLg fixtures establish an initial working slice; they do not
 replace fresh GNOME installation, hardware, compositor, or release acceptance.
 
@@ -320,6 +320,11 @@ This mode captures the mixed audio being sent to one user-selected playback devi
 
 The default selection should follow the operating system's current default playback device. The user should also be able to pin capture to a specific device such as speakers, headphones, an HDMI display, or a USB audio interface.
 
+Refreshing sources must preserve an unavailable application or pinned device.
+Show that selection as unavailable and require it to return or the user to choose
+another source before starting. Never silently broaden the selection to
+Everything I hear or follow-default capture.
+
 “Everything I hear” does not mean combining every playback device simultaneously. It means everything being rendered through the selected device.
 
 Example:
@@ -400,7 +405,7 @@ The rest of Prollyglot should not need to know that WASAPI exists.
 
 Linux should use PipeWire.
 
-The 0.2.0 adapter captures only output monitors. It resolves a pinned output by
+The output-monitor adapter introduced in 0.2.0 resolves a pinned output by
 a stable opaque identity derived from its node name, targets the current object
 serial, and never falls back to another output or an input device. Default-output
 capture follows effective session-manager metadata. Device recreation preserves
@@ -408,7 +413,23 @@ the session clock and marks the first resumed frame discontinuous. PCM enters
 the same bounded normalization, resampling, speech, and transcript pipeline used
 on Windows; raw audio is not persisted.
 
-The eventual Linux backend should support:
+Version 0.3.0 adds application capture. Group playback nodes using available
+application identity and same-user process ancestry, retaining only opaque IDs
+in desktop contracts. Mix every selected playback stream on one PipeWire graph
+clock with a native filter, downmixing each stream's channels before summing and
+limiting the mono result. Passive monitoring links leave ordinary playback
+routing intact; no virtual playback device, microphone, or application plugin
+is required. Port counts and PCM buffers are bounded.
+
+Stream changes update the monitor's inputs; complete disappearance waits for the
+same application identity to return. Independent matching process instances are
+ambiguous and suspend capture instead of being silently combined. A client with
+no durable identity is selectable only for its current PipeWire server/client
+lifetime. Reconnection preserves session time and marks a discontinuity. Browser,
+Electron, PulseAudio-bridge, and sandbox behavior still require real-application
+acceptance on native Ubuntu GNOME.
+
+The complete Linux backend should eventually support:
 
 - output-monitor capture,
 - application/stream selection,
@@ -2248,17 +2269,19 @@ After the Windows POCs succeed:
 - Ubuntu 26.04/PipeWire output capture and development `.deb` packaging are
   implemented in 0.2.0;
 - native GNOME/XWayland and Wayland-specific overlay acceptance remains pending;
-- Linux application-stream grouping and lifecycle handling remains pending.
+- Linux application-stream grouping, synchronized mixing, and restart recovery
+  are implemented experimentally in 0.3.0; real-application acceptance remains.
 
 ---
 
-# 57. Linux follow-up and Version 0.2
+# 57. Linux follow-up
 
 Version 0.2.0 begins the experimental Ubuntu 26.04 LTS port using PipeWire and a
-native `.deb`, as authorized by the owner. It is a development milestone, not a
-supported Windows or Ubuntu release. Full Ubuntu acceptance still requires both
-source modes, ordinary device lifecycle recovery, a fresh install/uninstall, and
-desktop-specific overlay validation.
+native `.deb`, as authorized by the owner. Version 0.3.0 adds the application
+capture path. These are development milestones, not supported Windows or Ubuntu
+releases. Full Ubuntu acceptance still requires both source modes on real
+applications and hardware, ordinary device lifecycle recovery, a fresh
+install/uninstall, and desktop-specific overlay validation.
 
 Once that baseline is reliable, subsequent feature work may include:
 

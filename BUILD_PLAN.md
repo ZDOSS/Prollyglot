@@ -41,7 +41,7 @@ Why this direction:
 | 2. Live English captions | Captured audio becomes stable partial and final English captions locally | Device-to-caption and corrected UI/context re-smokes passed; accented/conversational model evidence and application/lifecycle validation remain |
 | 3. Minimal customizable Windows app | The complete daily-use interface, overlay customization, transcript view, and controls work together | Pending |
 | 4. Windows MVP release | A reliable installable Windows build is ready for outside testing | Pending |
-| 5. Ubuntu port | The Windows-proven core runs on one supported Ubuntu LTS release through PipeWire | Experimental Ubuntu 26.04 output-to-caption and `.deb` slice integrated in 0.2.0; application capture and native GNOME/release acceptance pending |
+| 5. Ubuntu port | The Windows-proven core runs on one supported Ubuntu LTS release through PipeWire | Experimental Ubuntu 26.04 output/application capture and `.deb` integrated through 0.3.0; native GNOME, real-application/hardware, and release acceptance pending |
 | 6. Multilingual captions and translation | Downloadable language support, local translation, and dual captions are production-ready | 29 forced spoken languages, four compact language models, compact-to-English and 29-language many-to-many routes integrated; Windows quality, latency, and automatic-language constraints remain pending |
 | 7. Visual text translation | A selected region, application window, or display becomes locally translated positioned text | Experimental WGC/OCR/positioned-overlay slice integrated; native Windows media, DPI, performance, and OBS/DXGI parity remain pending |
 
@@ -879,6 +879,22 @@ either platform release-ready.
   and upgrade remain release gates.
 - See [Ubuntu validation](docs/testing/UBUNTU_SMOKE_TEST.md) for evidence,
   reproducible commands, package checks, and the remaining work.
+
+### Application capture slice — 0.3.0
+
+- Group playback streams using application identity and same-user process roots;
+  keep native paths/PIDs private and refuse ambiguous independent instances.
+- Mix multiple streams on one graph clock through passive native PipeWire filter
+  links. Preserve the original output routes, including separate selected-app
+  outputs, and keep queues, port counts, connection waits, and Stop bounded.
+- Recover when streams change or the player exits/restarts; keep capture time
+  monotonic and mark resumed PCM discontinuous. Unknown client identities are
+  limited to their current server/client lifetime.
+- Preserve unavailable selected applications and pinned devices through desktop
+  source refresh on both platforms; never silently select Everything I hear.
+- Private-graph and native desktop checks extend the existing output-caption
+  checks. Fresh GNOME, physical-device, sandbox/browser, translation-quality,
+  and Wayland overlay acceptance remain open.
 
 ### Included outcome
 

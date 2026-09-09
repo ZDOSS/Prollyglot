@@ -18,7 +18,7 @@ supported-release gates.
 ```text
 Platform audio adapter                          Main WebView
   Windows: WASAPI / process loopback              UI + controllers
-  Ubuntu: PipeWire output monitor
+  Ubuntu: PipeWire output / application monitor
             │                                             │
             ▼                                             ▼
        normalized PCM ──► audio pipeline ──► ASR ──► transcript
@@ -126,7 +126,7 @@ and other platform handles remain inside the adapter. More than one live match
 for an application identity is ambiguous and is never selected silently.
 
 `crates/audio-pipewire` implements default-output and pinned-output monitoring on
-Ubuntu. It binds only `Audio/Sink` nodes and session-manager default metadata,
+Ubuntu. The output path reads `Audio/Sink` nodes and session-manager metadata,
 uses opaque node-name identities across recreation, and targets the current
 object serial. Session-manager fallback is disabled: a missing pinned output
 enters recovery rather than switching sources. One cancellable worker owns each
@@ -136,10 +136,28 @@ clock and marks a discontinuity. Effective-default metadata is also refreshed
 periodically on the same loop to cover a missed subscription update observed
 during concurrent source enumeration.
 
+The application path observes playback nodes, clients, and DSP ports.
+`identity.rs` reads same-user executable/process-start evidence; `graph.rs`
+groups nodes by declared application identity or executable/name fallback and
+refuses independent matching process roots. Unknown clients use a server-cookie
+and client-serial identity that cannot silently reconnect across server lifetimes.
+Paths, PIDs, and native graph IDs remain inside the adapter. No command lines,
+environment values, media titles, or raw PCM are persisted.
+
+`application.rs` owns one native `pw_filter` and passive links from all selected
+playback channels. It uses the existing generated PipeWire FFI because the Rust
+wrapper does not expose filters. Stable boxed listener data, mapped-buffer
+bounds checks, and RAII buffer return define the unsafe boundary. Callbacks and
+port updates run on one non-realtime worker loop. Each graph quantum downmixes
+individual streams, sums them, clamps finite mono PCM, and publishes one block;
+streams are never concatenated into a longer audio timeline. Removing a stream
+leaves other inputs active; disappearing or ambiguous application identity tears
+down the monitor and waits for safe re-resolution. Stop removes only owned
+capture links and the filter, leaving the player's output connections intact.
+
 The desktop selects its adapter by platform and queries sources off the UI event
-thread. The Ubuntu adapter advertises no application capture yet. Linux stream
-grouping must later preserve stable application identity without adding node IDs
-to public desktop contracts.
+thread. Refresh retains missing selected applications and pinned outputs as
+unavailable options; Start cannot silently switch to system-wide capture.
 
 After capture, shared code downmixes PCM, resamples to the selected model rate,
 buffers bounded frames, applies speech-window/VAD policy, and drives the

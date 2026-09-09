@@ -5,6 +5,26 @@ Versioning while it is in the `0.x` pre-release line.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-08
+
+### Added
+
+- Experimental Ubuntu application audio capture through native PipeWire ports,
+  preserving normal playback and mixing the selected application's streams on
+  one graph clock, including streams routed to different outputs.
+- Stable application grouping and recovery after stream recreation or player
+  restart. Independent instances with the same identity pause capture until the
+  selection becomes unambiguous.
+- Private-graph checks for multi-stream isolation, synchronized mixing, original
+  playback routes, process restart, ambiguity, and capture cleanup.
+
+### Fixed
+
+- Preserve an unavailable application or pinned playback device during source
+  refresh on Windows and Ubuntu. Starting captions requires that source to be
+  available or an explicit new selection; refresh no longer silently changes it
+  to Everything I hear.
+
 ## [0.2.0] - 2026-09-08
 
 ### Added

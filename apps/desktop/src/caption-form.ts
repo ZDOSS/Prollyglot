@@ -182,16 +182,25 @@ export class CaptionForm {
 
   populateSources(snapshot: SourceSnapshot, configured: AudioSourcePreference): void {
     const previousSource = this.elements.source.value;
+    const previousSourceLabel = this.elements.source.selectedOptions[0]?.textContent
+      ?? "Selected application";
     const previousDevice = this.elements.device.value || (
       configured.kind === "playbackDevice" ? configured.deviceId : FOLLOW_SYSTEM_DEFAULT
     );
+    const previousDeviceLabel = this.elements.device.selectedOptions[0]?.textContent
+      ?? "Selected playback device";
     this.elements.source.replaceChildren(option("system", "Everything I hear"));
     for (const application of planApplicationSourceOptions(snapshot.applications)) {
       const applicationOption = option(application.value, application.label);
       applicationOption.disabled = application.disabled;
       this.elements.source.append(applicationOption);
     }
-    if ([...this.elements.source.options].some(({ value }) => value === previousSource)) {
+    if (previousSource) {
+      if (![...this.elements.source.options].some(({ value }) => value === previousSource)) {
+        const missing = option(previousSource, `${previousSourceLabel.replace(/ · unavailable$/, "")} · unavailable`);
+        missing.disabled = true;
+        this.elements.source.append(missing);
+      }
       this.elements.source.value = previousSource;
     }
 
@@ -211,8 +220,11 @@ export class CaptionForm {
       this.elements.device.append(option(device.id, label, device.id === previousDevice));
     }
     if (![...this.elements.device.options].some(({ value }) => value === previousDevice)) {
-      this.elements.device.value = FOLLOW_SYSTEM_DEFAULT;
+      const missing = option(previousDevice, `${previousDeviceLabel.replace(/ · unavailable$/, "")} · unavailable`);
+      missing.disabled = true;
+      this.elements.device.append(missing);
     }
+    this.elements.device.value = previousDevice;
     this.updateSourceMode();
   }
 
@@ -222,12 +234,16 @@ export class CaptionForm {
 
   selectedCapture(): CaptureSelection {
     if (this.elements.source.value === "system") {
-      if (!this.elements.device.value) throw new Error("No playback device is available.");
+      if (!this.elements.device.value || this.elements.device.selectedOptions[0]?.disabled) {
+        throw new Error("The selected playback device is unavailable. Refresh sources or choose another device.");
+      }
       if (this.elements.device.value === FOLLOW_SYSTEM_DEFAULT) return { kind: "systemDefault" };
       return { kind: "systemOutput", deviceId: this.elements.device.value };
     }
     const sourceId = this.elements.source.value.slice("application:".length);
-    if (!sourceId) throw new Error("The selected application is unavailable.");
+    if (!sourceId || this.elements.source.selectedOptions[0]?.disabled) {
+      throw new Error("The selected application is unavailable or has duplicate instances. Refresh sources or choose another source.");
+    }
     return { kind: "application", sourceId };
   }
 

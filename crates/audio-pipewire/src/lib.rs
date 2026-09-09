@@ -1,4 +1,4 @@
-//! Native PipeWire output-monitor capture for the experimental Ubuntu port.
+//! Native PipeWire output and application capture for the experimental Ubuntu port.
 //! No microphone fallback, audio-routing changes, subprocesses, or recordings.
 
 use crossbeam_channel::Sender;
@@ -8,7 +8,11 @@ use prollyglot_core::{
 };
 
 #[cfg(target_os = "linux")]
+mod application;
+#[cfg(target_os = "linux")]
 mod graph;
+#[cfg(target_os = "linux")]
+mod identity;
 #[cfg(target_os = "linux")]
 mod platform;
 #[cfg(target_os = "linux")]
@@ -30,8 +34,8 @@ impl AudioCaptureBackend for PipeWireAudioCaptureBackend {
             available: cfg!(target_os = "linux"),
             system_default: cfg!(target_os = "linux"),
             playback_devices: cfg!(target_os = "linux"),
-            applications: false,
-            application_restart_recovery: false,
+            applications: cfg!(target_os = "linux"),
+            application_restart_recovery: cfg!(target_os = "linux"),
         }
     }
 
@@ -84,7 +88,10 @@ mod tests {
     fn advertises_only_implemented_sources() {
         let capabilities = PipeWireAudioCaptureBackend::new().capabilities();
         assert_eq!(capabilities.available, cfg!(target_os = "linux"));
-        assert!(!capabilities.applications);
-        assert!(!capabilities.application_restart_recovery);
+        assert_eq!(capabilities.applications, cfg!(target_os = "linux"));
+        assert_eq!(
+            capabilities.application_restart_recovery,
+            cfg!(target_os = "linux")
+        );
     }
 }

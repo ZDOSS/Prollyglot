@@ -12,8 +12,8 @@ There is no supported binary release yet.
 
 Use **Ubuntu 26.04 LTS amd64**, Rust 1.88 or newer with `rustfmt`/`clippy`,
 Node.js 22.12 or newer, and pnpm 11. The initial app uses PipeWire/WirePlumber
-output monitoring and X11/XWayland captions. Application capture and screen
-translation are Windows-only; native Wayland overlay acceptance is pending.
+output/application monitoring and X11/XWayland captions. Screen translation
+remains Windows-only; native Wayland overlay acceptance is pending.
 Ubuntu 24.04 and other distributions are not supported package targets.
 
 Install native build and runtime dependencies:
@@ -122,10 +122,11 @@ python3 scripts/check-pipewire.py
 
 This launches a private PipeWire graph, session bus, and WirePlumber policy with
 synthetic null outputs. It checks default changes, pinned-output isolation,
-output removal/recreation, continuous capture time, and bounded Stop without
-altering the user's desktop audio routing. No hardware monitor is loaded and no
-captured PCM is written to disk. The native test is ignored in ordinary Rust
-checks and refuses to run outside this isolated setup. See
+output removal/recreation, application isolation, synchronized multi-stream
+mixing across outputs, process restart/ambiguity, original playback links, and
+bounded Stop. No hardware monitor is loaded, desktop audio routing is unchanged,
+and captured PCM is not written to disk. The native tests are ignored in ordinary
+Rust checks and refuse to run outside this isolated setup. See
 [Ubuntu validation](docs/testing/UBUNTU_SMOKE_TEST.md) for the desktop smoke.
 
 ## Focused commands
@@ -222,7 +223,7 @@ targets. Tauri automatically merges `tauri.linux.conf.json`:
 
 ```bash
 pnpm --dir apps/desktop tauri build --bundles deb -- --locked
-dpkg-deb --info target/release/bundle/deb/Prollyglot_0.2.0_amd64.deb
+dpkg-deb --info target/release/bundle/deb/Prollyglot_0.3.0_amd64.deb
 ```
 
 The pre-bundle hook copies the linked sherpa-onnx and ONNX Runtime libraries into
@@ -235,7 +236,7 @@ and fresh-machine installation acceptance remain release work.
 For local development, `--debug --bundles deb` produces the corresponding
 package under `target/debug/bundle/deb`. Debug packages are larger and are not
 representative performance artifacts. Install a deliberately chosen build with
-`sudo apt install ./target/release/bundle/deb/Prollyglot_0.2.0_amd64.deb`, and remove
+`sudo apt install ./target/release/bundle/deb/Prollyglot_0.3.0_amd64.deb`, and remove
 it with `sudo apt remove prollyglot`. Uninstalling does not remove the user's
 downloaded models or preferences.
 

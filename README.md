@@ -9,9 +9,9 @@
 Prollyglot is a free and open-source desktop utility that captures audio from a selected playback device or application and turns it into live subtitles locally. It is designed for games, calls, browsers, media players, and other software that has missing, limited, or inaccessible captions.
 
 > [!IMPORTANT]
-> Prollyglot is in active pre-release development. There is not yet a supported binary release. Windows 11 is the primary target; real-media, hardware, and release acceptance remain in progress. Version 0.2.0 also starts an experimental Ubuntu 26.04 LTS port with PipeWire output capture and native `.deb` packaging.
+> Prollyglot is in active pre-release development. There is not yet a supported binary release. Windows 11 is the primary target; real-media, hardware, and release acceptance remain in progress. Version 0.3.0 includes an experimental Ubuntu 26.04 LTS port with PipeWire output/application capture and native `.deb` packaging.
 >
-> Current pre-release: **0.2.0**. See the [changelog](CHANGELOG.md) and
+> Current pre-release: **0.3.0**. See the [changelog](CHANGELOG.md) and
 > [versioning policy](docs/VERSIONING.md).
 
 ## Why Prollyglot exists
@@ -37,12 +37,12 @@ draw between us.
 ## What it is building toward
 
 - **Everything I hear:** caption the mixed audio rendered through one selected playback device, with an option to follow the system default on Windows and experimental Ubuntu.
-- **Only this application:** caption the selected Windows application and its current process tree without including unrelated application audio. If it restarts, Prollyglot waits for the same application identity and resumes only when the match is unambiguous.
+- **Only this application:** caption a selected application through Windows process-tree capture or experimental Ubuntu PipeWire stream grouping without including unrelated application audio. If it restarts, Prollyglot waits for the same application identity and resumes only when the match is unambiguous.
 - **Local by default:** no account, telemetry requirement, cloud transcription, audio upload, or transcript upload.
 - **Minimal and customizable:** one focused Start/Stop path plus an independent always-on-top overlay with readable appearance controls.
 - **Selectable local speech models:** three English choices; smaller dedicated streaming models for Chinese, French, Korean, and Bengali; and an optional higher-resource Nemotron model covering 28 languages plus automatic detection.
 - **Experimental visual text translation:** a separate Windows mode translates text already visible in a selected region, application window, or display—such as video subtitles, signs, menus, or Japanese text in a game HUD—through documented screen capture and local OCR.
-- **Experimental Ubuntu:** Ubuntu 26.04 LTS amd64 using PipeWire and a native `.deb`; output capture and X11/XWayland captions work in development checks. Application capture, Linux screen translation, and native GNOME acceptance remain pending.
+- **Experimental Ubuntu:** Ubuntu 26.04 LTS amd64 using PipeWire and a native `.deb`; output/application capture and X11/XWayland captions work in development checks. Linux screen translation, broader real-application checks, and native GNOME acceptance remain pending.
 
 ## Current status
 
@@ -57,8 +57,9 @@ The repository currently contains:
 - a Tauri 2 desktop shell and customizable caption-overlay proof;
 - Windows playback-device capture through WASAPI loopback;
 - Windows application/process-tree capture through the documented process-loopback API, using opaque identities and bounded exit/restart recovery;
-- experimental Ubuntu PipeWire output-monitor capture, with default following,
-  pinned-device recovery, and the same local speech and caption pipeline;
+- experimental Ubuntu PipeWire output and application capture, with default
+  following, pinned-device recovery, synchronized multi-stream mixing, player
+  restart recovery, and the same local speech and caption pipeline;
 - follow-default-device behavior, endpoint reconnection, bounded capture queues, and local diagnostic logging;
 - mono PCM normalization, band-limited streaming resampling to model rate, bounded low-latency buffering, energy VAD, and phrase boundaries;
 - short-utterance-friendly speech gating with quiet-speech recall, pre-roll, and trailing decoder context;
@@ -154,8 +155,9 @@ heap-corruption crash. Real-media usefulness, translation accuracy and latency,
 physical 4K/mixed-DPI positioning, lifecycle soak, and OBS/DXGI comparison still
 require acceptance.
 
-The Ubuntu slice passes a private PipeWire routing/recreation test and native
-WebKitGTK speech-to-caption/overlay checks using a public English sample. See
+The Ubuntu slice passes private PipeWire routing, application-isolation, mixing,
+and restart tests, plus native WebKitGTK speech-to-caption/overlay checks using
+a public English sample. See
 [Ubuntu validation and remaining work](docs/testing/UBUNTU_SMOKE_TEST.md) and
 [build/package instructions](BUILDING.md). This evidence comes from Ubuntu under
 WSLg, not a fresh native GNOME desktop or a multilingual accuracy benchmark.
