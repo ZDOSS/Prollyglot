@@ -1,6 +1,6 @@
 # Experimental Ubuntu validation
 
-The current Ubuntu slice is **0.3.0**, targeting **Ubuntu 26.04 LTS amd64** with
+The current Ubuntu slice is **0.3.1**, targeting **Ubuntu 26.04 LTS amd64** with
 PipeWire and WirePlumber. Windows remains the first production target. Neither
 a successful compile nor the checks below imply a supported binary release.
 

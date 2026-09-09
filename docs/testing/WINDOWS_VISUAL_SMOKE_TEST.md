@@ -24,6 +24,12 @@ scaling settings. Stop should clear the overlay and return to setup with one cli
 Report the version, language, source mode, approximate delay, and any failure in
 a few sentences. The longer steps below are available when setup help is needed.
 
+Version 0.3.1 also fixes source refresh. After a selected window closes, Refresh
+should keep it marked **unavailable** and leave Start disabled until you choose
+another window. A display-size change followed by Refresh should require drawing
+the region again. These controls passed headless fixture checks; physical source
+changes remain part of the manual desktop check.
+
 For the repeatable synthetic capture check, run
 `scripts/check-visual-windows.ps1 -ModelDirectory 'PATH\TO\OCR\MODELS'` in native
 PowerShell. It briefly opens its own fullscreen Chinese/Spanish fixture and

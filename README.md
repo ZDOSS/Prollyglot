@@ -9,9 +9,9 @@
 Prollyglot is a free and open-source desktop utility that captures audio from a selected playback device or application and turns it into live subtitles locally. It is designed for games, calls, browsers, media players, and other software that has missing, limited, or inaccessible captions.
 
 > [!IMPORTANT]
-> Prollyglot is in active pre-release development. There is not yet a supported binary release. Windows 11 is the primary target; real-media, hardware, and release acceptance remain in progress. Version 0.3.0 includes an experimental Ubuntu 26.04 LTS port with PipeWire output/application capture and native `.deb` packaging.
+> Prollyglot is in active pre-release development. There is not yet a supported binary release. Windows 11 is the primary target; real-media, hardware, and release acceptance remain in progress. Version 0.3.1 includes an experimental Ubuntu 26.04 LTS port with PipeWire output/application capture and native `.deb` packaging.
 >
-> Current pre-release: **0.3.0**. See the [changelog](CHANGELOG.md) and
+> Current pre-release: **0.3.1**. See the [changelog](CHANGELOG.md) and
 > [versioning policy](docs/VERSIONING.md).
 
 ## Why Prollyglot exists

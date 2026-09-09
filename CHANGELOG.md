@@ -5,6 +5,17 @@ Versioning while it is in the `0.x` pre-release line.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-08
+
+### Fixed
+
+- Preserve a missing selected window or display during visual-source refresh.
+  Start stays disabled until that source returns or another source is explicitly
+  chosen. Refresh no longer redirects screen capture to an unrelated source.
+- Invalidate a drawn region when its display selection or refreshed pixel size
+  changes, reject out-of-bounds regions, and recheck source availability after
+  waiting for audio captions to stop.
+
 ### Development
 
 - Implement the Ubuntu XDG ScreenCast/PipeWire capture backend with cancellable

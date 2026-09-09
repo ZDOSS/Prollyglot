@@ -229,7 +229,7 @@ targets. Tauri automatically merges `tauri.linux.conf.json`:
 
 ```bash
 pnpm --dir apps/desktop tauri build --bundles deb -- --locked
-dpkg-deb --info target/release/bundle/deb/Prollyglot_0.3.0_amd64.deb
+dpkg-deb --info target/release/bundle/deb/Prollyglot_0.3.1_amd64.deb
 ```
 
 The pre-bundle hook copies the linked sherpa-onnx and ONNX Runtime libraries into
@@ -242,7 +242,7 @@ and fresh-machine installation acceptance remain release work.
 For local development, `--debug --bundles deb` produces the corresponding
 package under `target/debug/bundle/deb`. Debug packages are larger and are not
 representative performance artifacts. Install a deliberately chosen build with
-`sudo apt install ./target/release/bundle/deb/Prollyglot_0.3.0_amd64.deb`, and remove
+`sudo apt install ./target/release/bundle/deb/Prollyglot_0.3.1_amd64.deb`, and remove
 it with `sudo apt remove prollyglot`. Uninstalling does not remove the user's
 downloaded models or preferences.
 

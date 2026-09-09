@@ -1238,6 +1238,13 @@ picker remains a compatibility and accessibility follow-up because its
 ownership and UI-thread lifecycle have not yet been integrated safely into the
 Tauri command path.
 
+Refreshing visual sources preserves the selected source when it is unavailable,
+marks that choice unavailable, and disables Start until it returns or the user
+chooses another. A drawn region is tied to its display and the pixel dimensions
+present when it was selected; changing displays or refreshing after a size
+change requires a new region. Switching from audio captions rechecks the current
+visual selection after audio shutdown before starting capture.
+
 Selected-display capture is a first-class compatibility path. A documented
 DXGI Desktop Duplication display backend still needs to be compared because an
 application's window surface and the composed monitor can behave differently,

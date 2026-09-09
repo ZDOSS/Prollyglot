@@ -97,6 +97,7 @@ export class VisualPanel {
   private displayId?: string;
   private detectionMode: VisualDetectionMode;
   private region?: PixelRect;
+  private regionDisplay?: Pick<VisualSource, "id" | "width" | "height">;
   private notice = "";
   private busy = false;
   private stopping = false;
@@ -174,7 +175,10 @@ export class VisualPanel {
       || this.displayId !== preferences.displayId
       || this.detectionMode !== detectionMode;
     if (!changed) return;
-    if (this.mode !== mode) this.region = undefined;
+    if (this.mode !== mode || this.displayId !== preferences.displayId) {
+      this.region = undefined;
+      this.regionDisplay = undefined;
+    }
     this.mode = mode;
     this.sourceLanguage = sourceLanguage;
     this.targetLanguage = targetLanguage;
@@ -293,6 +297,8 @@ export class VisualPanel {
     mode.addEventListener("change", () => {
       this.mode = mode.value as VisualSourceMode;
       this.region = undefined;
+      this.regionDisplay = undefined;
+      this.notice = "";
       this.persist();
       this.rerender();
     });
@@ -398,8 +404,11 @@ export class VisualPanel {
     if (!ready.ok && !this.notice) notice.textContent = ready.reason;
     start.addEventListener("click", () => {
       void this.run(async () => {
-        if (state.audioActive) await actions.stopAudio();
-        const selection = this.selection(state.sources);
+        // Refreshes can arrive while switching away from audio captions. Check
+        // the current selection before stopping audio and again before capture.
+        this.selection(this.state?.sources ?? state.sources);
+        if (this.state?.audioActive ?? state.audioActive) await actions.stopAudio();
+        const selection = this.selection(this.state?.sources ?? state.sources);
         await actions.start(selection, this.sourceLanguage, this.targetLanguage, this.detectionMode);
       }, "Could not start screen translation.");
     });
@@ -412,21 +421,38 @@ export class VisualPanel {
     const wrapper = create("section", "visual-source-field");
     const list = this.mode === "applicationWindow" ? sources.windows : sources.displays;
     const storedId = this.mode === "applicationWindow" ? this.windowId : this.displayId;
-    const selectedId = list.some(({ id }) => id === storedId) ? storedId : list[0]?.id;
+    const selectedId = storedId ?? list[0]?.id;
+    const available = list.some(({ id }) => id === selectedId);
     if (this.mode === "applicationWindow") this.windowId = selectedId;
     else this.displayId = selectedId;
+    const display = sources.displays.find(({ id }) => id === this.displayId);
+    if (this.region && this.regionDisplay && display
+      && (this.regionDisplay.id !== display.id
+        || this.regionDisplay.width !== display.width
+        || this.regionDisplay.height !== display.height)) {
+      this.region = undefined;
+      this.regionDisplay = undefined;
+      this.notice = "The display size changed. Select a region again.";
+    }
 
     const source = create("select");
     source.id = this.id("source");
-    if (list.length === 0) source.append(option("", "No sources available", true));
-    else source.append(...list.map(({ id, label }) => option(id, label, id === selectedId)));
+    if (selectedId && !available) {
+      const missing = option(selectedId,
+        `Selected ${this.mode === "applicationWindow" ? "window" : "display"} · unavailable`, true);
+      missing.disabled = true;
+      source.append(missing);
+    } else if (list.length === 0) source.append(option("", "No sources available", true));
+    source.append(...list.map(({ id, label }) => option(id, label, id === selectedId)));
     source.disabled = this.busy || list.length === 0;
     source.addEventListener("change", () => {
       if (this.mode === "applicationWindow") this.windowId = source.value;
       else {
         this.displayId = source.value;
         this.region = undefined;
+        this.regionDisplay = undefined;
       }
+      this.notice = "";
       this.persist();
       this.rerender();
     });
@@ -442,8 +468,10 @@ export class VisualPanel {
     refresh.disabled = this.busy;
     refresh.addEventListener("click", () => {
       void this.run(async () => {
-        await actions.refreshSources();
-        this.notice = "Screen sources refreshed.";
+        const sources = await actions.refreshSources();
+        if (this.state) this.state = { ...this.state, sources };
+        this.notice = (this.state && this.readyToStart(this.state).reason)
+          || "Screen sources refreshed.";
       }, "Could not refresh screen sources.");
     });
     sourceActions.append(refresh);
@@ -452,13 +480,18 @@ export class VisualPanel {
       const choose = create("button", "secondary-button visual-region-button");
       choose.type = "button";
       choose.textContent = this.region ? "Choose region again" : "Select region on screen";
-      choose.disabled = this.busy || !this.displayId;
+      choose.disabled = this.busy || !available;
       choose.addEventListener("click", () => {
         if (!this.displayId) return;
         void this.run(async () => {
-          const selected = await actions.pickRegion(this.displayId ?? "");
+          const display = this.requireSource(
+            this.state?.sources.displays ?? sources.displays, this.displayId, "display"
+          );
+          const selected = await actions.pickRegion(display.id);
           if (selected) {
             this.region = selected;
+            this.regionDisplay = { id: display.id, width: display.width, height: display.height };
+            this.selection(this.state?.sources ?? sources);
             this.notice = `Selected ${selected.width} × ${selected.height} px region.`;
           }
         }, "Could not select a screen region.");
@@ -588,12 +621,25 @@ export class VisualPanel {
     const display = this.requireSource(sources.displays, this.displayId, "display");
     if (this.mode === "display") return { kind: "display", sourceId: display.id };
     if (!this.region) throw new Error("Select a region on screen before starting.");
+    if (this.regionDisplay?.id !== display.id
+      || this.regionDisplay.width !== display.width
+      || this.regionDisplay.height !== display.height) {
+      throw new Error("The display size changed. Select a region again.");
+    }
+    if (![this.region.x, this.region.y, this.region.width, this.region.height].every(Number.isSafeInteger)
+      || this.region.x < 0 || this.region.y < 0 || this.region.width <= 0 || this.region.height <= 0
+      || this.region.x + this.region.width > display.width
+      || this.region.y + this.region.height > display.height) {
+      throw new Error("The region is outside the selected display. Select a region again.");
+    }
     return { kind: "region", displayId: display.id, region: this.region };
   }
 
   private requireSource(list: VisualSource[], id: string | undefined, label: string): VisualSource {
-    const source = list.find((candidate) => candidate.id === id) ?? list[0];
-    if (!source) throw new Error(`No ${label} is available to capture.`);
+    const source = list.find((candidate) => candidate.id === id);
+    if (!source) throw new Error(id
+      ? `The selected ${label} is unavailable. Refresh sources or choose another ${label}.`
+      : `No ${label} is available to capture.`);
     return source;
   }
 

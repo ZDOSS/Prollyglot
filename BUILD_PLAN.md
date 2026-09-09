@@ -969,6 +969,8 @@ The experimental direction is now represented by an integrated first slice:
 
 - capture one explicitly selected top-level window or display through
   `Windows.Graphics.Capture`, cropping a user-drawn region after display capture;
+- preserve an unavailable selected visual source through refresh, disable Start
+  without fallback, and invalidate drawn regions after display/size changes;
 - run pinned PP-OCRv6 Small through a bounded latest-frame queue and change gate
   instead of recognizing every video frame;
 - stabilize identical text across frames, track its bounding box, and route new
@@ -986,6 +988,12 @@ Capture remain compatibility comparisons, not implemented claims. A
 `Windows.Media.Ocr` comparison also remains optional: ordinary unpackaged
 development and MSI/NSIS installs cannot assume the package identity required
 by that API, while PP-OCR provides one shared Windows/Linux direction.
+
+The 0.3.1 visual-source correction was reproduced and checked in a headless
+browser using the actual panel and deterministic capture/model fixtures. Checks cover removal/restoration, empty source lists, explicit replacement,
+region invalidation/bounds, and a source update during audio shutdown, at 1280 px
+and 420 px widths. No native desktop was opened. Physical display changes,
+real-media Chinese/Spanish latency, and OBS comparisons remain owner-run checks.
 
 ### Included outcome
 
