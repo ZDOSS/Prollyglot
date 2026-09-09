@@ -162,6 +162,7 @@ impl ActiveVisualResources {
 struct OverlayEcho {
     text: OverlayText,
     expires_at: Option<Instant>,
+    reader_background: bool,
 }
 type OverlayEchoHistory = Vec<OverlayEcho>;
 
@@ -186,7 +187,7 @@ impl OcrEngine for EchoFilteringEngine {
             !echoes.lock().iter().any(|echo| {
                 echo.expires_at.is_none_or(|expiry| Instant::now() < expiry)
                     && echo.text.matches(observation)
-                    && (!cfg!(target_os = "linux")
+                    && (!echo.reader_background
                         || crate::visual_reader::has_reader_background(frame, observation.bounds))
             })
         });
@@ -282,6 +283,9 @@ pub fn initialize(app: &AppHandle, runtime: &VisualRuntime) {
             };
         }
         if let Some(reader) = app.get_webview_window("visual-overlay") {
+            // The window starts non-focusable in tauri.conf.json so Tao does
+            // not install its delayed first-draw focus restoration. The reader
+            // explicitly opts in; anchored output remains non-focusable.
             let configured = (|| -> tauri::Result<()> {
                 reader.set_title("Screen translations — Prollyglot")?;
                 reader.set_decorations(true)?;
@@ -289,7 +293,7 @@ pub fn initialize(app: &AppHandle, runtime: &VisualRuntime) {
                 reader.set_always_on_top(false)?;
                 reader.set_focusable(true)?;
                 reader.set_size(tauri::LogicalSize::new(560.0, 360.0))?;
-                reader.set_min_size(Some(tauri::LogicalSize::new(300.0, 200.0)))?;
+                reader.set_min_size(None::<tauri::LogicalSize<f64>>)?;
                 Ok(())
             })();
             if let Err(error) = configured {
@@ -357,7 +361,7 @@ pub fn visual_capabilities() -> VisualCaptureCapabilities {
         system_picker: capabilities.system_picker,
         desktop_duplication_experiment: capabilities.desktop_duplication_experiment,
         message: if cfg!(target_os = "linux") {
-            Some("Choose a window or monitor in the desktop picker at Start. Translations appear in a movable window.".into())
+            Some("Choose a window, monitor, or region at Start. Monitor and region labels use verified desktop positions, with a movable reader as fallback.".into())
         } else {
             capabilities.message
         },
@@ -411,7 +415,7 @@ pub fn update_visual_presentation(
     app: AppHandle,
     caller: WebviewWindow,
     state: State<'_, RuntimeState>,
-    frame: VisualPresentationFrame,
+    mut frame: VisualPresentationFrame,
 ) -> Result<bool, ApplicationError> {
     if caller.label() != "main" {
         return Err(application_error(
@@ -459,13 +463,14 @@ pub fn update_visual_presentation(
         {
             return Ok(false);
         }
+        frame.anchored = current.anchored;
         let changed =
             current.regions.len() != frame.regions.len() || current.scanning != frame.scanning;
         let previous = std::mem::replace(&mut *current, frame.clone());
         (previous, changed)
     };
 
-    if cfg!(target_os = "linux") {
+    if cfg!(target_os = "linux") && !frame.anchored {
         update_reader_echoes(&state.visual.overlay_echoes, &frame);
     }
     if let Err(error) = overlay.emit(ipc::VISUAL_PRESENTATION_EVENT, &frame) {
@@ -929,8 +934,14 @@ pub async fn start_visual_translation(
     let capture_selection = selection.clone();
     let capture_cancellation = started.cancellation.clone();
     let parent_window = state.visual.portal_parent.lock().clone();
+    let capture_app = app.clone();
     let capture = match tauri::async_runtime::spawn_blocking(move || {
-        visual_capture::start_capture(capture_selection, parent_window, capture_cancellation)
+        visual_capture::start_capture(
+            capture_app,
+            capture_selection,
+            parent_window,
+            capture_cancellation,
+        )
     })
     .await
     {
@@ -1720,38 +1731,37 @@ fn configure_visual_overlay(
     output: &Arc<Mutex<VisualPresentationFrame>>,
     show: bool,
 ) -> Result<(), String> {
-    let overlay = app
-        .get_webview_window("visual-overlay")
-        .ok_or("Visual translation overlay is unavailable.")?;
-    if cfg!(target_os = "linux") {
+    #[cfg(target_os = "linux")]
+    return crate::visual_linux::configure_overlay(app, source, output, show);
+    #[cfg(not(target_os = "linux"))]
+    {
+        let overlay = app
+            .get_webview_window("visual-overlay")
+            .ok_or("Visual translation overlay is unavailable.")?;
+        output.lock().anchored = true;
+        overlay
+            .set_ignore_cursor_events(true)
+            .map_err(|error| error.to_string())?;
+        overlay
+            .set_focusable(false)
+            .map_err(|error| error.to_string())?;
+        overlay
+            .set_always_on_top(true)
+            .map_err(|error| error.to_string())?;
+        overlay
+            .set_position(PhysicalPosition::new(source.x, source.y))
+            .map_err(|error| error.to_string())?;
+        overlay
+            .set_size(PhysicalSize::new(source.width, source.height))
+            .map_err(|error| error.to_string())?;
         overlay
             .emit(ipc::VISUAL_PRESENTATION_EVENT, output.lock().clone())
             .map_err(|error| error.to_string())?;
-        return if show { overlay.show() } else { overlay.hide() }
-            .map_err(|error| error.to_string());
-    }
-    overlay
-        .set_ignore_cursor_events(true)
-        .map_err(|error| error.to_string())?;
-    overlay
-        .set_focusable(false)
-        .map_err(|error| error.to_string())?;
-    overlay
-        .set_always_on_top(true)
-        .map_err(|error| error.to_string())?;
-    overlay
-        .set_position(PhysicalPosition::new(source.x, source.y))
-        .map_err(|error| error.to_string())?;
-    overlay
-        .set_size(PhysicalSize::new(source.width, source.height))
-        .map_err(|error| error.to_string())?;
-    overlay
-        .emit(ipc::VISUAL_PRESENTATION_EVENT, output.lock().clone())
-        .map_err(|error| error.to_string())?;
-    if show {
-        overlay.show().map_err(|error| error.to_string())
-    } else {
-        overlay.hide().map_err(|error| error.to_string())
+        if show {
+            overlay.show().map_err(|error| error.to_string())
+        } else {
+            overlay.hide().map_err(|error| error.to_string())
+        }
     }
 }
 
@@ -1803,10 +1813,10 @@ pub fn update_visual_overlay_layout(
     if caller.label() != "visual-overlay" {
         return Err("Only the visual overlay may report its rendered label positions.".into());
     }
-    if cfg!(target_os = "linux") {
+    let output = state.visual.overlay_output.lock();
+    if cfg!(target_os = "linux") && !output.anchored {
         return Ok(false);
     }
-    let output = state.visual.overlay_output.lock();
     if layout.session_id != output.session_id
         || layout.presentation_revision != output.presentation_revision
     {
@@ -1860,6 +1870,7 @@ pub fn update_visual_overlay_layout(
             echoes.push(OverlayEcho {
                 text,
                 expires_at: None,
+                reader_background: false,
             });
         }
     }
@@ -1910,6 +1921,7 @@ fn update_reader_echoes(echoes: &Arc<Mutex<OverlayEchoHistory>>, frame: &VisualP
                     },
                 },
                 expires_at: None,
+                reader_background: true,
             });
         }
     }
@@ -1921,6 +1933,41 @@ fn update_reader_echoes(echoes: &Arc<Mutex<OverlayEchoHistory>>, frame: &VisualP
 #[tauri::command]
 pub fn visual_presentation(state: State<'_, RuntimeState>) -> VisualPresentationFrame {
     state.visual.overlay_output.lock().clone()
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) fn region_selection_started(app: &AppHandle) {
+    let state = app.state::<RuntimeState>();
+    let mut supervisor = state.supervisor.lock();
+    if let Some(session) = supervisor.snapshot().session_id
+        && let Ok(snapshot) = supervisor.update_start_progress(session, SessionProgress::StartingCapture,
+            Some("Draw around the text in the region preview, then choose Use region. Stop cancels selection.".into())) {
+        drop(supervisor);
+        publish_visual_runtime(app, &state.visual.status, snapshot);
+    }
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) fn set_linux_output_mode(
+    app: &AppHandle,
+    output: &Arc<Mutex<VisualPresentationFrame>>,
+    anchored: bool,
+) {
+    let frame = {
+        let mut frame = output.lock();
+        if frame.anchored != anchored {
+            app.state::<RuntimeState>()
+                .visual
+                .overlay_echoes
+                .lock()
+                .clear();
+        }
+        frame.anchored = anchored;
+        frame.clone()
+    };
+    if !anchored {
+        update_reader_echoes(&app.state::<RuntimeState>().visual.overlay_echoes, &frame);
+    }
 }
 
 fn validate_language_pair(source: &str, target: &str) -> Result<(), String> {
@@ -2365,6 +2412,7 @@ fn clear_visual_output(
             source_language: current.source_language.clone(),
             target_language: current.target_language.clone(),
             scanning: false,
+            anchored: false,
             regions: Vec::new(),
         };
         *current = cleared.clone();
@@ -2509,6 +2557,11 @@ fn visual_session_source(selection: &VisualCaptureSelection) -> SessionSource {
             SessionSourceKind::Display,
             "Choose a monitor",
         ),
+        VisualCaptureSelection::PortalRegion => SessionSource::new(
+            "portal:region",
+            SessionSourceKind::Region,
+            "Choose a monitor region",
+        ),
         VisualCaptureSelection::ApplicationWindow { source_id } => SessionSource::new(
             source_id,
             SessionSourceKind::ApplicationWindow,
@@ -2586,6 +2639,7 @@ mod tests {
             source_language: "ja".into(),
             target_language: "en".into(),
             scanning: false,
+            anchored: false,
             regions: vec![VisualPresentationRegion {
                 track_id: 1,
                 text_revision: 1,
@@ -2616,6 +2670,7 @@ mod tests {
             source_language: "ja".into(),
             target_language: "en".into(),
             scanning: false,
+            anchored: false,
             regions: vec![VisualPresentationRegion {
                 track_id: 1,
                 text_revision: 1,

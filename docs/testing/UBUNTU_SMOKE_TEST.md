@@ -1,6 +1,6 @@
 # Experimental Ubuntu validation
 
-The current Ubuntu slice is **0.4.0**, targeting **Ubuntu 26.04 LTS amd64** with
+The current Ubuntu slice is **0.5.0**, targeting **Ubuntu 26.04 LTS amd64** with
 PipeWire and WirePlumber. Windows remains the first production target. Neither
 a successful compile nor the checks below imply a supported binary release.
 
@@ -13,7 +13,7 @@ a successful compile nor the checks below imply a supported binary release.
 | Overlay | Initial GTK X11/XWayland path, appearance controls, click-through setup | Native GNOME stacking, click-through, fullscreen, scaling, and multiple monitors |
 | Native Wayland | Explicit GTK backend choice is honored | Positioning and overlay behavior are not yet supported/accepted |
 | Application audio | Grouped playback streams, synchronized mixing, stream/process restart recovery, ambiguity handling | Real browser/Electron/PulseAudio-bridge/sandbox identities, permissions, hardware clocks, and long sessions |
-| Screen translation | Desktop portal window/monitor selection, shared OCR/translation pipeline, movable reader, cancellable Start/Stop | Actual GNOME portal/compositor and real-media acceptance; drawn regions, anchored overlays, GPU-only buffers |
+| Screen translation | Portal window/monitor/region selection, native preview, verified X11/XWayland anchors or reader, cancellable Start/Stop | Actual GNOME portal/compositor and real-media acceptance; native Wayland anchors/fullscreen stacking, GPU-only buffers |
 | Debian package | Native build, private inference libraries, declared dependencies | Fresh GNOME install/upgrade/remove and complete release-wide license inventory |
 
 Ubuntu 24.04 and other distributions are outside the initial supported-package
@@ -246,6 +246,13 @@ choose **Application window**, and share a YouTube/browser window in the desktop
 picker. Check whether translations arrive while the source text is still useful.
 Move/resize the reader and close it to stop; Start again, then dismiss the picker
 and check that the app returns to stopped. Repeat with **Whole display**, keeping
-Prollyglot away from the source text or on another display. A brief report of
+Prollyglot away from the source text or on another display. Then try **Selected
+region**: share a monitor, draw around the subtitles in the preview, and choose
+**Use region** (coordinates can also be edited with the keyboard). Verify that
+text outside the crop is ignored. Cancel or Stop during another selection.
+On X11/XWayland, matching monitor geometry allows labels near the source;
+otherwise the reader is expected. Move/reconfigure a display and confirm that
+labels fall back to the reader or a changed capture asks for a new region.
+A brief report of
 missed text, lag, feedback, or an unavailable picker is enough; no recording,
 screenshot, or timing sheet is needed. These acceptance items remain open.

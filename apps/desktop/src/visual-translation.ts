@@ -405,6 +405,7 @@ export class VisualTranslationController {
       sourceLanguage: this.sourceLanguage,
       targetLanguage: this.targetLanguage,
       scanning: this.scanning || (regions.length === 0 && this.requests.size > 0),
+      anchored: false, // The native host resolves and owns desktop placement.
       regions
     });
   }

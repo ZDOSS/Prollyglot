@@ -1,9 +1,9 @@
 # Ubuntu screen-capture backend checks
 
-Version 0.4.0 integrates `crates/visual-pipewire` into the Ubuntu desktop app.
-Each Start opens the desktop window/monitor picker, and translations use a
-normal movable reader. Drawn regions and overlays anchored over source text
-remain Windows features. Real GNOME/Wayland and real-media acceptance is open.
+Version 0.5.0 supports portal window/monitor capture and monitor-region drawing
+in a native still preview. Matching X11/XWayland monitor geometry can anchor
+translations; missing or unverified placement falls back to the movable reader.
+Native Wayland anchoring, fresh GNOME, and real-media acceptance remain open.
 
 ## Run without using the desktop
 
@@ -92,9 +92,26 @@ accuracy/latency remain owner-run acceptance. These tests are not substitutes.
   logical size can differ from captured pixel dimensions; a window has no
   portable global position. `FrameGeometry` describes the raw, cropped and
   transformed pixels. Do not pass either directly to the current Windows
-  physical overlay coordinates. The Ubuntu reader deliberately uses normal
-  document flow without capture-relative positioning. Linux drawn regions and
-  anchored presentation still need their own mapping and compositor checks.
+  physical overlay coordinates. `visual_geometry` maps a region only when the
+  portal's complete monitor rectangle matches exactly one GDK logical monitor,
+  normalized buffer aspect agrees, and no partial compositor crop is present.
+  Negative origins, integer/fractional capture scales, and already-normalized
+  rotations are handled separately from desktop positioning.
+- Region Start opens a native GTK/Cairo still preview of the authorized monitor.
+  Mouse drawing and mnemonic-labeled pixel controls select a crop; Use region
+  confirms it, while Cancel/Esc/Stop release the session. Raw preview pixels
+  never enter the webview. A latest-frame adapter crops before OCR and rejects
+  capture size/crop/transform changes, including changes with the same pixel
+  dimensions. Sparse-source terminal events need no new frame to be handled.
+- Anchors use GTK logical coordinates on X11/XWayland only. The transparent,
+  input-transparent, non-focusable window requests its monitor/region rectangle
+  and remains invisible until its actual size/position verifies. A bounded
+  periodic check detects layout, scale, and placement changes and restores the
+  reader. Shared windows and native Wayland use the reader. Compositor stacking
+  and physical fractional scaling still require owner acceptance.
+- The native host owns the `anchored` presentation flag. The frontend cannot
+  use that field to choose desktop coordinates. Placement fallback updates the
+  existing presentation without inventing a translation revision.
 - Start/Stop run under desktop session supervision. A blocking startup worker
   polls the cancellation token while the portal waits for selection; dismissal
   returns to stopped. Source loss/revocation hides and clears presentation and
@@ -119,12 +136,14 @@ PROLLYGLOT_PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs \
 node scripts/check-portal-ui.mjs http://localhost:1420
 ```
 
-It checks portal window/monitor selection without enumerated IDs, an inherited
-Windows region preference, Stop while the picker is pending, small-window
-wrapping/scrolling, and stale presentation rejection. Chromium is always
+It checks portal window/monitor/region selection without enumerated IDs, an
+inherited region preference, Stop while startup is pending, small-window
+wrapping/scrolling, native placement changes without new translation content,
+and stale presentation rejection. Chromium is always
 headless; `PROLLYGLOT_CHROMIUM` can select a local browser executable.
 
 The native fixture additionally needs `Xvfb`, `tauri-driver`, `WebKitWebDriver`,
+`libX11`/`libXtst`,
 an installed OCR pack, and the synthetic images above:
 
 ```bash
@@ -143,10 +162,46 @@ No owner desktop, real sharing picker, hardware routing, or recording is used.
 
 The native cases cover Chinese/window and Spanish/monitor OCR, presentation IPC
 and reader output, reader Stop/close and restart, late output after Stop, pending-picker
-cancellation, and picker dismissal. Translation text is injected as a fixed
+cancellation, and picker dismissal. Region cases exercise an actual GTK drag and
+keyboard coordinate entry, crop-only OCR, Cancel/Esc/Stop during selection, and
+monitor/region anchors on the fixture display. A native displacement verifies
+reader fallback. `private_x11.py` accepts only the runner's own high-numbered
+Xvfb process, uses explicit display handles, and performs no image capture.
+Translation text is injected as a fixed
 fixture through the normal native presentation contract; this test does not
 measure a translation model's quality, runtime, or real-media usefulness.
 
+
+## Region and anchor validation (0.5.0)
+
+On 2026-09-08, on the Ubuntu 26.04/WSL2 development host:
+
+- 169 Rust tests and 58 frontend tests passed; 11 opt-in tests remain ignored
+  in the ordinary suite. Formatting, Clippy, generated bindings, version checks,
+  frontend production bundling, and Windows desktop MSVC cross-compilation passed.
+- All four private portal/backend tests passed, including real OCR of the six
+  synthetic Chinese/Spanish images. Headless browser checks passed for portal
+  region selection, placement fallback without new translation content, stale
+  revisions, and existing Windows visual controls/overlay placement.
+- All nine native scenarios passed against the **extracted final `.deb`**:
+  Chinese window and Spanish display readers; Chinese region anchors at 1× and
+  simulated 2× GTK scaling; Spanish display anchors; Stop/Esc during the region
+  preview; and pending-picker cancellation/dismissal. The region fixture uses
+  real pointer dragging and keyboard coordinates, including confirming an entry
+  before leaving its field. Text outside the crop does not reach OCR.
+- Native X input-shape and focus hints verify that anchors pass input through
+  and do not accept keyboard focus. This caught and fixed the toolkit's initial
+  draw restoring focus. Actual native displacement switches to the reader;
+  reader input/focus behavior and a subsequent anchored restart also pass.
+- Built `target/release/bundle/deb/Prollyglot_0.5.0_amd64.deb` (33,469,924 bytes).
+  All extracted native library dependencies resolved. No install, upgrade,
+  owner desktop manipulation, or recording was performed.
+
+These use a fake portal and synthetic video, with deterministic presentation
+text. They do not establish real translation latency/quality, physical mixed-DPI
+behavior, compositor transparency/fullscreen stacking, or fresh GNOME/Wayland
+acceptance. Native Wayland anchoring remains unimplemented; the reader is the
+fallback. Follow the short [owner check](UBUNTU_SMOKE_TEST.md#owner-screen-translation-check).
 
 ## Integration validation (0.4.0)
 
@@ -176,6 +231,10 @@ scaling, fullscreen behavior, and real Chinese/Spanish translation usefulness
 remain owner acceptance. See the short [manual check](UBUNTU_SMOKE_TEST.md#owner-screen-translation-check).
 
 ## Implementation references
+
+Geometry and placement follow [GDK logical monitor geometry](https://docs.gtk.org/gdk3/method.Monitor.get_geometry.html)
+and [GTK window positioning](https://docs.gtk.org/gtk3/method.Window.move.html).
+Window-manager requests are verified, not treated as guaranteed placement.
 
 The backend follows the [XDG ScreenCast contract](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.ScreenCast.html),
 [Request lifecycle](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.Request.html),

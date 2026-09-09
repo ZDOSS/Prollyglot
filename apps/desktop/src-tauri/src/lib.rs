@@ -8,6 +8,12 @@ mod transcription;
 mod translation;
 mod visual;
 mod visual_capture;
+#[cfg(target_os = "linux")]
+mod visual_geometry;
+#[cfg(target_os = "linux")]
+mod visual_linux;
+#[cfg(target_os = "linux")]
+mod visual_portal;
 mod visual_reader;
 
 use std::{fs, sync::Arc};

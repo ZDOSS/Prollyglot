@@ -3,7 +3,7 @@ use std::{error::Error, fmt};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const APPLICATION_RUNTIME_CONTRACT_VERSION: u16 = 5;
+pub const APPLICATION_RUNTIME_CONTRACT_VERSION: u16 = 6;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 pub struct SessionId(pub u32);
@@ -499,6 +499,8 @@ pub enum VisualCaptureSelection {
     /// The desktop chooses the concrete source at each Start; no reusable ID.
     PortalWindow,
     PortalDisplay,
+    /// Select a monitor in the portal, then draw on a transient native preview.
+    PortalRegion,
     ApplicationWindow {
         #[serde(rename = "sourceId")]
         #[ts(rename = "sourceId")]
@@ -743,6 +745,9 @@ pub struct VisualPresentationFrame {
     pub source_language: String,
     pub target_language: String,
     pub scanning: bool,
+    // Set by the native host, never used to authorize desktop positioning.
+    #[serde(default)]
+    pub anchored: bool,
     pub regions: Vec<VisualPresentationRegion>,
 }
 
@@ -757,6 +762,7 @@ impl Default for VisualPresentationFrame {
             source_language: String::new(),
             target_language: String::new(),
             scanning: false,
+            anchored: false,
             regions: Vec::new(),
         }
     }
@@ -1157,6 +1163,7 @@ mod tests {
                 source_language: "ja".into(),
                 target_language: "en".into(),
                 scanning: false,
+                anchored: false,
                 regions: vec![VisualPresentationRegion {
                     track_id: 7,
                     text_revision: 2,

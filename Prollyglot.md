@@ -189,9 +189,20 @@ through the shared local transcription and caption pipeline, plus development
 `.deb` packaging. Version 0.4.0 adds experimental Ubuntu screen translation:
 a desktop sharing picker selects one window or monitor, transient PipeWire
 frames feed the shared OCR/translation pipeline, and translations appear in a
-normal movable reader window. Drawn regions and translations anchored over the
-source remain Windows features. This reader does not promise Wayland overlay
-positioning, always-on-top behavior, or fullscreen stacking.
+normal movable reader window. Version 0.5.0 adds monitor-region drawing on a transient native preview and
+conditional monitor/region anchoring on X11/XWayland. The preview supports
+mouse drawing, keyboard-editable pixel coordinates, Use region, Cancel, and Esc;
+Stop also cancels an open preview. Only the chosen crop reaches OCR, and capture
+size/orientation changes require selecting it again. Preview pixels never cross
+IPC or enter recordings.
+
+Anchoring requires a unique exact match between portal compositor coordinates
+and GDK logical monitor geometry, consistent normalized pixel geometry, and
+verified native window position/size. Labels remain hidden while initial
+placement is checked. Missing, ambiguous, or changed geometry, declined
+placement, native Wayland, and shared windows use the movable reader instead.
+No monitor is guessed from pixel dimensions alone. This does not promise native
+Wayland positioning, always-on-top behavior, or fullscreen stacking.
 Native Ubuntu/WSLg fixtures establish an initial working slice; they do not
 replace fresh GNOME installation, hardware, compositor, or release acceptance.
 
@@ -1265,14 +1276,18 @@ source ends capture without selecting another source.
 
 Portal logical position/size, optional window metadata, and raw/cropped/rotated
 pixel geometry remain separate. They must not be passed to the Windows physical
-overlay API as interchangeable values. Ubuntu uses an ordinary movable reader
+overlay API as interchangeable values. Ubuntu monitor/region anchors use an
+exact logical monitor match and verified X11/XWayland placement, as described
+in the platform scope above. Other cases use an ordinary movable reader
 independent of the selected source's desktop coordinates. Its translations stay
 in normal document flow, can wrap and scroll, and preserve source text in their
 accessibility labels; the original remains visible in the shared source.
 Closing the reader stops sharing. A pending picker remains cancellable from
 Start through cleanup, and dismissing it is a normal stopped state. The reader
 subscribes before fetching current presentation so a slow webview cannot miss
-its first result. Drawn regions and native Wayland anchoring remain follow-ups.
+its first result. Region selection uses a separate native still-image preview
+after the monitor picker; Stop cancels both. Native Wayland anchoring remains
+a follow-up.
 CPU-readable BGRx, BGRA,
 RGBx, and RGBA are implemented; DMA-BUF import and negative-stride buffers are
 explicitly unsupported in this backend slice. Captured pixels stay transient.
@@ -1464,9 +1479,9 @@ requires both a match to current/recently rendered translation text and pixel
 evidence of the reader's opaque background at the OCR observation. Matching
 words elsewhere on ordinary video backgrounds remain eligible. This bounded
 heuristic can fail under compositor color changes or collide with identical
-text on a matching background; it is not a capture-exclusion guarantee. The UI
-recommends sharing only the media window or keeping Prollyglot outside the shared
-monitor. Source text is not redrawn into the reader, avoiding a second copy that
+text on a matching background; it is not a capture-exclusion guarantee. Sharing only the media window or keeping Prollyglot outside the shared
+monitor reduces this risk. Ubuntu anchors use the measured label-bound filter
+instead; changing between anchored output and the reader clears old echo bounds. Source text is not redrawn into the reader, avoiding a second copy that
 could be mistaken for untranslated source text.
 
 An active portal may deliver one image and remain silent until its content

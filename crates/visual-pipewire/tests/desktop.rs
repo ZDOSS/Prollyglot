@@ -16,12 +16,30 @@ fn native_desktop_ocr_reader_and_picker_cancellation() {
     for (language, mode, behavior) in [
         ("zh", "portalWindow", Behavior::Normal),
         ("es", "portalDisplay", Behavior::Normal),
+        ("zh", "anchorRegion", Behavior::Normal),
+        ("zh", "anchorRegion2x", Behavior::Normal),
+        ("es", "anchorDisplay", Behavior::Normal),
+        ("zh", "cancelRegion", Behavior::Normal),
+        ("es", "dismissRegion", Behavior::Normal),
         ("zh", "cancel", Behavior::Stall("Start")),
         ("es", "dismiss", Behavior::Cancel),
     ] {
         let decoded = image::open(fixtures.join(format!("{language}-1920-24-region.png")))
             .unwrap()
             .into_rgba8();
+        let anchored = mode.starts_with("anchor");
+        let decoded = if anchored {
+            let mut canvas =
+                image::RgbaImage::from_pixel(1280, 900, image::Rgba([240, 240, 240, 255]));
+            image::imageops::overlay(&mut canvas, &decoded, 150, 600);
+            let outside = image::open(fixtures.join("es-1920-24-region.png"))
+                .unwrap()
+                .into_rgba8();
+            image::imageops::overlay(&mut canvas, &outside, 150, 50);
+            canvas
+        } else {
+            decoded
+        };
         let (width, height) = decoded.dimensions();
         let mut pixels = decoded.into_raw();
         for pixel in pixels.chunks_exact_mut(4) {
@@ -29,6 +47,9 @@ fn native_desktop_ocr_reader_and_picker_cancellation() {
         }
         let source = VideoSource::start("desktop.fixture", 71, width, height, Some(pixels), 0);
         let portal = MockPortal::start(source.node, source.serial, 6, behavior);
+        if anchored {
+            *portal.observed.desktop_geometry.lock().unwrap() = Some(((0, 0), (1280, 900)));
+        }
         let result = Command::new("python3")
             .arg(repo.join("scripts/check-portal-desktop.py"))
             .arg(language)

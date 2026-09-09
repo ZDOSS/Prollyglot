@@ -31,7 +31,7 @@ try {
     };
     fixture.actions = {
       refreshSources: async () => { throw new Error("Portal sources must not be enumerated"); },
-      pickRegion: async () => { throw new Error("Portal regions are unsupported"); },
+      pickRegion: async () => { throw new Error("Portal regions are selected by the native preview after Start"); },
       installVisualModel: async () => {}, installTranslationModel: async () => {},
       openSettings: () => {}, report: message => { fixture.error = message; }, stopAudio: async () => {},
       start: async selection => {
@@ -52,9 +52,9 @@ try {
   });
   assert.equal(await page.locator("#qa-source").count(), 0);
   assert.equal(await page.getByRole("button", { name: "Refresh sources" }).count(), 0);
-  assert.deepEqual(await page.locator("#qa-source-mode option").evaluateAll(options => options.map(option => option.value)), ["applicationWindow", "display"]);
-  assert.equal(await page.locator("#qa-source-mode").inputValue(), "display");
-  for (const [mode, kind] of [["display", "portalDisplay"], ["applicationWindow", "portalWindow"]]) {
+  assert.deepEqual(await page.locator("#qa-source-mode option").evaluateAll(options => options.map(option => option.value)), ["applicationWindow", "display", "region"]);
+  assert.equal(await page.locator("#qa-source-mode").inputValue(), "region");
+  for (const [mode, kind] of [["region", "portalRegion"], ["display", "portalDisplay"], ["applicationWindow", "portalWindow"]]) {
     await page.locator("#qa-source-mode").selectOption(mode);
     assert.equal(await page.locator(".visual-start-button").isDisabled(), false);
     await page.locator(".visual-start-button").click();
@@ -65,7 +65,7 @@ try {
     await page.locator(".visual-start-button").waitFor();
     await page.waitForFunction(() => !document.querySelector(".visual-start-button").disabled);
   }
-  assert.equal(await page.evaluate(() => window.fixture.stops), 2);
+  assert.equal(await page.evaluate(() => window.fixture.stops), 3);
   assert.equal(await page.evaluate(() => window.fixture.error), undefined);
   for (const width of [1280, 400]) {
     await page.setViewportSize({ width, height: 900 });
@@ -94,6 +94,22 @@ try {
     await page.evaluate(() => window.__PROLLYGLOT_VISUAL_OVERLAY_PREVIEW__.setPresentation({ sessionId: 0, runtimeRevision: 0, presentationRevision: 9999, regions: [] }));
     assert.equal(await page.locator(".visual-translation-label").count(), 6);
   }
+  await page.evaluate(() => {
+    const frame = window.placementFixture = {
+      sessionId: 2, runtimeRevision: 4, presentationRevision: 1,
+      sourceWidth: 1000, sourceHeight: 200, sourceLanguage: "zh", targetLanguage: "en",
+      scanning: false, anchored: true,
+      regions: [{ trackId: 1, textRevision: 1, original: "你好", translation: "Hello",
+        translationPending: false, bounds: { x: 400, y: 100, width: 160, height: 30 } }]
+    };
+    window.__PROLLYGLOT_VISUAL_OVERLAY_PREVIEW__.setPresentation(frame);
+  });
+  assert.equal(await page.locator(".visual-reader-header").count(), 0);
+  assert.equal(await page.locator(".visual-translation-label").evaluate(el => getComputedStyle(el).position), "absolute");
+  await page.evaluate(() => window.__PROLLYGLOT_VISUAL_OVERLAY_PREVIEW__.setPresentation({ ...window.placementFixture, anchored: false }));
+  assert.equal(await page.locator(".visual-reader-header").count(), 1, "native fallback must apply without a new translation revision");
+  await page.evaluate(() => window.__PROLLYGLOT_VISUAL_OVERLAY_PREVIEW__.setPresentation({ ...window.placementFixture, runtimeRevision: 3, anchored: true }));
+  assert.equal(await page.locator(".visual-reader-header").count(), 1, "stale placement cannot restore an old anchor");
   assert.deepEqual(errors, []);
   console.log("Portal UI checks passed: explicit source kinds, cancellable picker UI, reader layout, stale results, and 300–1280 px controls.");
 } finally {

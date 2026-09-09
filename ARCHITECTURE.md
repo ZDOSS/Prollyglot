@@ -197,9 +197,18 @@ The portal's optional compositor geometry lives in `StreamInfo`; pixel crop and
 orientation live in `FrameGeometry`. Neither assumes a global physical position
 for a Wayland window. The desktop's `visual_capture` adapter resolves a portal
 selection on a cancellable startup worker, then owns it under the same session
-supervisor as Windows. Ubuntu uses a normal movable reader; only Windows maps
-capture-space bounds onto the desktop. Reader feedback requires both rendered
-text and local background-pixel evidence, with bounded recent-text history.
+supervisor as Windows. `visual_portal` retains that geometry and crops the
+latest native frames before OCR. `visual_linux` draws the authorized still
+preview in GTK/Cairo; no image crosses IPC. `visual_geometry` maps normalized
+pixel crops to logical monitor rectangles only on a unique exact GDK match.
+X11/XWayland overlays remain invisible until their position/size verifies, and
+layout/scale or placement changes trigger the reader fallback. Native Wayland,
+shared windows, missing/ambiguous metadata, and partial buffer crops use the
+reader. Capture format changes invalidate drawn regions before new pixels reach
+OCR. The native host owns the presentation's `anchored` flag and rejects
+frontend attempts to choose placement. Reader feedback requires rendered text
+plus background-pixel evidence; anchors use measured capture-space label bounds.
+Switching modes clears old echo geometry.
 A separate OCR sampling clock permits static portal images to finish scanning
 without changing their capture evidence or received-frame counts. No pixels
 cross IPC. See the [headless screen-capture checks](docs/testing/UBUNTU_SCREEN_CAPTURE.md).

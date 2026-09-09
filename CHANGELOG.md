@@ -5,6 +5,20 @@ Versioning while it is in the `0.x` pre-release line.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-08
+
+- Add Ubuntu monitor-region selection using a transient native preview, mouse
+  drawing, accessible pixel-coordinate controls, and cancellable startup.
+  Crop before OCR and require a new selection after capture geometry changes.
+- Add X11/XWayland monitor and region translation anchors when portal logical
+  geometry uniquely matches the desktop. Verify actual placement before showing
+  labels, and fall back to the movable reader when positioning is unavailable
+  or changes. Native Wayland and shared-window output remain reader-based.
+- Keep captured pixels out of IPC and recordings. Extend isolated GTK/PipeWire
+  fixtures for regions, anchoring, fallback, cancellation, and stale output.
+  Fresh GNOME, physical scaling, fullscreen stacking, and real-media acceptance
+  remain owner-run checks.
+
 ## [0.4.0] - 2026-09-08
 
 ### Added

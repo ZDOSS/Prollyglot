@@ -25,11 +25,15 @@ const root = required<HTMLElement>("#visual-overlay-app");
 root.innerHTML = `<div id="visual-label-layer" class="visual-label-layer" aria-live="polite"></div>`;
 const layer = required<HTMLElement>("#visual-label-layer");
 let reader = false;
+let portal = false;
 
-function enableReader(): void {
-  reader = true;
-  document.documentElement.classList.add("visual-reader-document");
-  document.body.classList.add("visual-reader-body");
+function setReader(next: boolean): void {
+  if (reader === next) return;
+  reader = next;
+  document.documentElement.classList.toggle("visual-reader-document", reader);
+  document.body.classList.toggle("visual-reader-body", reader);
+  root.querySelector(".visual-reader-header")?.remove();
+  if (!reader) return;
   const header = document.createElement("header");
   header.className = "visual-reader-header";
   const title = document.createElement("strong");
@@ -58,6 +62,7 @@ let output: VisualPresentationFrame = {
   sourceLanguage: "",
   targetLanguage: "",
   scanning: false,
+  anchored: false,
   regions: []
 };
 const cursor = new PresentationCursor<VisualPresentationFrame>();
@@ -180,8 +185,15 @@ window.addEventListener("resize", positionLabels);
 void document.fonts.ready.then(positionLabels);
 
 function setPresentation(next: VisualPresentationFrame): void {
-  if (!cursor.accept(next)) return;
+  const accepted = cursor.accept(next);
+  // The native host may change placement without changing translation content.
+  const placementChanged = next.sessionId === output.sessionId
+    && next.runtimeRevision === output.runtimeRevision
+    && next.presentationRevision === output.presentationRevision
+    && next.anchored !== output.anchored;
+  if (!accepted && !placementChanged) return;
   output = structuredClone(next);
+  if (portal) setReader(!next.anchored);
   const stop = root.querySelector<HTMLButtonElement>(".visual-reader-header button");
   if (stop) stop.disabled = false;
   render();
@@ -190,7 +202,8 @@ function setPresentation(next: VisualPresentationFrame): void {
 if (isTauri()) {
   void (async () => {
     const capabilities = await invoke<VisualCaptureCapabilities>(RUNTIME_COMMANDS.visualCapabilities);
-    if (capabilities.portalScreenCast) enableReader();
+    portal = capabilities.portalScreenCast;
+    if (portal) setReader(true);
     await listen<VisualPresentationFrame>(RUNTIME_EVENTS.visualPresentation, ({ payload }) => setPresentation(payload));
     // Subscribe first. Revision checks reject a bootstrap reply overtaken by
     // live output, and a slow webview startup cannot miss its first frame.
@@ -199,6 +212,6 @@ if (isTauri()) {
     layer.textContent = `Could not open screen translations: ${String(error)}`;
   });
 } else {
-  if (new URLSearchParams(location.search).has("reader")) enableReader();
+  if (new URLSearchParams(location.search).has("reader")) { portal = true; setReader(true); }
   window.__PROLLYGLOT_VISUAL_OVERLAY_PREVIEW__ = { setPresentation };
 }

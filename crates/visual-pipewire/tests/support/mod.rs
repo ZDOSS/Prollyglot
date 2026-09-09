@@ -79,7 +79,10 @@ pub enum Behavior {
     Multiple,
 }
 
+type DesktopGeometry = ((i32, i32), (i32, i32));
+
 pub struct Observed {
+    pub desktop_geometry: Mutex<Option<DesktopGeometry>>,
     pub parent_window: Mutex<String>,
     pub requests_closed: AtomicUsize,
     pub sessions_closed: AtomicUsize,
@@ -276,15 +279,18 @@ impl Portal {
             )
             .unwrap()
         };
+        let (position, size) = self
+            .observed
+            .desktop_geometry
+            .lock()
+            .unwrap()
+            .unwrap_or(((-1600, 120), (1600, 900)));
         let mut props = Dict::from([
             (
                 "position".into(),
-                Value::from((-1600i32, 120i32)).try_to_owned().unwrap(),
+                Value::from(position).try_to_owned().unwrap(),
             ),
-            (
-                "size".into(),
-                Value::from((1600i32, 900i32)).try_to_owned().unwrap(),
-            ),
+            ("size".into(), Value::from(size).try_to_owned().unwrap()),
             ("source_type".into(), source_type.into()),
         ]);
         if self.version >= 6 && self.behavior != Behavior::MissingSerial {
@@ -336,6 +342,7 @@ impl MockPortal {
         let root = private_session();
         let observed = Arc::new(Observed {
             parent_window: Mutex::default(),
+            desktop_geometry: Mutex::default(),
             requests_closed: AtomicUsize::new(0),
             sessions_closed: AtomicUsize::new(0),
             methods: Mutex::default(),

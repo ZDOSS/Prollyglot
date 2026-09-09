@@ -137,13 +137,6 @@ export class VisualPanel {
     this.container = container;
     this.state = state;
     this.actions = actions;
-    if (state.capabilities.portalScreenCast && this.mode === "region") {
-      // A Windows region preference cannot become an implicit Ubuntu monitor.
-      // Keep Start explicit and require selection in the portal every time.
-      this.mode = "display";
-      this.region = undefined;
-      this.regionDisplay = undefined;
-    }
     container.className = "visual-panel";
     container.replaceChildren();
     if (state.status.active) this.renderActive(container, state, actions);
@@ -225,7 +218,7 @@ export class VisualPanel {
     hero.append(stats);
     if (state.capabilities.portalScreenCast) {
       const help = create("p");
-      help.textContent = "Translations appear in a movable window. Closing it stops sharing. Keep Prollyglot outside a shared monitor, or share only the media window.";
+      help.textContent = "Monitor and region translations appear near the source when desktop positioning is available; otherwise they use a movable reader. Stop ends sharing.";
       hero.append(help);
     }
 
@@ -249,7 +242,7 @@ export class VisualPanel {
     const intro = create("div", "visual-panel-intro");
     const copy = create("p");
     copy.textContent = state.capabilities.portalScreenCast
-      ? "Share a window or monitor and translate visible text locally. Your desktop asks what to share each time you start."
+      ? "Share a window, monitor, or drawn region and translate visible text locally. Your desktop asks what to share each time you start."
       : "Continuously watch a window, display, or selected region and translate visible text as it changes. Pixels and recognition stay on this PC.";
     const settings = create("button", "text-button");
     settings.type = "button";
@@ -306,7 +299,7 @@ export class VisualPanel {
       option("applicationWindow", "Application window", this.mode === "applicationWindow"),
       option("display", "Whole display", this.mode === "display")
     );
-    if (!state.capabilities.portalScreenCast) mode.append(option("region", "Selected region", this.mode === "region"));
+    mode.append(option("region", "Selected region", this.mode === "region"));
     mode.disabled = this.busy;
     mode.addEventListener("change", () => {
       this.mode = mode.value as VisualSourceMode;
@@ -328,7 +321,7 @@ export class VisualPanel {
 
     if (state.capabilities.portalScreenCast) {
       const picker = create("p", "field-help");
-      picker.textContent = "Start opens your desktop’s sharing picker. Drawn regions are not available on Ubuntu yet.";
+      picker.textContent = "Start opens your desktop’s sharing picker. For a region, share a monitor, then draw around the text in the preview.";
       sourceColumn.append(picker);
     } else {
       sourceColumn.append(this.sourceField(state.sources, actions));
@@ -402,7 +395,7 @@ export class VisualPanel {
       "Translate to",
       targetLanguage,
       state.capabilities.portalScreenCast
-        ? "Translations appear in a movable window. The original stays in the source. Keep Prollyglot outside a shared monitor, or share only the media window."
+        ? "Monitor and region translations appear near the original when desktop positioning is available, with a movable reader as fallback."
         : "The original remains visible while its local translation appears nearby."
     ));
     outputColumn.append(languages);
@@ -638,8 +631,7 @@ export class VisualPanel {
 
   private selection(sources: VisualSourceSnapshot): VisualCaptureSelection {
     if (this.state?.capabilities.portalScreenCast) {
-      if (this.mode === "region") throw new Error("Choose a window or monitor for the desktop picker.");
-      return { kind: this.mode === "applicationWindow" ? "portalWindow" : "portalDisplay" };
+      return { kind: this.mode === "applicationWindow" ? "portalWindow" : this.mode === "region" ? "portalRegion" : "portalDisplay" };
     }
     if (this.mode === "applicationWindow") {
       const source = this.requireSource(sources.windows, this.windowId, "window");
