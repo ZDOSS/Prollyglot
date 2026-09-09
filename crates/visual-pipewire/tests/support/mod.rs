@@ -80,6 +80,7 @@ pub enum Behavior {
 }
 
 pub struct Observed {
+    pub parent_window: Mutex<String>,
     pub requests_closed: AtomicUsize,
     pub sessions_closed: AtomicUsize,
     pub methods: Mutex<Vec<String>>,
@@ -248,7 +249,7 @@ impl Portal {
             session.as_str(),
             self.observed.session.lock().unwrap().as_str()
         );
-        assert_eq!(parent_window, "x11:1234");
+        *self.observed.parent_window.lock().unwrap() = parent_window;
         if self.behavior == Behavior::Revoke {
             conn.emit_signal(
                 header.sender().map(|name| name.as_str()),
@@ -334,6 +335,7 @@ impl MockPortal {
     pub fn start(node: u32, serial: u64, version: u32, behavior: Behavior) -> Self {
         let root = private_session();
         let observed = Arc::new(Observed {
+            parent_window: Mutex::default(),
             requests_closed: AtomicUsize::new(0),
             sessions_closed: AtomicUsize::new(0),
             methods: Mutex::default(),

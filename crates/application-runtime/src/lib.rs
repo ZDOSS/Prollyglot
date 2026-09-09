@@ -49,6 +49,7 @@ pub mod ipc {
     pub const CAPTURE_STATUS_COMMAND: &str = "capture_status";
     pub const VISUAL_CAPABILITIES_COMMAND: &str = "visual_capabilities";
     pub const VISUAL_SOURCE_SNAPSHOT_COMMAND: &str = "visual_source_snapshot";
+    pub const VISUAL_PRESENTATION_COMMAND: &str = "visual_presentation";
     pub const VISUAL_STATUS_COMMAND: &str = "visual_status";
     pub const SHOW_VISUAL_REGION_SELECTOR_COMMAND: &str = "show_visual_region_selector";
     pub const COMPLETE_VISUAL_REGION_SELECTION_COMMAND: &str = "complete_visual_region_selection";

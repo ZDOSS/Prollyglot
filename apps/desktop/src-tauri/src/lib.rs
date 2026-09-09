@@ -7,6 +7,8 @@ mod runtime;
 mod transcription;
 mod translation;
 mod visual;
+mod visual_capture;
+mod visual_reader;
 
 use std::{fs, sync::Arc};
 
@@ -276,6 +278,23 @@ pub fn run() {
             )
         })
         .manage(RuntimeState::default())
+        .on_window_event(|window, event| {
+            if cfg!(target_os = "linux") && window.label() == "visual-overlay"
+                && let tauri::WindowEvent::CloseRequested { api, .. } = event
+            {
+                // Closing the movable reader means Stop, and the webview must
+                // remain available for the next explicit sharing session.
+                api.prevent_close();
+                let app = window.app_handle();
+                let state = app.state::<RuntimeState>();
+                if visual::is_active(&state)
+                    && let Err(error) = visual::stop_visual_translation(app.clone(), state)
+                {
+                    tracing::warn!(%error, "could not stop screen translation after closing reader");
+                }
+                let _ = window.hide();
+            }
+        })
         .setup(|app| {
             initialize_logging(app)?;
             #[cfg(target_os = "linux")]
@@ -322,6 +341,7 @@ pub fn run() {
             visual::visual_capabilities,
             visual::visual_source_snapshot,
             visual::visual_status,
+            visual::visual_presentation,
             visual::visual_model_status,
             visual::show_visual_region_selector,
             visual::complete_visual_region_selection,

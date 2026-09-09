@@ -9,9 +9,9 @@
 Prollyglot is a free and open-source desktop utility that captures audio from a selected playback device or application and turns it into live subtitles locally. It is designed for games, calls, browsers, media players, and other software that has missing, limited, or inaccessible captions.
 
 > [!IMPORTANT]
-> Prollyglot is in active pre-release development. There is not yet a supported binary release. Windows 11 is the primary target; real-media, hardware, and release acceptance remain in progress. Version 0.3.1 includes an experimental Ubuntu 26.04 LTS port with PipeWire output/application capture and native `.deb` packaging.
+> Prollyglot is in active pre-release development. There is not yet a supported binary release. Windows 11 is the primary target; real-media, hardware, and release acceptance remain in progress. Version 0.4.0 includes an experimental Ubuntu 26.04 LTS port with PipeWire audio capture, portal screen translation in a movable reader, and native `.deb` packaging.
 >
-> Current pre-release: **0.3.1**. See the [changelog](CHANGELOG.md) and
+> Current pre-release: **0.4.0**. See the [changelog](CHANGELOG.md) and
 > [versioning policy](docs/VERSIONING.md).
 
 ## Why Prollyglot exists
@@ -42,7 +42,7 @@ draw between us.
 - **Minimal and customizable:** one focused Start/Stop path plus an independent always-on-top overlay with readable appearance controls.
 - **Selectable local speech models:** three English choices; smaller dedicated streaming models for Chinese, French, Korean, and Bengali; and an optional higher-resource Nemotron model covering 28 languages plus automatic detection.
 - **Experimental visual text translation:** a separate Windows mode translates text already visible in a selected region, application window, or display—such as video subtitles, signs, menus, or Japanese text in a game HUD—through documented screen capture and local OCR.
-- **Experimental Ubuntu:** Ubuntu 26.04 LTS amd64 using PipeWire and a native `.deb`; output/application capture and X11/XWayland captions work in development checks. Linux screen translation, broader real-application checks, and native GNOME acceptance remain pending.
+- **Experimental Ubuntu:** Ubuntu 26.04 LTS amd64 using PipeWire and a native `.deb`; output/application capture and X11/XWayland captions work in development checks. Portal screen translation uses a movable reader; drawn regions, anchored visual overlays, broader real-application checks, and native GNOME acceptance remain pending.
 
 ## Current status
 
@@ -109,6 +109,13 @@ selected top-level window, display, or drawn live display region through
 latest-frame queue, change gate, and PP-OCRv6 Small; and places a local
 translation near the original text already visible on screen.
 
+Ubuntu 0.4.0 shares the OCR and local translator but selects a window or monitor
+through the desktop sharing picker at each Start. Translations appear in a
+movable reader; the source's original text stays visible. Closing the reader
+stops sharing, and Stop also cancels a pending picker. Keep Prollyglot outside a
+shared monitor or share just the media window to reduce feedback. Ubuntu drawn
+regions and overlays anchored over source text remain follow-up work.
+
 **Prominent text** accepts the first high-confidence pass, joins nearby OCR
 fragments, and caps the six most useful regions. **All detected text** retains
 the more conservative stabilizer for small interface text and caps the live
@@ -161,6 +168,9 @@ a public English sample. See
 [Ubuntu validation and remaining work](docs/testing/UBUNTU_SMOKE_TEST.md) and
 [build/package instructions](BUILDING.md). This evidence comes from Ubuntu under
 WSLg, not a fresh native GNOME desktop or a multilingual accuracy benchmark.
+The 0.4.0 screen-translation package also passes isolated Xvfb/PipeWire checks
+for Chinese/Spanish OCR, reader presentation, cancellation, and restart; those
+use synthetic video and fixed translation output, not real-media acceptance.
 
 The control app now opens with a desktop-width shell and persistent navigation
 for Captions, Screen translation, Transcript, Models, Appearance, and Settings.

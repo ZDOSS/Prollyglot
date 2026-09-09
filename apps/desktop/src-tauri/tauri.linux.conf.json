@@ -8,10 +8,10 @@
     "icon": ["icons/icon.png"],
     "category": "Utility",
     "shortDescription": "Local subtitles for desktop audio",
-    "longDescription": "Prollyglot turns desktop audio into local live subtitles with a customizable overlay and optional local translation. The experimental Ubuntu build captures one selected playback output; speech and translation models are installed explicitly in the app.",
+    "longDescription": "Prollyglot turns desktop audio into local live subtitles with a customizable overlay and optional local translation. The experimental Ubuntu build captures a playback output or application audio, and translates visible text from a portal-selected window or monitor into a movable reader. Speech, OCR, and translation models are installed explicitly in the app.",
     "linux": {
       "deb": {
-        "depends": ["libc6 (>= 2.43)", "libpipewire-0.3-0 (>= 1.0)", "pipewire", "wireplumber"],
+        "depends": ["libc6 (>= 2.43)", "libpipewire-0.3-0 (>= 1.0)", "pipewire", "wireplumber", "xdg-desktop-portal"],
         "files": {
           "/usr/lib/prollyglot": "../../../target/ubuntu-runtime",
           "/usr/share/doc/prollyglot/LICENSE": "../../../LICENSE",

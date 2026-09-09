@@ -110,12 +110,21 @@ impl FrameGate {
         frame: &VisualFrame,
         pending: bool,
     ) -> FrameGateDecision {
+        self.evaluate_at(frame, frame.captured_at_micros, pending)
+    }
+
+    pub(crate) fn evaluate_at(
+        &mut self,
+        frame: &VisualFrame,
+        sampled_at_micros: u64,
+        pending: bool,
+    ) -> FrameGateDecision {
         if self.last_checked_at_micros.is_some_and(|last| {
-            frame.captured_at_micros.saturating_sub(last) < self.config.minimum_interval_micros
+            sampled_at_micros.saturating_sub(last) < self.config.minimum_interval_micros
         }) {
             return FrameGateDecision::RateLimited;
         }
-        self.last_checked_at_micros = Some(frame.captured_at_micros);
+        self.last_checked_at_micros = Some(sampled_at_micros);
         let next = fingerprint(frame, self.config.sample_columns, self.config.sample_rows);
         if self.accepted_dimensions != Some((frame.width, frame.height))
             || self.accepted_fingerprint.len() != next.len()
@@ -124,7 +133,7 @@ impl FrameGate {
             self.accepted_dimensions = Some((frame.width, frame.height));
             self.accepted_fingerprint = next;
             self.awaiting_confirmation = true;
-            self.last_analyzed_at_micros = frame.captured_at_micros;
+            self.last_analyzed_at_micros = sampled_at_micros;
             return FrameGateDecision::FirstFrame;
         }
         let (mean_difference, changed_ratio) = change_metrics(
@@ -134,21 +143,19 @@ impl FrameGate {
         );
         let score = mean_difference.max(changed_ratio);
         if self.is_changed(mean_difference, changed_ratio) {
-            self.last_analyzed_at_micros = frame.captured_at_micros;
+            self.last_analyzed_at_micros = sampled_at_micros;
             self.accepted_fingerprint = next;
             self.awaiting_confirmation = true;
             FrameGateDecision::Changed { score }
         } else if self.awaiting_confirmation {
-            self.last_analyzed_at_micros = frame.captured_at_micros;
+            self.last_analyzed_at_micros = sampled_at_micros;
             self.awaiting_confirmation = false;
             FrameGateDecision::Confirmation { score }
         } else if pending
-            || frame
-                .captured_at_micros
-                .saturating_sub(self.last_analyzed_at_micros)
+            || sampled_at_micros.saturating_sub(self.last_analyzed_at_micros)
                 >= self.config.refresh_interval_micros
         {
-            self.last_analyzed_at_micros = frame.captured_at_micros;
+            self.last_analyzed_at_micros = sampled_at_micros;
             self.accepted_fingerprint = next;
             FrameGateDecision::Refresh
         } else {

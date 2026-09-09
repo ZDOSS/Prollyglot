@@ -186,11 +186,12 @@ Linux support should be real, but deliberately scoped.
 
 Version 0.3.0 implements default-output, pinned-output, and application capture
 through the shared local transcription and caption pipeline, plus development
-`.deb` packaging. Linux screen translation is not enabled in the desktop app.
-The separate `visual-pipewire` backend now implements XDG ScreenCast selection
-and transient PipeWire video, with private headless protocol, native-frame, and
-Chinese/Spanish OCR checks. Integrating the picker, region selection, and visual
-presentation remains work; this does not extend the current package's promises.
+`.deb` packaging. Version 0.4.0 adds experimental Ubuntu screen translation:
+a desktop sharing picker selects one window or monitor, transient PipeWire
+frames feed the shared OCR/translation pipeline, and translations appear in a
+normal movable reader window. Drawn regions and translations anchored over the
+source remain Windows features. This reader does not promise Wayland overlay
+positioning, always-on-top behavior, or fullscreen stacking.
 Native Ubuntu/WSLg fixtures establish an initial working slice; they do not
 replace fresh GNOME installation, hardware, compositor, or release acceptance.
 
@@ -1264,9 +1265,15 @@ source ends capture without selecting another source.
 
 Portal logical position/size, optional window metadata, and raw/cropped/rotated
 pixel geometry remain separate. They must not be passed to the Windows physical
-overlay API as interchangeable values. Native Wayland anchoring and a truthful
-fallback when global coordinates are unavailable must be designed and verified
-before the Linux desktop exposes screen translation. CPU-readable BGRx, BGRA,
+overlay API as interchangeable values. Ubuntu uses an ordinary movable reader
+independent of the selected source's desktop coordinates. Its translations stay
+in normal document flow, can wrap and scroll, and preserve source text in their
+accessibility labels; the original remains visible in the shared source.
+Closing the reader stops sharing. A pending picker remains cancellable from
+Start through cleanup, and dismissing it is a normal stopped state. The reader
+subscribes before fetching current presentation so a slow webview cannot miss
+its first result. Drawn regions and native Wayland anchoring remain follow-ups.
+CPU-readable BGRx, BGRA,
 RGBx, and RGBA are implemented; DMA-BUF import and negative-stride buffers are
 explicitly unsupported in this backend slice. Captured pixels stay transient.
 
@@ -1451,6 +1458,23 @@ label, before nearby source lines are grouped. Current labels remain excluded;
 replaced label geometry expires after three seconds, and history is bounded to
 96 entries. Identical words elsewhere in the source remain eligible for OCR.
 Native media testing must still watch for overlapping source/label ambiguities.
+
+Ubuntu's reader cannot report global overlay bounds. Its feedback filter instead
+requires both a match to current/recently rendered translation text and pixel
+evidence of the reader's opaque background at the OCR observation. Matching
+words elsewhere on ordinary video backgrounds remain eligible. This bounded
+heuristic can fail under compositor color changes or collide with identical
+text on a matching background; it is not a capture-exclusion guarantee. The UI
+recommends sharing only the media window or keeping Prollyglot outside the shared
+monitor. Source text is not redrawn into the reader, avoiding a second copy that
+could be mistaken for untranslated source text.
+
+An active portal may deliver one image and remain silent until its content
+changes. OCR uses a separate monotonic sampling clock to finish regional scans,
+confirm stable text, and refresh that still-valid image without fabricating
+capture timestamps or received-frame counts. A new frame replaces it; source
+closure, revocation, Stop, or disconnection ends resampling. Captured pixels stay
+inside the native process and are released with the session.
 
 Visual OCR has two explicit recognition profiles. **Prominent text** is the
 default for media and filters low-confidence observations, tiny interface text,

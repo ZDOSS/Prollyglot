@@ -99,6 +99,7 @@ fn native_frames_are_selected_latest_only_and_stop_releases_sharing() {
             1
         );
         assert!(!selection.contains_key("restore_token"));
+        assert_eq!(*portal.observed.parent_window.lock().unwrap(), "x11:1234");
     }
 }
 

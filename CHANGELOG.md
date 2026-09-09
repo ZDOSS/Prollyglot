@@ -5,6 +5,30 @@ Versioning while it is in the `0.x` pre-release line.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-08
+
+### Added
+
+- Experimental Ubuntu screen translation through the desktop's window/monitor
+  sharing picker, restricted PipeWire capture, and shared local OCR/translation
+  pipeline. A normal movable reader presents translations independently of
+  compositor coordinates; source text remains visible in the original window.
+- Cancellable picker startup, normal stopped state after dismissal, Stop on
+  reader close, and rejection of late output after cleanup. Every Start asks
+  for a new source; permissions and restore tokens are not saved.
+- Bounded reader feedback filtering that checks rendered text and local
+  background pixels, plus isolated portal, headless browser, and native virtual
+  display fixtures. Drawn regions, anchored Wayland overlays, GPU-only video,
+  and owner GNOME/real-media acceptance remain pending.
+
+### Fixed
+
+- Finish OCR scanning and text confirmation when an active portal supplies a
+  static image without duplicate frames. Repeated samples preserve capture
+  timestamps and do not inflate received-frame counts.
+- Subscribe before fetching current visual presentation so a slow overlay or
+  reader webview cannot miss its first output.
+
 ## [0.3.1] - 2026-09-08
 
 ### Fixed

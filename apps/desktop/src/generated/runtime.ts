@@ -1,7 +1,7 @@
 // Generated from prollyglot-application-runtime. Do not edit by hand.
 
 export const RUNTIME_CONTRACT_VERSION = 5 as const;
-export const RUNTIME_COMMANDS = { configurationSnapshot: "configuration_snapshot", updateConfiguration: "update_configuration", bootstrap: "runtime_bootstrap", sourceSnapshot: "source_snapshot", startCapture: "start_capture", stopCapture: "stop_capture", captureStatus: "capture_status", visualCapabilities: "visual_capabilities", visualSourceSnapshot: "visual_source_snapshot", visualStatus: "visual_status", showVisualRegionSelector: "show_visual_region_selector", completeVisualRegionSelection: "complete_visual_region_selection", cancelVisualRegionSelection: "cancel_visual_region_selection", startVisualTranslation: "start_visual_translation", stopVisualTranslation: "stop_visual_translation", updateCaptionPresentation: "update_caption_presentation", updateVisualPresentation: "update_visual_presentation", inferenceResourceStatus: "inference_resource_status", reportInferenceResource: "report_inference_resource" } as const;
+export const RUNTIME_COMMANDS = { configurationSnapshot: "configuration_snapshot", updateConfiguration: "update_configuration", bootstrap: "runtime_bootstrap", sourceSnapshot: "source_snapshot", startCapture: "start_capture", stopCapture: "stop_capture", captureStatus: "capture_status", visualCapabilities: "visual_capabilities", visualSourceSnapshot: "visual_source_snapshot", visualStatus: "visual_status", visualPresentation: "visual_presentation", showVisualRegionSelector: "show_visual_region_selector", completeVisualRegionSelection: "complete_visual_region_selection", cancelVisualRegionSelection: "cancel_visual_region_selection", startVisualTranslation: "start_visual_translation", stopVisualTranslation: "stop_visual_translation", updateCaptionPresentation: "update_caption_presentation", updateVisualPresentation: "update_visual_presentation", inferenceResourceStatus: "inference_resource_status", reportInferenceResource: "report_inference_resource" } as const;
 export const RUNTIME_EVENTS = { state: "runtime-state", captureStatus: "capture-status", visualStatus: "visual-status", visualText: "visual-text-update", visualClear: "visual-text-clear", visualRegionSelected: "visual-region-selected", visualRegionSelectionCancelled: "visual-region-selection-cancelled", visualRegionSelectorRequest: "visual-region-selector-request", captionPresentation: "caption-presentation", visualPresentation: "visual-presentation", configuration: "configuration-updated" } as const;
 
 export type ViewMode = "full" | "compact";
@@ -88,11 +88,11 @@ export type ShowVisualRegionSelectorCommand = { displayId: string, };
 
 export type CompleteVisualRegionSelectionCommand = { displayId: string, region: PixelRect, };
 
-export type VisualCaptureSelection = { "kind": "applicationWindow", sourceId: string, } | { "kind": "display", sourceId: string, } | { "kind": "region", displayId: string, region: PixelRect, };
+export type VisualCaptureSelection = { "kind": "portalWindow" } | { "kind": "portalDisplay" } | { "kind": "applicationWindow", sourceId: string, } | { "kind": "display", sourceId: string, } | { "kind": "region", displayId: string, region: PixelRect, };
 
 export type VisualDetectionMode = "focused" | "allText";
 
-export type VisualCaptureCapabilities = { windowsGraphicsCapture: boolean, systemPicker: boolean, desktopDuplicationExperiment: boolean, message?: string, };
+export type VisualCaptureCapabilities = { windowsGraphicsCapture: boolean, portalScreenCast: boolean, systemPicker: boolean, desktopDuplicationExperiment: boolean, message?: string, };
 
 export type VisualState = "starting" | "capturing" | "waiting" | "stopping" | "stopped" | "failed";
 

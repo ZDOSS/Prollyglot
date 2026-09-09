@@ -137,6 +137,13 @@ export class VisualPanel {
     this.container = container;
     this.state = state;
     this.actions = actions;
+    if (state.capabilities.portalScreenCast && this.mode === "region") {
+      // A Windows region preference cannot become an implicit Ubuntu monitor.
+      // Keep Start explicit and require selection in the portal every time.
+      this.mode = "display";
+      this.region = undefined;
+      this.regionDisplay = undefined;
+    }
     container.className = "visual-panel";
     container.replaceChildren();
     if (state.status.active) this.renderActive(container, state, actions);
@@ -213,9 +220,14 @@ export class VisualPanel {
     this.appendStat(stats, "Live samples", String(state.status.framesReceived), "received");
     this.appendStat(stats, "OCR passes", String(state.status.framesAnalyzed), "analyzed");
     this.appendStat(stats, "OCR regions", String(state.status.visibleRegions), "visible");
-    this.appendStat(stats, "Overlay labels", String(state.status.overlayRegions), "overlay");
+    this.appendStat(stats, state.capabilities.portalScreenCast ? "Translations" : "Overlay labels", String(state.status.overlayRegions), "overlay");
     this.appendStat(stats, "Live-edge skips", String(state.status.replacedFrames), "replaced");
     hero.append(stats);
+    if (state.capabilities.portalScreenCast) {
+      const help = create("p");
+      help.textContent = "Translations appear in a movable window. Closing it stops sharing. Keep Prollyglot outside a shared monitor, or share only the media window.";
+      hero.append(help);
+    }
 
     const stop = create("button", "primary-button stop visual-stop-button");
     stop.type = "button";
@@ -236,7 +248,9 @@ export class VisualPanel {
   ): void {
     const intro = create("div", "visual-panel-intro");
     const copy = create("p");
-    copy.textContent = "Continuously watch a window, display, or selected region and translate visible text as it changes. Pixels and recognition stay on this PC.";
+    copy.textContent = state.capabilities.portalScreenCast
+      ? "Share a window or monitor and translate visible text locally. Your desktop asks what to share each time you start."
+      : "Continuously watch a window, display, or selected region and translate visible text as it changes. Pixels and recognition stay on this PC.";
     const settings = create("button", "text-button");
     settings.type = "button";
     settings.textContent = "Models & languages";
@@ -255,14 +269,14 @@ export class VisualPanel {
       container.append(failure);
     }
 
-    if (!state.capabilities.windowsGraphicsCapture) {
+    if (!state.capabilities.windowsGraphicsCapture && !state.capabilities.portalScreenCast) {
       const unavailable = create("div", "visual-readiness-card");
       unavailable.dataset.tone = "error";
       const title = create("strong");
-      title.textContent = "Windows screen capture is unavailable";
+      title.textContent = "Screen capture is unavailable";
       const message = create("p");
       message.textContent = state.capabilities.message
-        ?? "Visual translation currently requires Windows 11 and Windows Graphics Capture.";
+        ?? "Screen translation requires Windows Graphics Capture or an Ubuntu desktop sharing portal.";
       unavailable.append(title, message);
       container.append(unavailable);
     }
@@ -290,9 +304,9 @@ export class VisualPanel {
     mode.id = this.id("source-mode");
     mode.append(
       option("applicationWindow", "Application window", this.mode === "applicationWindow"),
-      option("display", "Whole display", this.mode === "display"),
-      option("region", "Selected region", this.mode === "region")
+      option("display", "Whole display", this.mode === "display")
     );
+    if (!state.capabilities.portalScreenCast) mode.append(option("region", "Selected region", this.mode === "region"));
     mode.disabled = this.busy;
     mode.addEventListener("change", () => {
       this.mode = mode.value as VisualSourceMode;
@@ -312,8 +326,13 @@ export class VisualPanel {
           : "Draw a smaller live area to watch around subtitles, signs, or a HUD."
     ));
 
-    const sourceField = this.sourceField(state.sources, actions);
-    sourceColumn.append(sourceField);
+    if (state.capabilities.portalScreenCast) {
+      const picker = create("p", "field-help");
+      picker.textContent = "Start opens your desktop’s sharing picker. Drawn regions are not available on Ubuntu yet.";
+      sourceColumn.append(picker);
+    } else {
+      sourceColumn.append(this.sourceField(state.sources, actions));
+    }
 
     const detectionMode = create("select");
     detectionMode.id = this.id("detection-mode");
@@ -332,7 +351,9 @@ export class VisualPanel {
       detectionMode,
       this.detectionMode === "focused"
         ? "Filters low-confidence and small interface text so video captions, signs, and prominent HUD text stay useful."
-        : "Includes small interface text. Use a selected region when the source contains unrelated controls."
+        : state.capabilities.portalScreenCast
+          ? "Includes small interface text. Share just the media window to avoid unrelated controls."
+          : "Includes small interface text. Use a selected region when the source contains unrelated controls."
     ));
 
     const languages = create("div", "visual-language-grid");
@@ -380,7 +401,9 @@ export class VisualPanel {
     languages.append(selectField(
       "Translate to",
       targetLanguage,
-      "The original remains visible while its local translation appears nearby."
+      state.capabilities.portalScreenCast
+        ? "Translations appear in a movable window. The original stays in the source. Keep Prollyglot outside a shared monitor, or share only the media window."
+        : "The original remains visible while its local translation appears nearby."
     ));
     outputColumn.append(languages);
 
@@ -588,8 +611,8 @@ export class VisualPanel {
   }
 
   private readyToStart(state: VisualPanelState): { ok: boolean; reason: string } {
-    if (!state.capabilities.windowsGraphicsCapture) {
-      return { ok: false, reason: "Windows screen capture is unavailable on this system." };
+    if (!state.capabilities.windowsGraphicsCapture && !state.capabilities.portalScreenCast) {
+      return { ok: false, reason: "Screen capture is unavailable on this system." };
     }
     try {
       this.selection(state.sources);
@@ -614,6 +637,10 @@ export class VisualPanel {
   }
 
   private selection(sources: VisualSourceSnapshot): VisualCaptureSelection {
+    if (this.state?.capabilities.portalScreenCast) {
+      if (this.mode === "region") throw new Error("Choose a window or monitor for the desktop picker.");
+      return { kind: this.mode === "applicationWindow" ? "portalWindow" : "portalDisplay" };
+    }
     if (this.mode === "applicationWindow") {
       const source = this.requireSource(sources.windows, this.windowId, "window");
       return { kind: "applicationWindow", sourceId: source.id };

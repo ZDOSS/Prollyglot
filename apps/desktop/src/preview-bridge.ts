@@ -341,6 +341,9 @@ export function createPreviewBridge(): PreviewDesktopBridge {
       if (!model || model.phase !== "ready") {
         throw new Error("Install the preview OCR model before starting screen translation.");
       }
+      if (selection.kind === "portalWindow" || selection.kind === "portalDisplay") {
+        throw new Error("The desktop sharing picker is available in the native Ubuntu app.");
+      }
       const source = selection.kind === "applicationWindow"
         ? visualSources.windows.find(({ id }) => id === selection.sourceId)
         : visualSources.displays.find(({ id }) => id === (

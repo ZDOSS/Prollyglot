@@ -8,6 +8,9 @@ use std::{
     time::{Duration, Instant},
 };
 
+use crate::visual_capture::{
+    self, CaptureEvents, PickedVisualSource, StartedVisualCapture, VisualCaptureEvent,
+};
 use crossbeam_channel::RecvTimeoutError;
 use parking_lot::Mutex;
 #[cfg(test)]
@@ -33,10 +36,6 @@ use prollyglot_visual_ocr_rapid::{
 use prollyglot_visual_pipeline::{
     FrameGate, FrameGateConfig, OcrEngine, OcrError, OcrObservation, StabilizerUpdate,
     TextStabilizer, TextStabilizerConfig, VisualFrame, VisualPipeline, VisualPipelineStats,
-};
-use prollyglot_visual_windows::{
-    PickedVisualSource, StartedVisualCapture, VisualCaptureEvent,
-    VisualCaptureSelection as BackendVisualCaptureSelection,
 };
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, State, WebviewWindow};
@@ -187,6 +186,8 @@ impl OcrEngine for EchoFilteringEngine {
             !echoes.lock().iter().any(|echo| {
                 echo.expires_at.is_none_or(|expiry| Instant::now() < expiry)
                     && echo.text.matches(observation)
+                    && (!cfg!(target_os = "linux")
+                        || crate::visual_reader::has_reader_background(frame, observation.bounds))
             })
         });
         let timings = self.inner.last_timings();
@@ -226,7 +227,7 @@ struct VisualCaptureEventWorker {
     overlay_output: Arc<Mutex<VisualPresentationFrame>>,
     session_id: SessionId,
     cancellation: CancellationToken,
-    events: crossbeam_channel::Receiver<VisualCaptureEvent>,
+    events: CaptureEvents,
 }
 
 #[derive(Default)]
@@ -262,9 +263,40 @@ pub struct VisualRuntime {
     resources: Arc<Mutex<Option<ActiveVisualResources>>>,
     overlay_echoes: Arc<Mutex<OverlayEchoHistory>>,
     overlay_output: Arc<Mutex<VisualPresentationFrame>>,
+    portal_parent: Mutex<String>,
 }
 
 pub fn initialize(app: &AppHandle, runtime: &VisualRuntime) {
+    #[cfg(target_os = "linux")]
+    {
+        use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+        // Initialization runs on the UI thread. Native Wayland may use the
+        // portal's documented unparented form; never invent an exported handle.
+        if let Some(main) = app.get_webview_window("main")
+            && let Ok(handle) = main.window_handle()
+        {
+            *runtime.portal_parent.lock() = match handle.as_raw() {
+                RawWindowHandle::Xlib(handle) => format!("x11:{:x}", handle.window),
+                RawWindowHandle::Xcb(handle) => format!("x11:{:x}", handle.window.get()),
+                _ => String::new(),
+            };
+        }
+        if let Some(reader) = app.get_webview_window("visual-overlay") {
+            let configured = (|| -> tauri::Result<()> {
+                reader.set_title("Screen translations — Prollyglot")?;
+                reader.set_decorations(true)?;
+                reader.set_skip_taskbar(false)?;
+                reader.set_always_on_top(false)?;
+                reader.set_focusable(true)?;
+                reader.set_size(tauri::LogicalSize::new(560.0, 360.0))?;
+                reader.set_min_size(Some(tauri::LogicalSize::new(300.0, 200.0)))?;
+                Ok(())
+            })();
+            if let Err(error) = configured {
+                tracing::warn!(%error, "could not initialize screen translation reader");
+            }
+        }
+    }
     let checking = visual_ocr_manifest()
         .map(|manifest| VisualModelCatalogStatus {
             models: vec![status_for_manifest(
@@ -321,14 +353,25 @@ pub fn visual_capabilities() -> VisualCaptureCapabilities {
     let capabilities = prollyglot_visual_windows::capabilities();
     VisualCaptureCapabilities {
         windows_graphics_capture: capabilities.windows_graphics_capture,
+        portal_screen_cast: cfg!(target_os = "linux"),
         system_picker: capabilities.system_picker,
         desktop_duplication_experiment: capabilities.desktop_duplication_experiment,
-        message: capabilities.message,
+        message: if cfg!(target_os = "linux") {
+            Some("Choose a window or monitor in the desktop picker at Start. Translations appear in a movable window.".into())
+        } else {
+            capabilities.message
+        },
     }
 }
 
 #[tauri::command]
 pub fn visual_source_snapshot() -> Result<VisualSourceSnapshot, ApplicationError> {
+    if cfg!(target_os = "linux") {
+        return Ok(VisualSourceSnapshot {
+            windows: Vec::new(),
+            displays: Vec::new(),
+        });
+    }
     let snapshot = prollyglot_visual_windows::source_snapshot().map_err(|error| {
         tracing::error!(%error, "could not enumerate visual capture sources");
         application_error(
@@ -422,6 +465,9 @@ pub fn update_visual_presentation(
         (previous, changed)
     };
 
+    if cfg!(target_os = "linux") {
+        update_reader_echoes(&state.visual.overlay_echoes, &frame);
+    }
     if let Err(error) = overlay.emit(ipc::VISUAL_PRESENTATION_EVENT, &frame) {
         *state.visual.overlay_output.lock() = previous;
         return Err(window_operation_error(
@@ -431,9 +477,11 @@ pub fn update_visual_presentation(
     }
 
     if runtime_snapshot.lifecycle == SessionLifecycle::Running {
-        overlay
-            .set_always_on_top(true)
-            .map_err(|error| window_operation_error(error.to_string(), Some(frame.session_id)))?;
+        if !cfg!(target_os = "linux") {
+            overlay.set_always_on_top(true).map_err(|error| {
+                window_operation_error(error.to_string(), Some(frame.session_id))
+            })?;
+        }
         overlay
             .show()
             .map_err(|error| window_operation_error(error.to_string(), Some(frame.session_id)))?;
@@ -708,6 +756,15 @@ pub async fn start_visual_translation(
             None,
         )
     })?;
+    visual_capture::validate_selection(&selection).map_err(|message| {
+        application_error(
+            ApplicationErrorCode::CaptureUnavailable,
+            message,
+            ErrorRecoverability::UserActionRequired,
+            RecoveryAction::ChooseAnotherSource,
+            None,
+        )
+    })?;
     let detection_mode = detection_mode.unwrap_or_default();
     let unresolved_source = visual_session_source(&selection);
     let started = {
@@ -862,26 +919,46 @@ pub async fn start_visual_translation(
     if let Ok(snapshot) = state.supervisor.lock().update_start_progress(
         started.session_id,
         SessionProgress::StartingCapture,
-        None,
+        cfg!(target_os = "linux").then(|| {
+            "Choose a source in the desktop sharing picker. Stop cancels the picker.".into()
+        }),
     ) {
         publish_visual_runtime(&app, &state.visual.status, snapshot);
     }
 
-    let capture =
-        match prollyglot_visual_windows::start_capture(backend_visual_selection(&selection)) {
-            Ok(capture) => capture,
-            Err(error) => {
-                let error = application_error(
-                    ApplicationErrorCode::CaptureFailed,
-                    error.to_string(),
-                    ErrorRecoverability::Retryable,
-                    RecoveryAction::ChooseAnotherSource,
-                    Some(started.session_id),
-                );
-                finish_reporter(&mut startup_reporter, WorkerOutcome::Failed(error.clone()));
-                return Err(error);
-            }
-        };
+    let capture_selection = selection.clone();
+    let capture_cancellation = started.cancellation.clone();
+    let parent_window = state.visual.portal_parent.lock().clone();
+    let capture = match tauri::async_runtime::spawn_blocking(move || {
+        visual_capture::start_capture(capture_selection, parent_window, capture_cancellation)
+    })
+    .await
+    {
+        Ok(Ok(capture)) => capture,
+        Ok(Err(visual_capture::StartError::Cancelled)) => {
+            // Picker dismissal is a normal Stop, with the same supervised
+            // cleanup and stale-result rejection as the Stop button.
+            let _ = stop_visual_translation(app.clone(), state.clone());
+            finish_reporter(&mut startup_reporter, WorkerOutcome::Cancelled);
+            return Err(startup_cancelled(started.session_id));
+        }
+        result => {
+            let message = match result {
+                Ok(Err(visual_capture::StartError::Failed(message))) => message,
+                Err(error) => format!("Could not join the screen-capture startup worker: {error}"),
+                _ => unreachable!(),
+            };
+            let error = application_error(
+                ApplicationErrorCode::CaptureFailed,
+                message,
+                ErrorRecoverability::Retryable,
+                RecoveryAction::ChooseAnotherSource,
+                Some(started.session_id),
+            );
+            finish_reporter(&mut startup_reporter, WorkerOutcome::Failed(error.clone()));
+            return Err(error);
+        }
+    };
     if started.cancellation.is_cancelled() {
         schedule_cleanup(
             &app,
@@ -1257,6 +1334,8 @@ fn run_visual_processor(worker: VisualProcessorWorker) -> Result<(), Application
         .checked_sub(Duration::from_secs(5))
         .unwrap_or_else(Instant::now);
     let mut pending_frame = None;
+    let mut last_sparse_frame = None;
+    let sample_clock = Instant::now();
     loop {
         if cancellation.is_cancelled() {
             return Ok(());
@@ -1265,8 +1344,20 @@ fn run_visual_processor(worker: VisualProcessorWorker) -> Result<(), Application
             Some(frame) => frame,
             None => match frames.recv_timeout(Duration::from_millis(50)) {
                 Ok(frame) => frame,
-                Err(RecvTimeoutError::Timeout) => continue,
+                Err(RecvTimeoutError::Timeout) => {
+                    if cfg!(target_os = "linux") && session_is_running(supervisor, session_id) {
+                        if let Some(frame) = last_sparse_frame.take() {
+                            frame
+                        } else {
+                            continue;
+                        }
+                    } else {
+                        last_sparse_frame = None;
+                        continue;
+                    }
+                }
                 Err(RecvTimeoutError::Disconnected) => {
+                    last_sparse_frame = None;
                     if !session_is_waiting(supervisor, session_id) {
                         let message = "The selected visual source is no longer providing frames. Stop visual translation or choose another source.";
                         if let Some(revision) =
@@ -1285,7 +1376,15 @@ fn run_visual_processor(worker: VisualProcessorWorker) -> Result<(), Application
             frame = newer;
         }
         let pass_started = Instant::now();
-        let mut outcome = match pipeline.process(&frame) {
+        let processed = if cfg!(target_os = "linux") {
+            pipeline.process_at(
+                &frame,
+                sample_clock.elapsed().as_micros().min(u128::from(u64::MAX)) as u64,
+            )
+        } else {
+            pipeline.process(&frame)
+        };
+        let mut outcome = match processed {
             Ok(outcome) => outcome,
             Err(OcrError::Cancelled) if cancellation.is_cancelled() => return Ok(()),
             Err(error) => {
@@ -1388,6 +1487,11 @@ fn run_visual_processor(worker: VisualProcessorWorker) -> Result<(), Application
             last_status_publish = Instant::now();
         }
         pending_frame = newest_frame;
+        if cfg!(target_os = "linux") && pending_frame.is_none() {
+            last_sparse_frame = Some(frame);
+        } else {
+            last_sparse_frame = None;
+        }
     }
 }
 
@@ -1522,9 +1626,18 @@ fn run_visual_capture_events(worker: &VisualCaptureEventWorker) -> Result<(), Ap
                     last_status_publish = Instant::now();
                 }
             }
+            VisualCaptureEvent::Failed(message) => {
+                return Err(application_error(
+                    ApplicationErrorCode::CaptureFailed,
+                    message,
+                    ErrorRecoverability::Retryable,
+                    RecoveryAction::ChooseAnotherSource,
+                    Some(session_id),
+                ));
+            }
             VisualCaptureEvent::SourceClosed => {
                 source_closed = true;
-                let message = "The selected visual source closed. Stop visual translation or choose another source.";
+                let message = "Screen sharing ended or the selected source closed. Stop screen translation, then Start to choose a source again.";
                 tracing::warn!(%message, session_id = %session_id, "visual source closed");
                 if let Some(revision) =
                     mark_visual_waiting(app, supervisor, status, session_id, message)
@@ -1610,6 +1723,13 @@ fn configure_visual_overlay(
     let overlay = app
         .get_webview_window("visual-overlay")
         .ok_or("Visual translation overlay is unavailable.")?;
+    if cfg!(target_os = "linux") {
+        overlay
+            .emit(ipc::VISUAL_PRESENTATION_EVENT, output.lock().clone())
+            .map_err(|error| error.to_string())?;
+        return if show { overlay.show() } else { overlay.hide() }
+            .map_err(|error| error.to_string());
+    }
     overlay
         .set_ignore_cursor_events(true)
         .map_err(|error| error.to_string())?;
@@ -1683,6 +1803,9 @@ pub fn update_visual_overlay_layout(
     if caller.label() != "visual-overlay" {
         return Err("Only the visual overlay may report its rendered label positions.".into());
     }
+    if cfg!(target_os = "linux") {
+        return Ok(false);
+    }
     let output = state.visual.overlay_output.lock();
     if layout.session_id != output.session_id
         || layout.presentation_revision != output.presentation_revision
@@ -1746,6 +1869,58 @@ pub fn update_visual_overlay_layout(
     echoes.sort_by_key(|echo| echo.expires_at.is_none());
     echoes.drain(..excess);
     Ok(true)
+}
+
+fn update_reader_echoes(echoes: &Arc<Mutex<OverlayEchoHistory>>, frame: &VisualPresentationFrame) {
+    let now = Instant::now();
+    let mut echoes = echoes.lock();
+    echoes.retain(|echo| echo.expires_at.is_none_or(|expiry| now < expiry));
+    for echo in echoes.iter_mut() {
+        echo.expires_at.get_or_insert(now + Duration::from_secs(3));
+    }
+    let texts = [
+        "Screen translations",
+        "Stop",
+        "Scanning for text…",
+        "Translating…",
+        "Translation unavailable",
+        "No text visible",
+    ]
+    .into_iter()
+    .chain(
+        frame
+            .regions
+            .iter()
+            .filter_map(|region| region.translation.as_deref()),
+    );
+    for text in texts {
+        if let Some(echo) = echoes.iter_mut().find(|echo| echo.text.text == text) {
+            echo.expires_at = None;
+        } else {
+            echoes.push(OverlayEcho {
+                text: OverlayText {
+                    text: text.into(),
+                    // Search in the frame, then require the reader's background
+                    // at the OCR observation. These are not desktop coordinates.
+                    bounds: prollyglot_visual_pipeline::VisualRect {
+                        x: 0.0,
+                        y: 0.0,
+                        width: 16_384.0,
+                        height: 16_384.0,
+                    },
+                },
+                expires_at: None,
+            });
+        }
+    }
+    let excess = echoes.len().saturating_sub(96);
+    echoes.sort_by_key(|echo| echo.expires_at.is_none());
+    echoes.drain(..excess);
+}
+
+#[tauri::command]
+pub fn visual_presentation(state: State<'_, RuntimeState>) -> VisualPresentationFrame {
+    state.visual.overlay_output.lock().clone()
 }
 
 fn validate_language_pair(source: &str, target: &str) -> Result<(), String> {
@@ -2271,30 +2446,6 @@ fn visual_source_contract(source: prollyglot_visual_windows::VisualSource) -> Vi
     }
 }
 
-fn backend_visual_selection(selection: &VisualCaptureSelection) -> BackendVisualCaptureSelection {
-    match selection {
-        VisualCaptureSelection::ApplicationWindow { source_id } => {
-            BackendVisualCaptureSelection::ApplicationWindow {
-                source_id: source_id.clone(),
-            }
-        }
-        VisualCaptureSelection::Display { source_id } => BackendVisualCaptureSelection::Display {
-            source_id: source_id.clone(),
-        },
-        VisualCaptureSelection::Region { display_id, region } => {
-            BackendVisualCaptureSelection::Region {
-                display_id: display_id.clone(),
-                region: prollyglot_visual_pipeline::PixelRect {
-                    x: region.x,
-                    y: region.y,
-                    width: region.width,
-                    height: region.height,
-                },
-            }
-        }
-    }
-}
-
 fn visual_text_contract(
     session_id: SessionId,
     runtime_revision: u32,
@@ -2348,6 +2499,16 @@ fn stable_visual_text_contract(
 
 fn visual_session_source(selection: &VisualCaptureSelection) -> SessionSource {
     match selection {
+        VisualCaptureSelection::PortalWindow => SessionSource::new(
+            "portal:window",
+            SessionSourceKind::ApplicationWindow,
+            "Choose a window",
+        ),
+        VisualCaptureSelection::PortalDisplay => SessionSource::new(
+            "portal:display",
+            SessionSourceKind::Display,
+            "Choose a monitor",
+        ),
         VisualCaptureSelection::ApplicationWindow { source_id } => SessionSource::new(
             source_id,
             SessionSourceKind::ApplicationWindow,

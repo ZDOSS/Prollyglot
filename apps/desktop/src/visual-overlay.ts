@@ -7,6 +7,8 @@ import { isTauri } from "./bridge";
 import { PresentationCursor } from "./presentation-state";
 import {
   RUNTIME_EVENTS,
+  RUNTIME_COMMANDS,
+  type VisualCaptureCapabilities,
   type VisualPresentationFrame,
   type VisualOverlayLayout,
   type VisualPresentationRegion
@@ -22,6 +24,30 @@ const root = required<HTMLElement>("#visual-overlay-app");
 
 root.innerHTML = `<div id="visual-label-layer" class="visual-label-layer" aria-live="polite"></div>`;
 const layer = required<HTMLElement>("#visual-label-layer");
+let reader = false;
+
+function enableReader(): void {
+  reader = true;
+  document.documentElement.classList.add("visual-reader-document");
+  document.body.classList.add("visual-reader-body");
+  const header = document.createElement("header");
+  header.className = "visual-reader-header";
+  const title = document.createElement("strong");
+  title.textContent = "Screen translations";
+  const stop = document.createElement("button");
+  stop.type = "button";
+  stop.className = "secondary-button";
+  stop.textContent = "Stop";
+  stop.addEventListener("click", () => {
+    stop.disabled = true;
+    void invoke(RUNTIME_COMMANDS.stopVisualTranslation).catch((error) => {
+      stop.disabled = false;
+      stop.title = String(error);
+    });
+  });
+  header.append(title, stop);
+  root.prepend(header);
+}
 
 let output: VisualPresentationFrame = {
   sessionId: 0,
@@ -58,7 +84,7 @@ function labelFor(region: VisualPresentationRegion): HTMLElement {
   label.dataset.trackId = String(region.trackId);
   label.dataset.pending = String(region.translationPending);
   label.dataset.retained = String(Boolean(region.retained));
-  label.title = region.original;
+  if (!reader) label.title = region.original;
   label.setAttribute(
     "aria-label",
     region.translation
@@ -90,11 +116,20 @@ function render(): void {
     scanning.textContent = "Scanning for text…";
     labels.push(scanning);
   }
+  if (reader && !output.scanning && labels.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "visual-reader-empty";
+    empty.textContent = "No text visible";
+    labels.push(empty);
+  }
   layer.replaceChildren(...labels);
   positionLabels();
 }
 
 function positionLabels(): void {
+  // A reader has no relationship to capture-space coordinates. Reporting its
+  // local layout as screen geometry would filter unrelated source pixels.
+  if (reader) return;
   const width = layer.clientWidth;
   const height = layer.clientHeight;
   if (!width || !height) return;
@@ -147,14 +182,23 @@ void document.fonts.ready.then(positionLabels);
 function setPresentation(next: VisualPresentationFrame): void {
   if (!cursor.accept(next)) return;
   output = structuredClone(next);
+  const stop = root.querySelector<HTMLButtonElement>(".visual-reader-header button");
+  if (stop) stop.disabled = false;
   render();
 }
 
 if (isTauri()) {
-  void listen<VisualPresentationFrame>(
-    RUNTIME_EVENTS.visualPresentation,
-    ({ payload }) => setPresentation(payload)
-  );
+  void (async () => {
+    const capabilities = await invoke<VisualCaptureCapabilities>(RUNTIME_COMMANDS.visualCapabilities);
+    if (capabilities.portalScreenCast) enableReader();
+    await listen<VisualPresentationFrame>(RUNTIME_EVENTS.visualPresentation, ({ payload }) => setPresentation(payload));
+    // Subscribe first. Revision checks reject a bootstrap reply overtaken by
+    // live output, and a slow webview startup cannot miss its first frame.
+    setPresentation(await invoke<VisualPresentationFrame>(RUNTIME_COMMANDS.visualPresentation));
+  })().catch((error) => {
+    layer.textContent = `Could not open screen translations: ${String(error)}`;
+  });
 } else {
+  if (new URLSearchParams(location.search).has("reader")) enableReader();
   window.__PROLLYGLOT_VISUAL_OVERLAY_PREVIEW__ = { setPresentation };
 }

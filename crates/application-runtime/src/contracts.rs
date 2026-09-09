@@ -496,6 +496,9 @@ pub struct CompleteVisualRegionSelectionCommand {
 #[serde(tag = "kind", rename_all = "camelCase")]
 #[ts(tag = "kind", rename_all = "camelCase")]
 pub enum VisualCaptureSelection {
+    /// The desktop chooses the concrete source at each Start; no reusable ID.
+    PortalWindow,
+    PortalDisplay,
     ApplicationWindow {
         #[serde(rename = "sourceId")]
         #[ts(rename = "sourceId")]
@@ -528,6 +531,7 @@ pub enum VisualDetectionMode {
 #[ts(rename_all = "camelCase")]
 pub struct VisualCaptureCapabilities {
     pub windows_graphics_capture: bool,
+    pub portal_screen_cast: bool,
     pub system_picker: bool,
     pub desktop_duplication_experiment: bool,
     #[serde(skip_serializing_if = "Option::is_none", default)]
@@ -1068,6 +1072,7 @@ mod tests {
         };
         assert_json_round_trip(&sources);
         assert_json_round_trip(&VisualCaptureCapabilities {
+            portal_screen_cast: false,
             windows_graphics_capture: true,
             system_picker: false,
             desktop_duplication_experiment: false,

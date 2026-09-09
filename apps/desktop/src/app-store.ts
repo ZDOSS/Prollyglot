@@ -104,9 +104,10 @@ export function createInitialAppState(options: InitialAppStateOptions = {}): App
     translations: structuredClone(options.translations ?? { models: [] }),
     visualCapabilities: {
       windowsGraphicsCapture: false,
+      portalScreenCast: false,
       systemPicker: false,
       desktopDuplicationExperiment: false,
-      message: "Checking Windows screen capture…"
+      message: "Checking screen capture…"
     },
     visualSources: { windows: [], displays: [] },
     visualModels: { models: [] },

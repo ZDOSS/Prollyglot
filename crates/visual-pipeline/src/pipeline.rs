@@ -28,6 +28,7 @@ pub struct VisualPipeline<E> {
     ocr: E,
     stabilizer: TextStabilizer,
     stats: VisualPipelineStats,
+    last_frame: Option<(u64, u64)>,
 }
 
 impl<E: OcrEngine> VisualPipeline<E> {
@@ -37,14 +38,31 @@ impl<E: OcrEngine> VisualPipeline<E> {
             ocr,
             stabilizer,
             stats: VisualPipelineStats::default(),
+            last_frame: None,
         }
     }
 
     pub fn process(&mut self, frame: &VisualFrame) -> Result<VisualProcessOutcome, OcrError> {
-        self.stats.frames_received = self.stats.frames_received.saturating_add(1);
+        self.process_at(frame, frame.captured_at_micros)
+    }
+
+    /// Sample a still-valid image from a sparse source using a separate,
+    /// monotonic processing clock. Never change its capture timestamp or count
+    /// a repeated sample as a newly received frame. The caller must stop
+    /// resampling immediately when sharing ends or the source becomes invalid.
+    pub fn process_at(
+        &mut self,
+        frame: &VisualFrame,
+        sampled_at_micros: u64,
+    ) -> Result<VisualProcessOutcome, OcrError> {
+        let identity = (frame.sequence, frame.captured_at_micros);
+        if self.last_frame != Some(identity) {
+            self.stats.frames_received = self.stats.frames_received.saturating_add(1);
+            self.last_frame = Some(identity);
+        }
         let gate = self
             .gate
-            .evaluate_with_pending_work(frame, self.ocr.has_pending_work());
+            .evaluate_at(frame, sampled_at_micros, self.ocr.has_pending_work());
         if !gate.should_analyze() {
             match gate {
                 FrameGateDecision::RateLimited => {
@@ -147,6 +165,38 @@ mod tests {
             [shade, shade, shade, 255].repeat(4),
         )
         .expect("frame")
+    }
+
+    #[test]
+    fn sparse_source_finishes_regional_scan_without_fabricating_capture_evidence() {
+        let mut pipeline = VisualPipeline::new(
+            FrameGate::new(FrameGateConfig::default()),
+            PartialOcr(4),
+            TextStabilizer::new(TextStabilizerConfig::default()),
+        );
+        let image = frame(8, 17_000, 40);
+        for pass in 0..4 {
+            let result = pipeline.process_at(&image, pass * 300_000).unwrap();
+            assert!(result.gate.should_analyze());
+            assert_eq!(result.stats.frames_received, 1);
+            assert_eq!(result.stats.frames_analyzed, pass + 1);
+            assert_eq!(image.captured_at_micros, 17_000);
+            if pass > 0 {
+                assert_eq!(result.update.unwrap().visible.len(), 1);
+            }
+        }
+        assert!(
+            !pipeline
+                .process_at(&image, 900_001)
+                .unwrap()
+                .gate
+                .should_analyze()
+        );
+        let changed = pipeline
+            .process_at(&frame(9, 1_200_000, 180), 1_200_000)
+            .unwrap();
+        assert!(changed.gate.should_analyze());
+        assert_eq!(changed.stats.frames_received, 2);
     }
 
     #[test]

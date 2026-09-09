@@ -37,7 +37,9 @@ tracing-subscriber.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18.2"
+raw-window-handle = "0.6.2"
 prollyglot-audio-pipewire = { path = "../../../crates/audio-pipewire" }
+prollyglot-visual-pipewire = { path = "../../../crates/visual-pipewire" }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { workspace = true, features = [

@@ -1,9 +1,9 @@
 # Ubuntu screen-capture backend checks
 
-`crates/visual-pipewire` is an implemented capture subsystem. The desktop app
-still exposes screen translation only on Windows. Linux picker/region controls,
-presentation and compositor coordinate mapping must be integrated before an
-Ubuntu screen-translation build is ready for manual acceptance.
+Version 0.4.0 integrates `crates/visual-pipewire` into the Ubuntu desktop app.
+Each Start opens the desktop window/monitor picker, and translations use a
+normal movable reader. Drawn regions and overlays anchored over source text
+remain Windows features. Real GNOME/Wayland and real-media acceptance is open.
 
 ## Run without using the desktop
 
@@ -39,7 +39,7 @@ comes from [visual-subtitles.html](fixtures/visual-subtitles.html). Model files
 are only read; this command does not install or download models. These images
 are generated fixtures, not recordings of a user's display.
 
-## Checks and evidence
+## Backend milestone evidence (0.3.1)
 
 On 2026-09-08, Ubuntu 26.04/WSL2 with PipeWire 1.6.2 and WirePlumber 0.5.13:
 
@@ -92,11 +92,88 @@ accuracy/latency remain owner-run acceptance. These tests are not substitutes.
   logical size can differ from captured pixel dimensions; a window has no
   portable global position. `FrameGeometry` describes the raw, cropped and
   transformed pixels. Do not pass either directly to the current Windows
-  physical overlay coordinates. Linux region selection and anchored presentation
-  need their own mapping and compositor verification.
-- Start/Stop remain under desktop session supervision when integrated. Every
-  terminal path must clear presentation; a source picker must not block Stop.
-  Source loss/revocation requires an explicit new selection.
+  physical overlay coordinates. The Ubuntu reader deliberately uses normal
+  document flow without capture-relative positioning. Linux drawn regions and
+  anchored presentation still need their own mapping and compositor checks.
+- Start/Stop run under desktop session supervision. A blocking startup worker
+  polls the cancellation token while the portal waits for selection; dismissal
+  returns to stopped. Source loss/revocation hides and clears presentation and
+  requires an explicit new selection. Closing the reader invokes Stop.
+- Sparse sources may retain one still-valid native frame while OCR finishes a
+  regional scan. A separate sample clock advances gating and confirmation;
+  capture timestamps and received-frame counts are not fabricated. Stop,
+  disconnection, and source loss disable resampling.
+- Reader feedback suppression requires a current/recent translation match and
+  enough matching opaque-background pixels at the OCR observation. It never
+  masks on words or background alone. Color conversion and matching scene
+  backgrounds can still defeat this heuristic; prefer sharing only the media
+  window or keeping Prollyglot outside a shared monitor.
+
+## Desktop integration fixtures
+
+The browser fixture runs the actual source controls and reader against fake
+services. With an existing Playwright installation and a local Vite dev server:
+
+```bash
+PROLLYGLOT_PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs \
+node scripts/check-portal-ui.mjs http://localhost:1420
+```
+
+It checks portal window/monitor selection without enumerated IDs, an inherited
+Windows region preference, Stop while the picker is pending, small-window
+wrapping/scrolling, and stale presentation rejection. Chromium is always
+headless; `PROLLYGLOT_CHROMIUM` can select a local browser executable.
+
+The native fixture additionally needs `Xvfb`, `tauri-driver`, `WebKitWebDriver`,
+an installed OCR pack, and the synthetic images above:
+
+```bash
+PROLLYGLOT_VISUAL_OCR_MODEL_DIR=/path/to/installed/ppocrv6-pack \
+PROLLYGLOT_VISUAL_FIXTURE_DIR=/path/to/synthetic/visual-fixtures \
+bash scripts/check-portal-desktop.sh
+```
+
+Compilation and frontend bundling happen before private services start. The
+fixture registers a fake portal on its private bus, produces synthetic video,
+and launches the actual GTK app on a high-numbered Xvfb display. It removes
+inherited display/playback variables, uses Linux's abstract X socket instead
+of changing WSLg's socket directory, and keeps app data/model copies private.
+Native processes and their child process groups are cleaned up afterward.
+No owner desktop, real sharing picker, hardware routing, or recording is used.
+
+The native cases cover Chinese/window and Spanish/monitor OCR, presentation IPC
+and reader output, reader Stop/close and restart, late output after Stop, pending-picker
+cancellation, and picker dismissal. Translation text is injected as a fixed
+fixture through the normal native presentation contract; this test does not
+measure a translation model's quality, runtime, or real-media usefulness.
+
+
+## Integration validation (0.4.0)
+
+On the same Ubuntu 26.04/WSL2 development host:
+
+- 166 Rust tests and 58 frontend tests passed, with 11 opt-in Rust tests ignored
+  in the ordinary suite. Formatting, Clippy, generated bindings, Windows desktop
+  cross-compilation, and frontend bundling passed. A new sparse-image regression
+  confirms OCR completes pending work without inventing capture evidence.
+- All four private portal/backend tests passed, including real OCR of the six
+  synthetic Chinese/Spanish images. Their timings remain diagnostic observations,
+  not translation or real-media acceptance.
+- The headless portal UI fixture passed for source selection, cancellable pending
+  startup, reader wrapping/scrolling, and stale presentation rejection. The
+  existing headless Windows source-selection regression also passed.
+- The native virtual-display fixture passed Chinese/window and Spanish/monitor
+  capture through OCR and reader presentation, reader Stop/close, restart after
+  close, cancellation and dismissal. Translation output is deterministic
+  fixture text, as described above.
+- Built `target/release/bundle/deb/Prollyglot_0.4.0_amd64.deb` (33,418,940 bytes).
+  All extracted native libraries resolved, and that extracted package binary
+  passed the four native desktop cases above. This was extraction and private
+  execution, not a fresh GNOME install/upgrade/remove acceptance check.
+
+Fresh GNOME permission dialogs, actual compositor video formats, fractional
+scaling, fullscreen behavior, and real Chinese/Spanish translation usefulness
+remain owner acceptance. See the short [manual check](UBUNTU_SMOKE_TEST.md#owner-screen-translation-check).
 
 ## Implementation references
 

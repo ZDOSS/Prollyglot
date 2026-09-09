@@ -41,7 +41,7 @@ Why this direction:
 | 2. Live English captions | Captured audio becomes stable partial and final English captions locally | Device-to-caption and corrected UI/context re-smokes passed; accented/conversational model evidence and application/lifecycle validation remain |
 | 3. Minimal customizable Windows app | The complete daily-use interface, overlay customization, transcript view, and controls work together | Pending |
 | 4. Windows MVP release | A reliable installable Windows build is ready for outside testing | Pending |
-| 5. Ubuntu port | The Windows-proven core runs on one supported Ubuntu LTS release through PipeWire | Experimental Ubuntu 26.04 output/application capture and `.deb` integrated through 0.3.0; native GNOME, real-application/hardware, and release acceptance pending |
+| 5. Ubuntu port | The Windows-proven core runs on one supported Ubuntu LTS release through PipeWire | Experimental Ubuntu 26.04 output/application capture, portal screen translation with a movable reader, and `.deb` integrated through 0.4.0; native GNOME, real-application/hardware, and release acceptance pending |
 | 6. Multilingual captions and translation | Downloadable language support, local translation, and dual captions are production-ready | 29 forced spoken languages, four compact language models, compact-to-English and 29-language many-to-many routes integrated; Windows quality, latency, and automatic-language constraints remain pending |
 | 7. Visual text translation | A selected region, application window, or display becomes locally translated positioned text | Experimental WGC/OCR/positioned-overlay slice integrated; native Windows media, DPI, performance, and OBS/DXGI parity remain pending |
 
@@ -924,10 +924,15 @@ either platform release-ready.
   source identity, logical/pixel geometry separation, source removal, resize,
   and Stop. Real local OCR recognizes synthetic Chinese/Spanish source text at
   1080p, 4K, and cropped-region sizes; this excludes translation and overlays.
-- Still pending: desktop picker integration, region selection, Linux visual
-  presentation and coordinate mapping, then owner-run GNOME/Wayland acceptance.
-  The app's screen-translation capability remains Windows-only. This backend
-  milestone does not change the current package version or support promise.
+- Version 0.4.0 integrates explicit window/monitor picker modes, supervised
+  cancellation, and the shared local OCR/translation presentation pipeline.
+  Ubuntu results use a normal movable reader, independent of desktop geometry;
+  closing it stops capture. Static portal images can finish regional OCR work
+  without inventing capture timestamps or received-frame counts.
+- Still pending: Ubuntu drawn regions, native Wayland anchoring/stacking, GPU-only
+  buffer support, and owner-run GNOME/Wayland real-media acceptance. The reader
+  uses bounded text/background-pixel feedback filtering; keeping Prollyglot off
+  the shared monitor or sharing only the media window remains preferable.
 
 ### Acceptance boundary
 

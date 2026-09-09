@@ -77,6 +77,7 @@ export function previewSpeechCatalog(): ModelCatalogStatus {
 export function previewVisualCapabilities(): VisualCaptureCapabilities {
   return {
     windowsGraphicsCapture: true,
+    portalScreenCast: false,
     systemPicker: false,
     desktopDuplicationExperiment: false
   };

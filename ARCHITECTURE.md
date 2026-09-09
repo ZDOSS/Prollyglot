@@ -195,9 +195,14 @@ buffer import or recording path is implemented.
 
 The portal's optional compositor geometry lives in `StreamInfo`; pixel crop and
 orientation live in `FrameGeometry`. Neither assumes a global physical position
-for a Wayland window. The current desktop still advertises Windows-only screen
-translation until selection, region controls, and Linux presentation are wired
-with a verified geometry mapping. See the [headless screen-capture checks](docs/testing/UBUNTU_SCREEN_CAPTURE.md).
+for a Wayland window. The desktop's `visual_capture` adapter resolves a portal
+selection on a cancellable startup worker, then owns it under the same session
+supervisor as Windows. Ubuntu uses a normal movable reader; only Windows maps
+capture-space bounds onto the desktop. Reader feedback requires both rendered
+text and local background-pixel evidence, with bounded recent-text history.
+A separate OCR sampling clock permits static portal images to finish scanning
+without changing their capture evidence or received-frame counts. No pixels
+cross IPC. See the [headless screen-capture checks](docs/testing/UBUNTU_SCREEN_CAPTURE.md).
 
 `crates/visual-pipeline` owns change gating, crop/geometry rules, stabilization,
 and tracking. `crates/visual-ocr-rapid` adapts the verified PP-OCRv6 model. The
