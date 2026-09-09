@@ -186,7 +186,11 @@ Linux support should be real, but deliberately scoped.
 
 Version 0.3.0 implements default-output, pinned-output, and application capture
 through the shared local transcription and caption pipeline, plus development
-`.deb` packaging. Linux screen translation is not implemented.
+`.deb` packaging. Linux screen translation is not enabled in the desktop app.
+The separate `visual-pipewire` backend now implements XDG ScreenCast selection
+and transient PipeWire video, with private headless protocol, native-frame, and
+Chinese/Spanish OCR checks. Integrating the picker, region selection, and visual
+presentation remains work; this does not extend the current package's promises.
 Native Ubuntu/WSLg fixtures establish an initial working slice; they do not
 replace fresh GNOME installation, hardware, compositor, or release acceptance.
 
@@ -1242,6 +1246,22 @@ If window capture is blank while one of the display paths returns useful pixels,
 Prollyglot should offer **Switch to Monitor capture** and crop the requested
 region from that display. If equivalent OBS Display Capture succeeds while both
 Prollyglot display backends fail, treat it as a Prollyglot compatibility defect.
+
+The Ubuntu capture backend uses `org.freedesktop.portal.ScreenCast` for one
+explicitly selected monitor or window and connects only to the PipeWire remote
+FD supplied by that session. It does not enumerate or capture the Wayland
+desktop through the XWayland root window. Each explicit Start requires the
+desktop picker; permissions and restore tokens are not persisted. Stop cancels
+pending portal requests as well as active video, and a revoked session or removed
+source ends capture without selecting another source.
+
+Portal logical position/size, optional window metadata, and raw/cropped/rotated
+pixel geometry remain separate. They must not be passed to the Windows physical
+overlay API as interchangeable values. Native Wayland anchoring and a truthful
+fallback when global coordinates are unavailable must be designed and verified
+before the Linux desktop exposes screen translation. CPU-readable BGRx, BGRA,
+RGBx, and RGBA are implemented; DMA-BUF import and negative-stride buffers are
+explicitly unsupported in this backend slice. Captured pixels stay transient.
 
 This is compatibility engineering, not a protected-content bypass. Microsoft
 documents that Desktop Duplication protects access to protected video and that

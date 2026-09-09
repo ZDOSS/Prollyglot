@@ -22,9 +22,13 @@ def main():
                    PIPEWIRE_REMOTE="pipewire-0", PROLLYGLOT_PRIVATE_PIPEWIRE=directory,
                    XDG_CONFIG_HOME=str(root / "config"), XDG_STATE_HOME=str(root / "state"),
                    XDG_CACHE_HOME=str(root / "cache"))
+        # Fixtures must never inherit WSLg/desktop window or playback access.
+        for name in ("DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY", "PULSE_SERVER"):
+            env.pop(name, None)
         processes, logs = [], []
         try:
-            dbus = subprocess.Popen(["dbus-daemon", "--session", "--nofork", "--print-address=1"],
+            dbus = subprocess.Popen(["dbus-daemon", "--session", "--nofork", "--print-address=1",
+                                     f"--address=unix:path={root / 'bus'}"],
                                     stdout=subprocess.PIPE, text=True, env=env)
             processes.append(dbus)
             env["DBUS_SESSION_BUS_ADDRESS"] = dbus.stdout.readline().strip()

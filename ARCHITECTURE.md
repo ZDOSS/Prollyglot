@@ -166,7 +166,7 @@ backend-neutral `SpeechEngine`/`SpeechStream` contracts.
 On Ubuntu, hidden GTK windows are realized before click-through settings are
 applied. The initial caption overlay uses X11/XWayland when available and honors
 an explicitly selected GTK backend. Native Wayland overlay behavior and Linux
-visual capture remain separate work. The Ubuntu `.deb` carries speech/ONNX
+visual-mode integration remain separate work. The Ubuntu `.deb` carries speech/ONNX
 libraries in `/usr/lib/prollyglot`; relative runtime search paths keep the package
 independent of the build checkout.
 
@@ -176,6 +176,28 @@ independent of the build checkout.
 display crop through `Windows.Graphics.Capture`. Captured frames are transient.
 A capacity-one latest-frame channel replaces stale input if OCR is slower than
 capture.
+
+`crates/visual-pipewire` implements the Ubuntu capture backend independently of
+desktop windows. An asynchronous, cancellable portal worker creates a dedicated
+DBus session, selects one monitor/window, and gives the portal's restricted FD
+to a native PipeWire worker. Version 6 streams target `object.serial`; older
+portals use their node ID without reconnect or fallback after source loss.
+The workers retain no permission/restore tokens and close requests, sessions,
+native listeners, buffers, and connections on cancellation or failure.
+
+The native adapter negotiates CPU-readable packed RGB, strips padding, applies
+valid crops and SPA transforms, and publishes the same transient `VisualFrame`
+used by Windows. Frame storage remains capacity one, capture metadata remains
+bounded, and allocations are checked against an 8K-sized pixel budget. It
+prefers the shared capture rate but accepts fixed-rate sources; higher input
+rates replace pending frames instead of extending an OCR backlog. No GPU
+buffer import or recording path is implemented.
+
+The portal's optional compositor geometry lives in `StreamInfo`; pixel crop and
+orientation live in `FrameGeometry`. Neither assumes a global physical position
+for a Wayland window. The current desktop still advertises Windows-only screen
+translation until selection, region controls, and Linux presentation are wired
+with a verified geometry mapping. See the [headless screen-capture checks](docs/testing/UBUNTU_SCREEN_CAPTURE.md).
 
 `crates/visual-pipeline` owns change gating, crop/geometry rules, stabilization,
 and tracking. `crates/visual-ocr-rapid` adapts the verified PP-OCRv6 model. The

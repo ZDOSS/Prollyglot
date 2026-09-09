@@ -13,7 +13,7 @@ a successful compile nor the checks below imply a supported binary release.
 | Overlay | Initial GTK X11/XWayland path, appearance controls, click-through setup | Native GNOME stacking, click-through, fullscreen, scaling, and multiple monitors |
 | Native Wayland | Explicit GTK backend choice is honored | Positioning and overlay behavior are not yet supported/accepted |
 | Application audio | Grouped playback streams, synchronized mixing, stream/process restart recovery, ambiguity handling | Real browser/Electron/PulseAudio-bridge/sandbox identities, permissions, hardware clocks, and long sessions |
-| Screen translation | Windows-only capability message | Portal/PipeWire screen capture, region selection, OCR, and positioning on Linux |
+| Screen translation | Separate portal/PipeWire backend with headless native-frame/OCR checks; desktop mode remains Windows-only | Desktop picker/region controls, Linux presentation and coordinate mapping, GNOME/Wayland acceptance |
 | Debian package | Native build, private inference libraries, declared dependencies | Fresh GNOME install/upgrade/remove and complete release-wide license inventory |
 
 Ubuntu 24.04 and other distributions are outside the initial supported-package
@@ -28,6 +28,7 @@ repository root:
 rustup target add x86_64-pc-windows-msvc
 ./scripts/check-local.sh
 python3 scripts/check-pipewire.py
+bash scripts/check-screen-capture.sh
 pnpm --dir apps/desktop tauri build --bundles deb -- --locked
 ```
 
@@ -36,6 +37,10 @@ session bus, and WirePlumber **policy** profile. It loads no audio hardware
 monitor, changes only its private default output, and cleans up its processes.
 The ignored native Rust tests refuse to run without that private-session guard.
 Synthetic PCM is generated and checked in memory; captured audio is not saved.
+The fixtures also remove desktop display/playback environment variables and
+create their DBus socket inside the private runtime directory. The separate
+[Ubuntu screen-capture checks](UBUNTU_SCREEN_CAPTURE.md) use a fake portal on
+that bus and synthetic native video; they never contact the desktop portal.
 
 The output test creates two output monitors carrying different tones. It checks
 default and pinned capture, changes the default while enumerating sources,

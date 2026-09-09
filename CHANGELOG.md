@@ -5,6 +5,17 @@ Versioning while it is in the `0.x` pre-release line.
 
 ## [Unreleased]
 
+### Development
+
+- Implement the Ubuntu XDG ScreenCast/PipeWire capture backend with cancellable
+  picker requests, restricted-remote capture, newest-frame delivery, CPU pixel
+  conversion, and source/session-loss cleanup. Private headless tests cover the
+  portal protocol, native video, and Chinese/Spanish OCR. Desktop screen
+  translation remains Windows-only until Linux selection and overlay integration
+  are complete; this backend does not change the current package's support scope.
+- Isolate native test buses under their temporary runtime directories and remove
+  inherited desktop display and playback environment variables from fixtures.
+
 ## [0.3.0] - 2026-09-08
 
 ### Added

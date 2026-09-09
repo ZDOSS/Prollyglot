@@ -18,6 +18,7 @@ cargo test --locked \
   -p prollyglot-model-manager \
   -p prollyglot-resource-coordinator \
   -p prollyglot-visual-pipeline \
+  -p prollyglot-visual-pipewire \
   -p prollyglot-visual-ocr-rapid \
   -p prollyglot-visual-windows \
   --all-targets
@@ -34,6 +35,7 @@ cargo clippy --locked \
   -p prollyglot-model-manager \
   -p prollyglot-resource-coordinator \
   -p prollyglot-visual-pipeline \
+  -p prollyglot-visual-pipewire \
   -p prollyglot-visual-ocr-rapid \
   -p prollyglot-visual-windows \
   --all-targets -- -D warnings

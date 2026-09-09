@@ -15,6 +15,7 @@ members = [
     "crates/resource-coordinator",
     "crates/transcript",
     "crates/visual-pipeline",
+    "crates/visual-pipewire",
     "crates/visual-ocr-rapid",
     "crates/visual-windows",
 ]

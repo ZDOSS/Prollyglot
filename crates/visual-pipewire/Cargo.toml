@@ -1,0 +1,23 @@
+[package]
+name = "prollyglot-visual-pipewire"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+crossbeam-channel.workspace = true
+prollyglot-visual-pipeline = { path = "../visual-pipeline" }
+thiserror.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+futures-util = { version = "0.3.32", default-features = false, features = ["std"] }
+pipewire = { version = "0.10.1", features = ["v1_0_0"] }
+serde.workspace = true
+tokio = { version = "1.48.0", features = ["rt", "time", "macros", "net", "sync"] }
+zbus = { version = "5.14.0", default-features = false, features = ["tokio"] }
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+image = { workspace = true, features = ["png"] }
+prollyglot-visual-ocr-rapid = { path = "../visual-ocr-rapid" }

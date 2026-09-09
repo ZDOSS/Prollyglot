@@ -911,6 +911,24 @@ either platform release-ready.
 - Overlay behavior validated separately on the supported Ubuntu Wayland session and X11 where practical.
 - A native `.deb`, dependency documentation, and local validation on the supported Ubuntu release; hosted release verification remains optional and manual.
 
+### Screen-capture backend — development
+
+- Implemented a separate XDG ScreenCast/PipeWire backend for one monitor or
+  window, with asynchronous Start, cancellation during every picker/startup
+  phase, non-persistent permission, serial-based targeting, and source revocation.
+- Converts CPU-readable video to the shared transient OCR frame type, with
+  bounded latest-frame delivery, padding/crop/rotation handling, checked buffer
+  sizes, format renegotiation, and explicit unsupported GPU-buffer errors.
+- Private DBus/PipeWire fixtures verify early portal responses, stalled method
+  replies and picker responses, cancellation/rejection, service disappearance,
+  source identity, logical/pixel geometry separation, source removal, resize,
+  and Stop. Real local OCR recognizes synthetic Chinese/Spanish source text at
+  1080p, 4K, and cropped-region sizes; this excludes translation and overlays.
+- Still pending: desktop picker integration, region selection, Linux visual
+  presentation and coordinate mapping, then owner-run GNOME/Wayland acceptance.
+  The app's screen-translation capability remains Windows-only. This backend
+  milestone does not change the current package version or support promise.
+
 ### Acceptance boundary
 
 - The Windows MVP's two source modes and daily-use workflow pass on the supported Ubuntu LTS release.

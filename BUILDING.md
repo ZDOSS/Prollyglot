@@ -129,6 +129,12 @@ and captured PCM is not written to disk. The native tests are ignored in ordinar
 Rust checks and refuse to run outside this isolated setup. See
 [Ubuntu validation](docs/testing/UBUNTU_SMOKE_TEST.md) for the desktop smoke.
 
+For the experimental screen-capture backend, run
+`bash scripts/check-screen-capture.sh`. It exercises a fake portal and native
+video on the same isolated services, with no desktop picker or windows. Optional
+installed-model OCR checks and the current integration boundary are documented
+in [Ubuntu screen capture](docs/testing/UBUNTU_SCREEN_CAPTURE.md).
+
 ## Focused commands
 
 Use focused commands while iterating, then run the appropriate full script
