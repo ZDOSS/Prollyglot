@@ -853,6 +853,12 @@ Harden the complete Windows application into an installable public beta.
 
 ## Milestone 5 — Ubuntu port
 
+Desktop acceptance is owner-run. On 2026-09-08 the owner explicitly declined
+agent control or recording of Windows applications from WSL. Continue repository
+implementation and noninteractive validation; leave real-media/OBS/mixed-DPI
+checks and fresh GNOME/Wayland acceptance open for the owner's manual feedback.
+Headless fixtures must not open WSLg windows or alter the owner's desktop audio.
+
 Reuse the existing shared pipeline. On 2026-09-08 the owner authorized beginning
 this experimental port while Windows owner/release checks remain open. Windows
 remains the first production target; this parallel development does not make

@@ -5,6 +5,25 @@ the ordinary audio-caption smoke and should take roughly five minutes after the
 models are installed. No screenshots, recordings, evidence folder, or formal
 timing sheet are required.
 
+These are owner-run desktop checks. Agents should use noninteractive builds and
+tests and leave the Windows desktop alone, including when working from WSL.
+
+## Current Chinese/Spanish check
+
+Use videos you would normally watch. For each language, try **Application window**
+and a **Selected region** around the subtitles, translating to English. Note
+whether text is missed, whether translation arrives while the subtitle is still
+visible, and whether later captions fall farther behind. A rough delay estimate
+is enough for initial feedback; no recording is needed.
+
+If capture is blank, compare **Whole display** with OBS Display Capture on the
+same display and video. Note OBS's selected capture method (Windows Graphics
+Capture or DXGI). Test alignment across monitors only if you already use different
+scaling settings. Stop should clear the overlay and return to setup with one click.
+
+Report the version, language, source mode, approximate delay, and any failure in
+a few sentences. The longer steps below are available when setup help is needed.
+
 For the repeatable synthetic capture check, run
 `scripts/check-visual-windows.ps1 -ModelDirectory 'PATH\TO\OCR\MODELS'` in native
 PowerShell. It briefly opens its own fullscreen Chinese/Spanish fixture and

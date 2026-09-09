@@ -39,6 +39,24 @@ Until the repository owner changes this policy:
 - Never force-push, rewrite published history, or discard local changes to resolve a rejected push. Fetch, inspect the divergence, and reconcile it safely.
 - Report the commit hash, pushed branch, and validation performed at handoff.
 
+## Desktop testing boundary
+
+- The owner performs interactive Windows acceptance checks manually. Do not
+  launch, focus, move, resize, automate, or record applications on the owner's
+  desktop from WSL unless the owner explicitly requests that particular test.
+  General instructions to continue development or verification do not authorize
+  taking over the desktop.
+- Keep agent-run checks noninteractive: source review, builds, cross-compilation,
+  unit tests, and isolated headless fixtures that do not affect desktop windows,
+  playback routing, or devices. WSLg windows also appear on the owner's desktop
+  and are subject to the same boundary.
+- Leave real-media Chinese/Spanish accuracy and latency, OBS comparisons,
+  physical mixed-DPI behavior, and fresh GNOME/Wayland desktop acceptance to the
+  owner. Provide a short manual check when a concrete build is ready; do not
+  require recordings, screenshots, or formal timing sheets for routine feedback.
+- Keep these acceptance items open until actual evidence is supplied. Passing
+  synthetic or headless tests does not substitute for the owner's desktop checks.
+
 ## Versioning and release hygiene
 
 - Follow `docs/VERSIONING.md` and keep the project on a synchronized SemVer
